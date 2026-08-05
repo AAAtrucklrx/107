@@ -359,7 +359,7 @@ class CASClient:
                 # 从页面中提取 dataId（用于课表等 API 调用）
                 self._extract_data_id(resp.text)
                 # jw 为 SPA，home/menu 可能不含 dataId；成绩接口无需 dataId 且返回
-                # studentAssoc，可作为兑底提取源（2026-08-05 登录实测确认）
+                # studentAssoc，可作为兜底提取源（2026-08-05 登录实测确认）
                 if not self._student_data_id:
                     self._student_data_id = self._resolve_data_id_from_grades()
                 # 保存页面内容供后续解析
