@@ -1,0 +1,18 @@
+# 密钥与敏感配置（不入库）
+.env
+
+# 运行态数据库
+database/*.db
+
+# 向量库持久化目录
+knowledge/chroma_db/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 本地审查/工具产物
+.qoder/
+
+# 知识库备份目录
+knowledge_backup_*/
