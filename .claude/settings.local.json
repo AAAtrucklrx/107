@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Skill(update-config)",
-      "PowerShell(Get-Command *)"
-    ]
-  }
-}
