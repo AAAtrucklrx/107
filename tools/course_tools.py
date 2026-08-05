@@ -352,7 +352,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
                     return {"student_id": sid, "courses": courses, "count": len(courses),
                             "source": "real", "semester": sem_name}
         except Exception as e:
-            log.warning(f"课表 API 失败，降级到本地数据: {e}")
+            log.warning(f"课表 API 失败 (student_id={sid}, week={week}, day={day})，降级到本地数据: {e}")
 
     # ── Fallback: SQLite（演示学生）或 锁定提示 ──
     if _is_locked(sid):
@@ -371,7 +371,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
         c["credits"] = c.get("credits") or 0
 
     return {"student_id": sid, "courses": courses, "count": len(courses),
-            "source": "fallback"}
+            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
 
 
 @tool
@@ -413,7 +413,7 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
                     return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
                             "courses": day_courses, "count": len(day_courses), "source": "real"}
         except Exception as e:
-            log.warning(f"课表 API 失败，降级到本地数据: {e}")
+            log.warning(f"课表 API 失败 (student_id={sid}, date={date or target_date.isoformat()})，降级到本地数据: {e}")
 
     # Fallback: SQLite / 锁定提示
     if _is_locked(sid):
@@ -448,7 +448,8 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
             "periods": time_range["periods_text"] if time_range else "",
         })
     return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
-            "courses": courses, "count": len(courses), "source": "fallback"}
+            "courses": courses, "count": len(courses), "source": "fallback",
+            "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
 
 
 @tool
@@ -539,7 +540,7 @@ def find_empty_room(building: str, time_desc: str) -> dict:
                     "source": "real",
                 }
     except Exception as e:
-        log.warning(f"空教室 API 失败，降级到模拟数据: {e}")
+        log.warning(f"空教室 API 失败 (building={building}, time={time_desc})，降级到模拟数据: {e}")
 
     # ── Fallback: 模拟数据 ──
     all_rooms = _db().query(
@@ -567,6 +568,7 @@ def find_empty_room(building: str, time_desc: str) -> dict:
         "empty_rooms": empty_rooms[:5],
         "count": min(len(empty_rooms), 5),
         "source": "fallback",
+        "message": "⚠️ 教务接口暂时不可用，以下为空教室模拟数据，仅供参考",
     }
 
 
@@ -603,7 +605,7 @@ def query_grade(student_id: str = None, course_name: str = None, semester: str =
                 return {"student_id": sid, "grades": grades, "count": len(grades),
                         "source": "real"}
         except Exception as e:
-            log.warning(f"成绩 API 失败，降级到本地数据: {e}")
+            log.warning(f"成绩 API 失败 (student_id={sid}, course_name={course_name}, semester={semester})，降级到本地数据: {e}")
 
     # ── Fallback: SQLite（演示学生）或 锁定提示 ──
     if _is_locked(sid):
@@ -612,7 +614,7 @@ def query_grade(student_id: str = None, course_name: str = None, semester: str =
 
     grades = _query_grades(sid, course_name, semester)
     return {"student_id": sid, "grades": grades, "count": len(grades),
-            "source": "fallback"}
+            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存成绩，仅供参考"}
 
 
 @tool
@@ -654,7 +656,7 @@ def calc_gpa(student_id: str = None, semester: str = None) -> dict:
                     "source": "real",
                 }
         except Exception as e:
-            log.warning(f"GPA 计算 API 失败，降级到本地数据: {e}")
+            log.warning(f"GPA 计算 API 失败 (student_id={sid}, semester={semester})，降级到本地数据: {e}")
 
     # ── Fallback: SQLite（演示学生）或 锁定提示 ──
     if _is_locked(sid):
@@ -672,6 +674,7 @@ def calc_gpa(student_id: str = None, semester: str = None) -> dict:
         "total_credits": result["total_credits"],
         "details": grades,
         "source": "fallback",
+        "message": "⚠️ 教务接口暂时不可用，以下为本地缓存成绩计算，仅供参考",
     }
 
 
@@ -770,7 +773,7 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
                     return {"exams": exams, "count": len(exams), "source": "real",
                             "semester": current_sem.get("nameZh", "")}
     except Exception as e:
-        log.warning(f"考试 API 失败，降级到模拟数据: {e}")
+        log.warning(f"考试 API 失败 (student_id={sid}, course_name={course_name})，降级到模拟数据: {e}")
 
     # ── Fallback: 模拟数据 ──
     courses = _db().query(
@@ -790,7 +793,8 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
         })
     if course_name:
         exams = [e for e in exams if course_name in e["course"]]
-    return {"exams": exams, "source": "fallback"}
+    return {"exams": exams, "source": "fallback",
+            "message": "⚠️ 教务接口暂时不可用，以下为考试模拟数据，仅供参考"}
 
 
 @tool
@@ -826,7 +830,7 @@ def search_courses(keyword: str, limit: int = 10) -> dict:
                 return {"keyword": keyword, "courses": courses, "count": len(courses),
                         "source": "real"}
     except Exception as e:
-        log.warning(f"课程搜索 API 失败: {e}")
+        log.warning(f"课程搜索 API 失败 (keyword={keyword}): {e}")
 
     # Fallback: 本地数据库
     rows = _db().query(
@@ -838,7 +842,7 @@ def search_courses(keyword: str, limit: int = 10) -> dict:
                 "teacher": r.get("teacher", ""), "credits": r.get("credits", 0)}
                for r in rows]
     return {"keyword": keyword, "courses": courses, "count": len(courses),
-            "source": "fallback"}
+            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地课程数据，仅供参考"}
 
 
 @tool
@@ -888,6 +892,7 @@ def get_semester_list() -> dict:
         ],
         "current_semester": "2025-2026学年第二学期",
         "source": "fallback",
+        "message": "⚠️ 教务接口暂时不可用，以下为本地学期数据，仅供参考",
     }
 
 
@@ -934,7 +939,7 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
                         return {"student_id": sid, "selections": selections,
                                 "count": len(selections), "source": "real"}
         except Exception as e:
-            log.warning(f"选课结果 API 失败，降级到本地数据: {e}")
+            log.warning(f"选课结果 API 失败 (student_id={sid}, semester={semester})，降级到本地数据: {e}")
 
     # ── Fallback: 本地数据（演示学生）或 锁定提示 ──
     if _is_locked(sid):
@@ -953,7 +958,7 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
         "status": "已选",
     } for c in courses]
     return {"student_id": sid, "selections": selections, "count": len(selections),
-            "source": "fallback"}
+            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存选课数据，仅供参考"}
 
 
 @tool
@@ -994,7 +999,7 @@ def query_program(student_id: str = None, module_id: int = None) -> dict:
                     return {"student_id": sid, "modules": modules,
                             "count": len(modules), "source": "real"}
         except Exception as e:
-            log.warning(f"培养方案 API 失败: {e}")
+            log.warning(f"培养方案 API 失败 (student_id={sid}, module_id={module_id}): {e}")
 
     # ── Fallback: 锁定提示 ──
     if _is_locked(sid):
@@ -1011,4 +1016,5 @@ def query_program(student_id: str = None, module_id: int = None) -> dict:
         ],
         "count": 4,
         "source": "fallback",
+        "message": "⚠️ 教务接口暂时不可用，以下为本地培养方案数据，仅供参考",
     }

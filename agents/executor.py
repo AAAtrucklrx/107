@@ -61,6 +61,15 @@ def _build_tool_registry() -> dict:
     return registry
 
 
+# ── 数据来源标注 ─────────────────────────────────
+
+SOURCE_LABELS = {
+    "real": "数据来源：教务系统实时数据",
+    "fallback": "数据来源：本地缓存/模拟数据，仅供参考",
+    "locked": "数据来源：需登录教务系统后获取",
+}
+
+
 # ── 综合回答 Prompt ─────────────────────────────────
 
 SYNTHESIZE_PROMPT = """你是小蜗，科大校园智能助手。
@@ -79,6 +88,7 @@ SYNTHESIZE_PROMPT = """你是小蜗，科大校园智能助手。
 3. 如果某些步骤失败了，说明原因并尝试给出已有信息
 4. 如果结果中包含数据表格，用 Markdown 格式展示
 5. 回答要简洁有条理，不要冗余信息
+6. 如果步骤结果中包含 source 字段且其值不是 "real"，必须在回答开头明确注明数据来源（如"教务系统暂时不可用，以下为本地缓存/模拟数据，仅供参考"），不得把降级数据当作实时数据呈现
 """
 
 
@@ -184,21 +194,28 @@ class Executor:
             return self._fallback_synthesize(plan, context)
 
     def _format_single_result(self, step: PlanStep, result: dict) -> str:
-        """格式化单步结果为自然语言"""
+        """格式化单步结果为自然语言，降级数据附带来源标注"""
+        source_note = SOURCE_LABELS.get(result.get("source"))
         # 尝试从结果中提取有意义的信息
         if "output" in result:
-            return str(result["output"])
-        if "answer" in result:
-            return str(result["answer"])
-        if "found" in result and result.get("results"):
+            text = str(result["output"])
+        elif "answer" in result:
+            text = str(result["answer"])
+        elif "found" in result and result.get("results"):
             # FAQ 搜索结果
-            return result["results"][0].get("content", str(result))
-        # 通用格式化
-        parts = []
-        for key, value in result.items():
-            if isinstance(value, (str, int, float, bool)):
-                parts.append(f"{key}: {value}")
-        return "\n".join(parts) if parts else str(result)
+            text = result["results"][0].get("content", str(result))
+        else:
+            # 通用格式化
+            parts = []
+            for key, value in result.items():
+                if key in ("source", "message"):
+                    continue
+                if isinstance(value, (str, int, float, bool)):
+                    parts.append(f"{key}: {value}")
+            text = "\n".join(parts) if parts else str(result)
+        if source_note:
+            text = f"{source_note}\n{text}"
+        return text
 
     def _fallback_synthesize(self, plan: Plan, context: Context) -> str:
         """LLM 综合失败时的降级回答：拼接各步骤结果"""
@@ -211,7 +228,12 @@ class Executor:
             if result.get("error"):
                 lines.append(f"  ⚠️ {result['error']}")
             else:
+                source_note = SOURCE_LABELS.get(result.get("source"))
+                if source_note:
+                    lines.append(f"  {source_note}")
                 for k, v in result.items():
+                    if k in ("source", "message"):
+                        continue
                     if isinstance(v, (str, int, float, bool)):
                         lines.append(f"  - {k}: {v}")
             lines.append("")
