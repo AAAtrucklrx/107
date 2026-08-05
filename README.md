@@ -54,16 +54,15 @@ streamlit run app.py
 ├── knowledge/       # 知识库文档（data/ 50 篇 md）与向量库
 ├── database/        # SQLite schema 与种子数据
 ├── ui/              # Streamlit 界面组件
-├── docs/            # 项目文档（交接报告、成果说明书、技术架构、dev-log）
+├── docs/            # 项目文档（dev-log、工具规格、团队材料）
 └── scripts/         # 数据采集与 seed 生成脚本（含真实 catalog 抓取记录）
 ```
 
 ## 📄 文档
 
-- [项目交接报告.md](项目交接报告.md) — 项目全貌与交接信息
-- [成果说明书.md](成果说明书.md) — 比赛成果说明
-- [技术架构.md](技术架构.md) — 系统架构设计
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
+- [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
+- [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 
 ## ⚖️ 说明
 
