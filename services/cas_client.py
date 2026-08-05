@@ -358,10 +358,35 @@ class CASClient:
                 log.debug("jw session 已确认")
                 # 从页面中提取 dataId（用于课表等 API 调用）
                 self._extract_data_id(resp.text)
+                # jw 为 SPA，home/menu 可能不含 dataId；成绩接口无需 dataId 且返回
+                # studentAssoc，可作为兑底提取源（2026-08-05 登录实测确认）
+                if not self._student_data_id:
+                    self._student_data_id = self._resolve_data_id_from_grades()
                 # 保存页面内容供后续解析
                 self._home_page_html = resp.text
         except Exception:
             self._home_page_html = None
+
+    def _resolve_data_id_from_grades(self) -> int | None:
+        """从成绩接口提取 student_data_id（成绩查询不需要 data_id）"""
+        try:
+            sem_data = self.get_grade_semesters()
+            if not isinstance(sem_data, list) or not sem_data:
+                return None
+            ids = [s.get("id") for s in sem_data if isinstance(s, dict) and s.get("id")]
+            if not ids:
+                return None
+            grade_data = self.get_grades(ids[:2])
+            if isinstance(grade_data, dict):
+                for sem in grade_data.get("semesters", []):
+                    for sc in (sem.get("scores") or []):
+                        did = sc.get("studentAssoc")
+                        if did:
+                            log.info(f"从成绩接口提取到 student_data_id: {did}")
+                            return int(did)
+        except Exception as e:
+            log.warning(f"从成绩接口解析 data_id 失败: {e}")
+        return None
 
     def get_student_info(self) -> dict | None:
         """
