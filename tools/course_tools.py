@@ -174,17 +174,18 @@ def _fetch_real_schedule(cas_client, semester_id: int) -> list[dict] | None:
 
 
 def _sync_courses_to_db(student_id: str, courses: list[dict], semester: str) -> None:
-    """将真实课表数据同步到 student_courses 表（先删后插）"""
+    """将真实课表数据同步到 student_courses 表（单事务先删后插，失败整体回滚）"""
     db = _db()
-    db.execute("DELETE FROM student_courses WHERE student_id = ? AND semester = ?",
-               (student_id, semester))
-    for c in courses:
-        db.execute(
-            "INSERT INTO student_courses (student_id, course_code, course_name, teacher, credits, time, location, semester) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (student_id, c["course_code"], c["course_name"], c.get("teacher", ""),
-             c.get("credits", 0), c.get("time", ""), c.get("location", ""), semester),
-        )
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM student_courses WHERE student_id = ? AND semester = ?",
+                     (student_id, semester))
+        for c in courses:
+            conn.execute(
+                "INSERT INTO student_courses (student_id, course_code, course_name, teacher, credits, time, location, semester) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (student_id, c["course_code"], c["course_name"], c.get("teacher", ""),
+                 c.get("credits", 0), c.get("time", ""), c.get("location", ""), semester),
+            )
     log.info(f"已同步 {len(courses)} 门课表到数据库")
 
 
@@ -263,16 +264,17 @@ def _fetch_real_grades(cas_client) -> list[dict] | None:
 
 
 def _sync_grades_to_db(student_id: str, grades: list[dict]) -> None:
-    """将真实成绩数据同步到 student_grades 表（先删后插）"""
+    """将真实成绩数据同步到 student_grades 表（单事务先删后插，失败整体回滚）"""
     db = _db()
-    db.execute("DELETE FROM student_grades WHERE student_id = ?", (student_id,))
-    for g in grades:
-        db.execute(
-            "INSERT INTO student_grades (student_id, semester, course_name, credits, score, grade_point) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (student_id, g["semester"], g["course_name"],
-             g.get("credits", 0), g.get("score", 0), g.get("grade_point", 0)),
-        )
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM student_grades WHERE student_id = ?", (student_id,))
+        for g in grades:
+            conn.execute(
+                "INSERT INTO student_grades (student_id, semester, course_name, credits, score, grade_point) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (student_id, g["semester"], g["course_name"],
+                 g.get("credits", 0), g.get("score", 0), g.get("grade_point", 0)),
+            )
     log.info(f"已同步 {len(grades)} 条成绩到数据库")
 
 

@@ -7,6 +7,7 @@
 import sqlite3
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from utils.logger import get_logger
@@ -82,6 +83,25 @@ class DatabaseManager:
         conn = self.get_conn()
         conn.executescript(sql)
         conn.commit()
+
+    @contextmanager
+    def transaction(self):
+        """
+        单事务上下文：正常退出时提交，异常时整体回滚。
+
+        支持嵌套：仅最外层事务执行 commit/rollback，
+        内层事务的写操作交由外层统一提交，避免破坏事务边界。
+        """
+        conn = self.get_conn()
+        outer = not conn.in_transaction
+        try:
+            yield conn
+            if outer:
+                conn.commit()
+        except Exception:
+            if outer:
+                conn.rollback()
+            raise
 
     def table_exists(self, table_name: str) -> bool:
         row = self.query_one(
