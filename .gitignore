@@ -16,3 +16,6 @@ __pycache__/
 
 # 知识库备份目录
 knowledge_backup_*/
+
+# 本地 IDE/工具配置
+.claude/
