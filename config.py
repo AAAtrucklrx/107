@@ -16,19 +16,21 @@ load_dotenv(PROJECT_ROOT / ".env")
 # HuggingFace 镜像（解决国内下载问题）
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
-# ── LLM 配置 ──────────────────────────────────
+# ── LLM 配置（base_url/model 可由 .env 覆盖，api_key 必读 .env）──────────────────
 LLM_CONFIG = {
-    "base_url": "https://api.llm.ustc.edu.cn/v1",
+    "base_url": os.getenv("LLM_BASE_URL", "https://api.llm.ustc.edu.cn/v1"),
     "api_key": os.getenv("LLM_API_KEY", "your-api-key-here"),
-    "model": "deepseek-v4-flash",
+    "model": os.getenv("LLM_MODEL", "deepseek-chat"),
     "temperature": 0.3,
     "max_tokens": 2048,
     "timeout": 30,
 }
 
 # ── Embedding 配置 ────────────────────────────
+# api_model: 平台白名单内的 embedding 模型标识，可由 .env 的 LLM_EMBEDDING_MODEL 覆盖
 EMBEDDING_CONFIG = {
     "model_name": "shibing624/text2vec-base-chinese",
+    "api_model": os.getenv("LLM_EMBEDDING_MODEL", "qwen3-embedding"),
     "device": "cpu",
 }
 

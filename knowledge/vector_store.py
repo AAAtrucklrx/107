@@ -14,7 +14,8 @@ from utils.logger import get_logger
 log = get_logger("xiaowo.vector")
 
 # 不同 embedding 模式下的相似度阈值
-THRESHOLD_MAP = {"api": 0.6, "local": 0.35, "fallback": 0.25}
+# api 模式按 qwen3-embedding(4096维)实测校准：相关命中 0.45+，不相关 ≤0.38
+THRESHOLD_MAP = {"api": 0.42, "local": 0.35, "fallback": 0.25}
 
 
 class FAQVectorStore:
@@ -66,12 +67,12 @@ class FAQVectorStore:
             ef = OpenAIEmbeddingFunction(
                 api_key=LLM_CONFIG["api_key"],
                 api_base=LLM_CONFIG["base_url"],
-                model_name="text-embedding-3-small",
+                model_name=EMBEDDING_CONFIG["api_model"],
             )
             ef(["test"])
             self._embed_method = "api"
             log.info("Embedding: API 模式")
-            return ef
+            return _APIEmbedder(ef)
         except Exception as e1:
             log.warning(f"Embedding API 不可用: {e1}")
 
@@ -168,6 +169,19 @@ def _nuke_chroma_db(persist_dir: str):
                 shutil.rmtree(item_path)
         except Exception:
             pass
+
+
+class _APIEmbedder:
+    """OpenAI 兼容 API embedding 适配器：统一 encode() 接口，兼容本地模型与关键词 fallback"""
+
+    def __init__(self, ef):
+        self._ef = ef
+
+    def encode(self, texts):
+        import numpy as np
+        if isinstance(texts, str):
+            texts = [texts]
+        return np.array(self._ef(texts), dtype=np.float32)
 
 
 class _KeywordEmbedder:
