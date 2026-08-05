@@ -49,7 +49,7 @@ from knowledge.document_loader import load_faq_documents
 
 docs = load_faq_documents(KNOWLEDGE_DATA_DIR)
 print(f"  找到 {len(docs)} 篇 FAQ 文档")
-for cat in ["教务", "生活", "办事", "科研与升学"]:
+for cat in ["办事", "就业", "教务", "生活", "科研与升学"]:
     count = sum(1 for d in docs if d["metadata"].get("category") == cat)
     print(f"    {cat}: {count} 篇")
 

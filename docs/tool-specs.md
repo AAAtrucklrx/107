@@ -43,13 +43,13 @@ query: str  # 用户自然语言问题，如 "学生证怎么补办"
 **数据流**：
 ```
 用户问题 → FAQVectorStore.search(query)
-         → ChromaDB 向量检索（12篇 Markdown 文档）
+         → ChromaDB 向量检索（50 篇 Markdown 文档，5 分类）
          → 返回 top-K 结果 + 相似度分数
 ```
 
 **已知问题**：
-- Embedding 使用关键词 fallback 模式（API 不可用），检索质量有限
-- `top_score` 阈值 `FAQ_SIMILARITY_THRESHOLD=0.6` 在 fallback 模式下偏低
+- Embedding 三层降级：校内 API（`qwen3-embedding`，实测可用，4096 维）→ 本地 `shibing624/text2vec-base-chinese` → 关键词 fallback
+- 相似度阈值按模式校准（`THRESHOLD_MAP`：api=0.42 / local=0.35 / fallback=0.25），`FAQ_SIMILARITY_THRESHOLD=0.6` 仅作未知模式兜底
 
 **Plan-and-Execute 兼容性**：
 - Executor 可直接调用，无需占位符依赖
@@ -175,11 +175,13 @@ time_desc: str   # 自然语言时间，如 "今天下午"、"周二上午"
 }
 ```
 
-**当前实现问题**：
-1. 教室列表从 `student_courses` 的 location 字段提取 → 只有种子数据的5间教室
-2. 手动补充4间模拟教室（`f"{building}3A103"` 等）
+**降级路径说明（仅 catalog API 不可用时触发）**：
+1. 教室列表从 `student_courses` 的 location 字段提取 → 只有种子数据的教室
+2. 手动补充 4 间模拟教室（`f"{building}3A103"` 等）
 3. 空闲判断用 `i % 3 != 0` 硬编码，不真实
 4. `capacity` 用 `80 + i*20` 计算，不真实
+
+> 主路径已接入 catalog 真实教室占用 API（B3 已实施）；上述模拟逻辑仅存在于 fallback 分支，且返回结果带 `source="fallback"` 与 `message` 来源提示
 
 **★ B3 升级方案**：
 ```
@@ -464,7 +466,7 @@ fallback: SELECT * FROM courses WHERE name LIKE ? OR teacher LIKE ?
 | 项目 | 内容 |
 |------|------|
 | **所属模块** | `tools/advisor_tools.py` |
-| **当前状态** | ✅ 可用（基于种子数据 10 门课） |
+| **当前状态** | ✅ 可用（基于种子数据 8 门课） |
 | **升级计划** | ★ B6 — 扩充评课数据后自动提升推荐质量 |
 
 **功能**：根据用户偏好推荐课程。
