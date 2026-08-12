@@ -4,9 +4,8 @@ Streamlit 主应用入口
 
 运行: streamlit run app.py
 
-v2.0: 支持 Plan-and-Execute 架构
-- 简单查询 → Router → 子Agent → Tool → 回答
-- 复杂查询 → Router → Planner → Executor → 多步Tool → 综合回答
+v3.0: 统一 QA LangGraph 架构
+- 消息处理 → run_qa: 意图识别 → 工具调用 → 综合回答
 """
 
 import sys
@@ -17,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import streamlit as st
 
-from config import (DATABASE_PATH, SCHEMA_PATH, KNOWLEDGE_DATA_DIR, DEMO_STUDENT,
+from config import (DATABASE_PATH, SCHEMA_PATH, KNOWLEDGE_DATA_DIR,
                    CHROMA_PERSIST_DIR, YOUNG_TOKEN, YOUNG_PAGE_SIZE)
 from database.seed_data import SEED_SQL
 from services.service_container import ServiceContainer
@@ -37,131 +36,31 @@ def init_services() -> ServiceContainer:
     return container
 
 
-def get_agent(agent_type: str):
-    """根据路由结果创建对应的子 Agent（按类型缓存）"""
-    if agent_type not in st.session_state:
-        if agent_type == "faq":
-            from agents.faq_agent import create_faq_agent
-            st.session_state[agent_type] = create_faq_agent()
-        elif agent_type == "course":
-            from agents.course_agent import create_course_agent
-            st.session_state[agent_type] = create_course_agent()
-        elif agent_type == "advisor":
-            from agents.advisor_agent import create_advisor_agent
-            st.session_state[agent_type] = create_advisor_agent()
-        elif agent_type == "schedule":
-            from agents.schedule_agent import create_schedule_agent
-            st.session_state[agent_type] = create_schedule_agent()
-    return st.session_state.get(agent_type)
-
-
-def get_context():
-    """获取会话级 Context（跨多次查询保持）"""
-    from agents.context import Context
-    if "_context" not in st.session_state:
-        st.session_state["_context"] = Context()
-    return st.session_state["_context"]
-
-
 def process_query(user_input: str, selected_module: str) -> str:
     """
-    处理用户查询的核心流程（v2.1）：
-    1. Router 判断路由 + 复杂度
-    2. simple → 子Agent直接处理
-    3. complex → Planner生成计划 → Executor逐步执行
+    处理用户查询的核心流程（v3.0）：
+    统一 QA LangGraph — 意图识别 → 工具调用 → 综合回答
     """
-    from agents.router import route_query
-    from agents.factory import invoke_agent
+    student_id = ""
+    user_profile = {"logged_in": False}
 
-    route = route_query(user_input, selected_module)
-    agent_type = route.get("agent", "faq")
-    complexity = route.get("complexity", "simple")
-    rewritten = route.get("rewritten_query", user_input)
-
-    student_id = DEMO_STUDENT["id"]
-
-    # ── 登录用户优先：用真实学号替换演示账号 ──
     user = st.session_state.get("user")
     if user:
         student_id = user["id"]
+        user_profile = {
+            "name": user.get("name", ""),
+            "major": user.get("major", ""),
+            "grade": user.get("grade", ""),
+            "logged_in": True,
+        }
 
-    # ── 复杂查询：Plan-and-Execute ──
-    if agent_type == "planner" or complexity == "complex":
-        return _process_complex(rewritten, student_id)
-
-    # ── 简单查询：直接路由到子Agent ──
-    full_query = f"当前学生ID: {student_id}\n"
-    if user:
-        full_query += f"学生姓名: {user.get('name', '')}\n"
-        full_query += f"登录状态: 已连接教务系统，可以查询个人课表、成绩等\n"
-    else:
-        full_query += f"登录状态: 未登录，仅可查询公共数据\n"
-    full_query += f"\n{rewritten}"
-
-    try:
-        agent = get_agent(agent_type)
-        if agent is None:
-            log.warning(f"Agent '{agent_type}' 未找到，降级到 FAQ")
-            agent = get_agent("faq")
-    except Exception as e:
-        log.error(f"Agent 初始化失败: {e}")
-        return f"❌ Agent 初始化失败: {str(e)}\n\n请检查 LLM API 配置（config.py）是否正确。"
-
-    try:
-        return invoke_agent(agent, full_query)
-    except Exception as e:
-        error_msg = str(e)
-        log.error(f"处理请求失败: {error_msg}")
-        if "api_key" in error_msg.lower() or "auth" in error_msg.lower():
-            return f"""⚠️ LLM API 认证失败。请检查：
-
-1. 在 `config.py` 中设置正确的 `api_key`
-2. 确认校内 LLM 平台 (llm.ustc.edu.cn) 的 API 密钥有效
-3. 设置环境变量: `export LLM_API_KEY="your-key"`
-
-错误详情: {error_msg}"""
-        return f"❌ 处理请求时出错: {error_msg}\n\n请稍后重试。"
-
-
-def _process_complex(user_query: str, student_id: str) -> str:
-    """
-    Plan-and-Execute 流程：
-    1. Planner 生成执行计划
-    2. Executor 逐步执行
-    3. 返回综合回答
-    """
-    from agents.planner import create_plan, validate_plan
-    from agents.executor import Executor
-
-    try:
-        # 1. 生成计划
-        plan = create_plan(user_query, student_id)
-
-        # 2. 验证计划
-        issues = validate_plan(plan)
-        if issues:
-            log.warning(f"计划验证未通过: {issues}，降级到 FAQ")
-            # 降级到 FAQ
-            from agents.factory import invoke_agent
-            agent = get_agent("faq")
-            if agent:
-                return invoke_agent(agent, f"学生ID: {student_id}\n\n{user_query}")
-            return "抱歉，我暂时无法处理这个复杂问题，请尝试拆分后逐个提问。"
-
-        # 3. 执行计划
-        context = get_context()
-        executor = Executor()
-        answer = executor.execute(plan, context)
-
-        # 4. 记录对话历史
-        context.add_chat_history("user", user_query)
-        context.add_chat_history("assistant", answer)
-
-        return answer
-
-    except Exception as e:
-        log.error(f"Plan-and-Execute 失败: {e}")
-        return f"❌ 处理复杂查询时出错: {str(e)}\n\n请尝试将问题拆分为更简单的部分逐个提问。"
+    from agents.qa.graph import run_qa
+    result = run_qa(user_input, module_signal=selected_module,
+                    student_id=student_id, user_profile=user_profile)
+    if result.get("error"):
+        log.warning(f"QA 流程提示: {result['error']}")
+    return (result.get("answer") or result.get("clarify_question")
+            or "抱歉，我暂时无法回答这个问题。")
 
 
 def maybe_show_activity_recommendation():
@@ -272,9 +171,9 @@ def main():
             ]:
                 st.caption(f"  • {example}")
 
-        # v2.0 复杂查询示例
+        # 复杂查询示例
         st.markdown("---")
-        st.markdown("**🧠 试试复杂查询（Plan-and-Execute）**")
+        st.markdown("**🧠 试试复杂查询**")
         for example in [
             "帮我查一下GPA，然后根据我的成绩推荐适合的课程",
             "我的课表怎么样，帮我分析一下选课策略",
@@ -288,9 +187,9 @@ def main():
     st.markdown("---")
     user = st.session_state.get("user")
     if user:
-        status_text = f"知识库: {faq_count} 篇文档 | 已登录: {user['name']} ({user['id']}) | 架构: Plan-and-Execute v2.1"
+        status_text = f"知识库: {faq_count} 篇文档 | 已登录: {user['name']} ({user['id']}) | 架构: QA LangGraph v3.0"
     else:
-        status_text = f"知识库: {faq_count} 篇文档 | 未登录（演示学生: {DEMO_STUDENT['id']}） | 架构: Plan-and-Execute v2.1"
+        status_text = f"知识库: {faq_count} 篇文档 | 未登录 | 架构: QA LangGraph v3.0"
     st.caption(status_text)
 
 

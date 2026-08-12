@@ -2,7 +2,7 @@
 
 > 107 杯比赛项目 · 科大校园场景的 AI 智能体助手
 
-小蜗是一个面向中国科学技术大学师生的校园智能助手，基于科大 LLM 平台（`api.llm.ustc.edu.cn`）构建，采用 **Plan-and-Execute** 智能体架构，支持知识库问答与教务数据实时查询。
+小蜗是一个面向中国科学技术大学师生的校园智能助手，基于科大 LLM 平台（`api.llm.ustc.edu.cn`）构建，采用**统一 QA LangGraph** 智能体架构（意图分类 + 混合召回双通道 → LLM 自主决策循环 → 工具执行 → 统一回答），支持知识库问答与教务数据实时查询。
 
 ## ✨ 功能
 
@@ -18,7 +18,7 @@
 ## 🛠 技术栈
 
 - **前端/框架**: Streamlit（Web UI）
-- **智能体**: LangChain · Plan-and-Execute 架构（Router → Planner → Executor → Tools）
+- **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮 → act → compose）
 - **知识库**: ChromaDB 向量库 + SentenceTransformer / qwen3-embedding
 - **数据**: SQLite（`database/xiaowo.db`，含 schema 与 seed）
 - **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、科大 LLM 平台
@@ -41,14 +41,14 @@ python init_check.py
 streamlit run app.py
 ```
 
-访问 `http://localhost:8501` 即可使用（演示学生 `PB20240001` 未登录可体验演示数据）。
+访问 `http://localhost:8501` 即可使用（未登录可体验知识库问答；课表/成绩/日程等个人数据需 CAS 登录后使用）。
 
 > 注：应用内 CAS 登录跳转依赖 CAS service 白名单，本地开发使用 `http://localhost:8501`，部署后需配置实际域名。
 
 ## 📁 项目结构
 
 ```
-├── agents/          # 智能体（faq/course/advisor/schedule/planner/executor/router）
+├── agents/          # 智能体（qa/ 统一问答图 + 旧 router/planner/executor 等保留）
 ├── tools/           # 工具层（课程/成绩/课表/教室/日程/知识库检索）
 ├── services/        # 外部服务（CAS 登录、jw API、校团委 young 平台）
 ├── knowledge/       # 知识库文档（data/ 50 篇 md）与向量库
@@ -66,5 +66,5 @@ streamlit run app.py
 
 ## ⚖️ 说明
 
-- 课程/课表/考试数据基于真实 catalog 抓取；成绩与评课在登录前为演示数据，登录后由 jw API 实时拉取
+- 课程/课表/考试数据基于真实 catalog 抓取；成绩/课表/日程等个人数据登录后由 jw API 实时拉取，未登录时相关查询返回登录提示
 - 敏感配置（`.env`）不进入版本库，密钥通过环境变量注入

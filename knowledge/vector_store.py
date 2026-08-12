@@ -2,10 +2,11 @@
 小蜗 — 向量存储管理模块
 基于 ChromaDB 的 FAQ 知识库检索
 支持: OpenAI兼容API Embedding / 本地 SentenceTransformer / 关键词fallback
+检索: 向量 + BM25 混合检索（RRF 融合）
 """
 
+import math
 import os
-import sqlite3
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from config import CHROMA_PERSIST_DIR, EMBEDDING_CONFIG, FAQ_TOP_K, FAQ_SIMILARITY_THRESHOLD, LLM_CONFIG
@@ -17,6 +18,8 @@ log = get_logger("xiaowo.vector")
 # api 模式按 qwen3-embedding(4096维)实测校准：相关命中 0.45+，不相关 ≤0.38
 THRESHOLD_MAP = {"api": 0.42, "local": 0.35, "fallback": 0.25}
 
+RRF_K = 60
+
 
 class FAQVectorStore:
     """FAQ 知识库向量存储"""
@@ -27,6 +30,8 @@ class FAQVectorStore:
         self.collection_name = "faq_knowledge"
         self._embedding_model = None
         self._embed_method = None
+        self._bm25_index = None
+        self._bm25_ids: list[str] = []
 
         try:
             self.client = chromadb.PersistentClient(
@@ -97,7 +102,13 @@ class FAQVectorStore:
     def add_documents(self, documents: list[dict]):
         if not documents:
             return
-        ids = [d["id"] for d in documents]
+        ids = []
+        for d in documents:
+            meta = d["metadata"] or {}
+            if "chunk_index" in meta:
+                ids.append(f"{d['id']}_chunk{meta['chunk_index']}")
+            else:
+                ids.append(d["id"])
         contents = [d["content"] for d in documents]
         metadatas = [d["metadata"] for d in documents]
         embeddings = self.embedding_model.encode(contents).tolist()
@@ -105,26 +116,58 @@ class FAQVectorStore:
             ids=ids, embeddings=embeddings,
             documents=contents, metadatas=metadatas,
         )
+        self._invalidate_bm25()
 
     def search(self, query: str, top_k: int = FAQ_TOP_K) -> dict:
         if not query.strip() or self.collection.count() == 0:
             return {"found": False, "results": [], "top_score": 0.0}
 
+        count = self.collection.count()
+        pool = min(max(top_k * 3, top_k + 5), count)
+
+        # 1) 向量候选
         query_embedding = self.embedding_model.encode([query]).tolist()
         raw = self.collection.query(
             query_embeddings=query_embedding,
-            n_results=min(top_k, self.collection.count()),
+            n_results=pool,
         )
+        vec_ids: list[str] = []
+        vec_scores: dict[str, float] = {}
+        if raw["ids"] and raw["ids"][0]:
+            for i in range(len(raw["ids"][0])):
+                doc_id = raw["ids"][0][i]
+                vec_ids.append(doc_id)
+                vec_scores[doc_id] = 1 - raw["distances"][0][i]
+
+        # 2) BM25 候选
+        bm_ranking: list[str] = []
+        try:
+            bm25 = self._get_bm25_index()
+            query_tokens = _tokenize_cjk(query)
+            if bm25 is not None and query_tokens:
+                scored = list(zip(self._bm25_ids, bm25.get_scores(query_tokens)))
+                scored.sort(key=lambda kv: -kv[1])
+                bm_ranking = [doc_id for doc_id, s in scored[:pool] if s > 0]
+        except Exception as e:
+            log.warning(f"BM25 检索失败，仅用向量检索: {e}")
+
+        # 3) RRF 融合（k=60），以融合排名决定最终顺序
+        fused = _rrf_merge([vec_ids, bm_ranking], k=RRF_K)
+        ranked_ids = [doc_id for doc_id, _ in
+                      sorted(fused.items(), key=lambda kv: -kv[1])[:top_k]]
 
         results = []
         top_score = 0.0
-        if raw["ids"] and raw["ids"][0]:
-            for i in range(len(raw["ids"][0])):
-                score = 1 - raw["distances"][0][i]
+        if ranked_ids:
+            fetched = self.collection.get(ids=ranked_ids)
+            id_to_doc = dict(zip(fetched["ids"], fetched["documents"]))
+            id_to_meta = dict(zip(fetched["ids"], fetched["metadatas"])) if fetched["metadatas"] else {}
+            for doc_id in ranked_ids:
+                score = vec_scores.get(doc_id, 0.0)
                 top_score = max(top_score, score)
-                meta = raw["metadatas"][0][i] if raw["metadatas"] else {}
+                meta = id_to_meta.get(doc_id) or {}
                 results.append({
-                    "content": raw["documents"][0][i],
+                    "content": id_to_doc.get(doc_id, ""),
                     "score": round(score, 4),
                     "source": meta.get("source", "未知来源"),
                     "category": meta.get("category", "其他"),
@@ -155,6 +198,101 @@ class FAQVectorStore:
     def clear(self):
         self.client.delete_collection(name=self.collection_name)
         self._init_collection()
+        self._invalidate_bm25()
+
+    # ── BM25 混合检索支持 ──────────────────────────────
+
+    def _invalidate_bm25(self):
+        self._bm25_index = None
+        self._bm25_ids = []
+
+    def _get_bm25_index(self):
+        """构建/复用 BM25 索引（优先 rank_bm25，失败用内置实现）"""
+        if self._bm25_index is None:
+            data = self.collection.get()
+            self._bm25_ids = data["ids"]
+            corpus = [_tokenize_cjk(doc or "") for doc in data["documents"]]
+            try:
+                from rank_bm25 import BM25Okapi
+                self._bm25_index = BM25Okapi(corpus)
+            except ImportError:
+                log.info("rank_bm25 不可用，使用内置 BM25")
+                self._bm25_index = _BuiltinBM25(corpus)
+        return self._bm25_index
+
+
+def _rrf_merge(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
+    """Reciprocal Rank Fusion：各检索器排名按 1/(k+rank) 累加融合"""
+    scores: dict[str, float] = {}
+    for ranking in rankings:
+        for rank, doc_id in enumerate(ranking):
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+    return scores
+
+
+def _tokenize_cjk(text: str) -> list[str]:
+    """中文检索词切分：单字 + CJK bigram；非中文字母数字按词保留"""
+    tokens = []
+    prev = ""
+    word = ""
+    for ch in text:
+        if "\u4e00" <= ch <= "\u9fff":
+            if word:
+                tokens.append(word.lower())
+                word = ""
+            if prev:
+                tokens.append(prev + ch)
+            prev = ch
+            tokens.append(ch)
+        else:
+            prev = ""
+            if ch.isalnum():
+                word += ch
+            else:
+                if word:
+                    tokens.append(word.lower())
+                    word = ""
+    if word:
+        tokens.append(word.lower())
+    return tokens
+
+
+class _BuiltinBM25:
+    """内置 BM25 兜底实现（接口兼容 rank_bm25.BM25Okapi）"""
+
+    def __init__(self, corpus: list[list[str]], k1: float = 1.5, b: float = 0.75):
+        self.k1 = k1
+        self.b = b
+        self.corpus_size = len(corpus)
+        self.avgdl = sum(len(doc) for doc in corpus) / self.corpus_size if corpus else 0.0
+        self.doc_freqs = []
+        self.doc_len = []
+        df: dict[str, int] = {}
+        for doc in corpus:
+            freq = {}
+            for term in doc:
+                freq[term] = freq.get(term, 0) + 1
+                df[term] = df.get(term, 0) + 1
+            self.doc_freqs.append(freq)
+            self.doc_len.append(len(doc))
+        # +1 平滑保证 idf 恒正，避免负 idf 惩罚高频词
+        self.idf = {term: math.log(1 + (self.corpus_size - n + 0.5) / (n + 0.5))
+                    for term, n in df.items()}
+
+    def get_scores(self, query: list[str]) -> list[float]:
+        scores = []
+        for i in range(self.corpus_size):
+            score = 0.0
+            doc_freq = self.doc_freqs[i]
+            doc_len = self.doc_len[i]
+            for term in query:
+                if term not in self.idf or term not in doc_freq:
+                    continue
+                f = doc_freq[term]
+                score += (self.idf[term] * f * (self.k1 + 1)
+                          / (f + self.k1 * (1 - self.b + self.b * doc_len / self.avgdl)))
+            scores.append(score)
+        return scores
 
 
 def _nuke_chroma_db(persist_dir: str):
