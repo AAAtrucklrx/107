@@ -59,3 +59,40 @@ python -m scripts.dev_pipeline status
 
 > 说明：流水线的计划/执行/测试/报告/决策各节点由 `scripts/dev_pipeline/` 模块自动编排。
 > 本文仅说明如何用 Codex 执行器触发与查看运行结果，不涉及具体业务逻辑。
+
+## Qoder Executor
+
+qoder 执行器使用 Qoder CLI（`qodercli.exe`）以非交互模式按流水线计划执行代码修改，
+适合与 Qoder 生态（如 `.qoder\canvases\` Canvas 报告）配套使用。
+启用方式与 Codex 相同，仅需将 `--executor` 改为 `qoder`：
+
+```powershell
+cd F:\小蜗
+python -m scripts.dev_pipeline run "开发任务描述" --executor qoder --rounds 3
+```
+
+### 底层 CLI 调用
+
+流水线以非交互模式调用 `qodercli.exe`，等价命令为：
+
+```powershell
+qodercli.exe -p "开发任务描述" --output-format text --permission-mode accept_edits --cwd F:\小蜗
+```
+
+- `-p`：非交互模式，直接执行提示词后退出
+- `--output-format text`：以纯文本格式输出结果
+- `--permission-mode accept_edits`：自动接受文件编辑权限
+- `--cwd`：指定项目工作目录
+
+### 环境变量
+
+- `QODER_CLI_BIN`：覆盖 Qoder CLI 可执行文件路径，默认为
+  `C:\Users\Richelieu\.qoder\bin\qodercli\qodercli.exe`（见 `scripts/dev_pipeline/config.py`）
+
+### 执行器选择建议
+
+| 执行器 | CLI | 权限模式 | 适用场景 |
+|--------|-----|----------|----------|
+| claude | `claude.exe`（默认执行器） | `acceptEdits` | 通用场景，Claude Code CLI |
+| codex | `codex.exe` | danger-full-access | 全权限代码修改 |
+| qoder | `qodercli.exe` | `accept_edits` | 与 Qoder 生态（Canvas 报告）配套使用 |
