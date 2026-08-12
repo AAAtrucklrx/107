@@ -86,39 +86,6 @@ for i, c in enumerate(selected):
     )
 lines.append('')
 
-# course_reviews
-lines.append('-- 评课社区数据')
-reviews = [
-    ("CS2001", "机器学习导论", "王教授", 8.7, 6.5, 5.0, "给分好", "人工智能,机器学习", 45, "内容充实，讲课清晰"),
-    ("CS2002", "算法设计与分析", "李教授", 8.5, 7.2, 6.0, "给分一般", "算法,数据结构", 38, "核心课，难度较高但收获大"),
-    ("CS2003", "操作系统", "周教授", 7.8, 7.5, 7.0, "给分一般", "系统,C语言", 52, "硬核课程，实验量大"),
-    ("CS2004", "数据库系统", "赵教授", 8.2, 5.5, 4.5, "给分好", "数据库,SQL", 30, "实用性强，讲课清楚"),
-    ("MATH2001", "概率论与数理统计", "孙教授", 8.9, 6.0, 5.5, "给分好", "数学,统计", 60, "基础课，讲得很好"),
-    ("ENG2001", "学术英语写作", "陈教授", 7.5, 4.5, 5.0, "给分好", "英语,写作", 22, "对写论文有帮助"),
-    ("PHYS2001", "大学物理B", "张教授", 8.0, 7.8, 7.5, "给分一般", "物理,实验", 35, "难度不低但讲得清楚"),
-    ("BIO2001", "生命科学导论", "杨教授", 9.0, 3.5, 3.0, "给分好", "生物,通识", 28, "非常有趣的通识课"),
-]
-for i, r in enumerate(reviews):
-    lines.append(
-        f"INSERT OR REPLACE INTO course_reviews (id, course_code, course_name, teacher, rating, difficulty, workload, give_score, tags, review_count, review_summary) "
-        f"VALUES ({i+1}, '{esc(r[0])}', '{esc(r[1])}', '{esc(r[2])}', {r[3]}, {r[4]}, {r[5]}, '{esc(r[6])}', '{esc(r[7])}', {r[8]}, '{esc(r[9])}');"
-    )
-lines.append('')
-
-# teacher_reviews
-lines.append('-- 教师评价')
-teachers = [
-    ("李教授", "数学分析B1,数学分析B2", 8.5, "讲课清晰、板书详细", "讲解透彻", "进度快", "讲课质量高，数学基础扎实", 120),
-    ("王教授", "机器学习导论,深度学习", 8.8, "善于结合实例", "科研能力强", "实验要求高", "AI课程紧跟前沿", 85),
-    ("张教授", "大学物理B,力学", 8.0, "讲课细致", "态度认真", "课程偏难", "物理课难度不低但讲得清楚", 70),
-]
-for i, t in enumerate(teachers):
-    lines.append(
-        f"INSERT OR REPLACE INTO teacher_reviews (id, name, courses, avg_rating, teaching_style, strengths, weaknesses, review_summary, review_count) "
-        f"VALUES ({i+1}, '{esc(t[0])}', '{esc(t[1])}', {t[2]}, '{esc(t[3])}', '{esc(t[4])}', '{esc(t[5])}', '{esc(t[6])}', {t[7]});"
-    )
-lines.append('')
-
 lines.append('"""')
 
 content = "\n".join(lines) + "\n"
