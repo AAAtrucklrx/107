@@ -64,6 +64,28 @@ streamlit run app.py
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 
+## ✅ 选课推荐全链路验收
+
+选课推荐链路（用户提问 → 意图识别 → 工具推荐 → 综合回答）验收命令与结果（2026-08-13 v3）：
+
+| 步骤 | 命令 | 结果 |
+|------|------|------|
+| 数据完整性校验 | `python scripts/check_course_db.py` | 9/9 通过（2351 门课程 / 44403 条评论 / 2981 位教师，无孤儿引用、无重复学期）；干净环境重建数据库行数完全一致 |
+| 工具层冒烟测试 | `python scripts/verify_tools.py` | 17/17 断言通过（推荐排序 / 低 workload 筛选 / 教师对比，结果含来源标识） |
+| 智能体链路冒烟测试 | `python scripts/advisor_smoke.py` | 5/5 通过（推荐 / 低 workload / 教师对比 / 澄清 / FAQ 均正确路由） |
+| 浏览器端到端测试 | `python scripts/browser_e2e.py` | 6 场景全部通过（首页 + 5 类提问），截图见 `docs/e2e_v3_*.png` |
+| 初始化回归 | `python init_check.py` | 数据库 + 知识库（220 篇文档）初始化正常 |
+| 历史修复回归 | `python scripts/test_fixes.py` | 23/23 通过（排序 / 多师并列 / 评论去重 / 画像理由 / 数据对账） |
+| 流水线验收 | `python -m scripts.dev_pipeline run "选课推荐全链路验收" --executor qoder` | PASS（1 轮），Canvas 报告见 `.qoder/canvases/` |
+
+E2E 覆盖场景：首页、Q1 课程推荐（含评课参考）、Q2 低 workload 筛选、Q3 教师对比、Q4 澄清追问（信息不足时进入 clarify 分支）、Q5 FAQ 兜底（回答带《来源》标注）。评课数据来自 icourse.club 真实评论（`data/course_data.db`），教务模块降级数据均带"实时 / 本地缓存 / 模拟数据"来源标识。
+
+### 已知限制
+
+- 评课数据为 icourse.club 抓取快照，新开课程可能暂无评论；样本量过少的课程/教师评分仅供参考（推荐画像会附"样本较少"提示）
+- 课程推荐依赖科大 LLM 平台进行意图分类与回答生成，平台不可用时无法出推荐结果
+- 教师对比中样本量差异较大（1~553 条），均分排序存在小样本偏差，建议结合评论原文判断
+
 ## ⚖️ 说明
 
 - 课程/课表/考试数据基于真实 catalog 抓取；成绩/课表/日程等个人数据登录后由 jw API 实时拉取，未登录时相关查询返回登录提示

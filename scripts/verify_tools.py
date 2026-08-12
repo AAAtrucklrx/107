@@ -1,0 +1,82 @@
+# -*- coding: utf-8 -*-
+"""工具层单测：推荐排序 / 关键词过滤 / 低 workload 偏好 / 教师对比 / 空结果边界
+
+用法: python scripts/tmp_verify_tools.py
+退出码: 0=全部断言通过, 1=存在失败项
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.advisor_tools import analyze_teacher, compare_courses, recommend_courses
+
+PASS = 0
+
+
+def ok(name: str, cond: bool, detail: str = "") -> None:
+    global PASS
+    if cond:
+        PASS += 1
+        print(f"[PASS] {name}" + (f" — {detail}" if detail else ""))
+    else:
+        print(f"[FAIL] {name}" + (f" — {detail}" if detail else ""))
+        raise SystemExit(1)
+
+
+# 1. 推荐排序: rating_avg 降序
+r = recommend_courses.invoke({
+    "profile": {"major": "计算机科学", "grade": "大二",
+                "interests": ["人工智能"], "preference_type": "easy_grade", "max_results": 5}})
+recs = r["recommendations"]
+ok("推荐非空", len(recs) > 0, f"{len(recs)} 门, 候选 {r['total_candidates']}")
+avgs = [c["rating_avg"] for c in recs]
+ok("均分降序排序", avgs == sorted(avgs, reverse=True), f"{avgs}")
+ok("推荐含关键字段", all(c.get("name") and c.get("teachers") is not None
+                        and c.get("rating_avg") and c.get("dims") for c in recs),
+   f"首课: {recs[0]['name']} | {recs[0]['rating_avg']}分·{recs[0]['rate_count']}条")
+
+# 2. 关键词过滤: 结果应全部命中关键词
+r_kw = recommend_courses.invoke({"profile": {"max_results": 10}, "keywords": ["数学分析"]})
+kw_recs = r_kw["recommendations"]
+ok("关键词过滤非空", len(kw_recs) > 0, f"{len(kw_recs)} 门")
+ok("关键词全部命中", all("数学分析" in c["name"] for c in kw_recs),
+   [c["name"] for c in kw_recs][:5])
+
+# 3. 低 workload 偏好: "任务少" → easy_grade（冲分保绩）
+r_lw = recommend_courses.invoke({
+    "profile": {"major": "计算机科学", "grade": "大二", "preference": "任务少", "max_results": 3}})
+ok("任务少→easy_grade 映射", r_lw.get("profile_note", {}).get("name") == "冲分保绩",
+   str(r_lw.get("profile_note")))
+lw_hw = [c["dims"]["avg"].get("作业") for c in r_lw["recommendations"]]
+ok("低 workload 推荐含作业维度", all(h is not None for h in lw_hw), f"作业均分={lw_hw}")
+
+# 4. 教师对比: 课程模式返回多师 + 各师评分
+ta = analyze_teacher.invoke({"course": "数学分析(B1)"})
+teachers = ta.get("teachers") or []
+ok("课程模式返回教师", len(teachers) > 0, f"{len(teachers)} 位")
+ok("教师含均分/样本量", all(t.get("rating_avg") is not None and t.get("rate_count") is not None
+                          for t in teachers),
+   [(t["name"], t["rating_avg"], t["rate_count"]) for t in teachers])
+ok("教师均分降序", [t["rating_avg"] for t in teachers] ==
+   sorted([t["rating_avg"] for t in teachers], reverse=True))
+ok("课程模式含评论样本", len(ta.get("reviews_sample") or []) > 0,
+   f"{len(ta.get('reviews_sample') or [])} 条")
+ok("样本评论带教师标注", all(rv.get("teacher") for rv in (ta.get("reviews_sample") or [])[:3]))
+
+# 4b. 教师模式 + 课程对比
+tp = analyze_teacher.invoke({"teacher_name": "邵帅"})
+ok("教师模式返回课程", len(tp.get("courses") or []) > 0, f"{len(tp.get('courses') or [])} 门课")
+cmp_r = compare_courses.invoke({"course_a": "数学分析(B1)", "course_b": "线性代数(B1)"})
+ok("课程对比返回 winner", bool(cmp_r.get("comparison", {}).get("rating_winner")),
+   f"{cmp_r['comparison']['rating_winner']} (diff {cmp_r['comparison']['rating_diff']})")
+
+# 5. 空结果边界: 不存在的课程/教师 → error; 过窄关键词 → 回退全量
+cmp_err = compare_courses.invoke({"course_a": "不存在的课程XYZ123", "course_b": "另一个不存在的课ABC"})
+ok("对比不存在的课程返回 error", "error" in cmp_err, cmp_err.get("error", ""))
+ok("教师不存在返回 error", "error" in analyze_teacher.invoke({"teacher_name": "不存在老师XYZ123"}))
+r_emp = recommend_courses.invoke({"profile": {"max_results": 3}, "keywords": ["绝对不存在的课程词XYZ"]})
+ok("过窄关键词回退全量", r_emp.get("keyword_fallback") is True and len(r_emp["recommendations"]) > 0,
+   f"fallback={r_emp.get('keyword_fallback')}, {len(r_emp['recommendations'])} 门")
+
+print(f"\n结果: {PASS}/{PASS} 断言通过")

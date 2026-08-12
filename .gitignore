@@ -3,6 +3,10 @@
 
 # 运行态数据库
 database/*.db
+data/*.db
+
+# 爬虫原始数据（可重建）
+scripts/data/
 
 # 向量库持久化目录
 knowledge/chroma_db/

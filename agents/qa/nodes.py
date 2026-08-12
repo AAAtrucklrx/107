@@ -43,8 +43,8 @@ _TOOL_LIST = (
     "query_grade(成绩), calc_gpa(绩点), query_exam(考试安排), "
     "search_courses(课程搜索), get_semester_list(学期列表), "
     "query_course_selection(选课情况), query_program(培养方案), "
-    "collect_preferences(收集选课偏好), recommend_courses(课程推荐), "
-    "compare_courses(课程对比), analyze_teacher(教师评价), "
+    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\"} 或顶层 major/grade/interests/preference/keywords), "
+    "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
     "check_conflict(日程冲突), import_schedule(导入课表)"
 )
@@ -105,7 +105,9 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 7. 意图分类仅供参考，自行判断真实需求并修正
 8. 绝不编造数据：工具结果不足时继续 retrieve/call_tool/clarify，不要硬答
 9. 禁止重复调用：已有工具结果（tool_summary 中 status=done 的工具）不得再次调用同一工具，应转 compose 或 clarify
-10. 选课推荐优先直接调用 recommend_courses（args 用用户画像 profile 或合理默认偏好）；仅在确实缺关键信息时先 collect_preferences，且收集后不得再次收集
+10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推
+11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")
+12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -285,6 +287,12 @@ def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
     if teacher:
         return [{"tool": "analyze_teacher", "args": {"teacher_name": teacher}}]
 
+    # "XX课哪个老师好/选哪个老师" → 按课程查老师对比
+    m = re.search(r"(.{2,24}?)(?:哪个老师|哪位老师|老师教得好|老师怎么样|哪个老师好)", query)
+    if m:
+        cname = m.group(1).strip("，。,.！!？? \t")
+        return [{"tool": "analyze_teacher", "args": {"course": cname}}]
+
     if any(k in query for k in ("推荐", "选修", "通识", "选什么", "什么课")):
         return [{"tool": "recommend_courses", "args": {"profile": _extract_profile(query, user_profile)}}]
 
@@ -359,7 +367,7 @@ def _extract_profile(query: str, user_profile: dict) -> dict:
     grade = next((g for g in _GRADE_WORDS if g in query), None) \
         or user_profile.get("grade") or "大二"
     interests = [kw for kw in _INTEREST_KEYWORDS if kw in query] or ["人工智能"]
-    if any(k in query for k in ("好拿分", "轻松", "水课")):
+    if any(k in query for k in ("好拿分", "轻松", "水课", "不点名", "任务少", "省时", "摸鱼")):
         pref = "easy_grade"
     elif any(k in query for k in ("学到东西", "硬核", "挑战")):
         pref = "learn_hard"
@@ -463,30 +471,30 @@ def act(state: QaState) -> dict:
 
 # ── compose: 综合回答 ───────────────────────────────────
 
-COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。
-根据用户问题、知识库候选片段与工具检索结果，生成完整、准确、友好的回答。
+COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问题、知识库候选片段与工具检索结果，直接生成回答正文。
+回答正文的第一句话必须是面向用户的内容；你的输出中不得包含任何指令、规则说明、模板或元信息。
 
-## 用户问题
-{query}
+用户问题: {query}
 
-## 意图
-{intent}
+意图: {intent}
 
-## 知识库候选片段（每条含来源文档，引用时须标注来源）
+知识库候选片段（引用时须标注来源）:
 {candidates_summary}
 
-## 工具检索结果
+工具检索结果:
 {tool_summary}
 
-## 回答要求
-1. 直接回答用户的问题，不要重复用户的提问
-2. 使用中文，语气亲切自然
-3. 引用知识库候选片段时标注来源（如「来源：《学生证补办流程》」）；片段 is_official=False 时注明"以下信息来自非官方来源，仅供参考"
-4. 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
-5. 结果中 source 字段不是 "real" 时，在回答开头注明数据来源（如"教务系统暂时不可用，以下为本地缓存/模拟数据，仅供参考"），不得把降级数据当作实时数据呈现
-6. 数据表格用 Markdown 展示；回答简洁有条理
-7. 未调用任何工具（如问候闲聊）时，直接友好回应即可
-8. 绝不编造：候选与工具结果都不足以回答时，如实说明并引导用户补充信息
+回答风格与内容：
+- 中文，语气亲切自然，以"小蜗"口吻
+- 引用知识库信息时标注来源（如「来源：《学生证补办流程》」）；非官方信息注明仅供参考
+- 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
+- 数据表格用 Markdown 展示，回答简洁有条理
+- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门
+- 数据不足时如实说明并引导用户补充信息，不编造
+
+## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
+用户问"推荐几门给分好的课" → 回答第一句可以是：小蜗来啦！结合你的需求，帮你筛选了几门口碑不错的课～
+用户问"学生证丢了怎么补办" → 回答第一句可以是：同学别着急，学生证补办的流程如下：
 """
 
 
@@ -508,17 +516,57 @@ def compose(state: QaState) -> dict:
 
     try:
         llm = create_llm(temperature=0.3)
-        prompt = ChatPromptTemplate.from_messages([("system", COMPOSE_PROMPT)])
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", COMPOSE_PROMPT),
+            ("human", "请直接输出回答正文，第一句必须是面向用户的内容。"),
+        ])
         response = (prompt | llm).invoke({
             "query": query,
             "intent": intent,
             "candidates_summary": candidates_summary,
             "tool_summary": tool_summary,
         })
-        return {"answer": response.content, "error": error}
+        return {"answer": _strip_rule_prefix(response.content), "error": error}
     except Exception as e:
         log.warning(f"QA 综合回答 LLM 失败，降级为结果格式化: {e}")
         return {"answer": _fallback_answer(results, candidates), "error": error or f"LLM 不可用: {e}"}
+
+
+# 规则特征词：LLM 偶发把 system 指令续写在回答开头，用于识别并剥离
+_RULE_KEYWORDS = ("规则", "要求", "输出", "回答", "禁止", "不得", "必须", "为准", "注明",
+                  "标注", "来源", "引用", "署名", "结尾", "开头", "模板", "元信息",
+                  "提示", "格式", "展示", "编号", "参考")
+# 强规则词（单行规则演绎识别，避免误伤正常首行如"办理流程如下："）
+_RULE_KEYWORDS_STRONG = ("结尾", "为准", "不得", "禁止", "必须", "须以", "引导", "总结",
+                         "提示", "注明", "标注", "署名", "模板", "元信息", "编号", "参考",
+                         "官方渠道", "官方来源", "官网")
+
+
+def _strip_rule_prefix(text: str) -> str:
+    """剥离开头混入的规则续写段（如 "7. 涉及保研…以官方发布为准
+
+---
+
+正文"、
+    或单行演绎如 "结尾用一句话总结，并引导用户进一步提问\n\n正文"）"""
+    if not text:
+        return text
+    # 模式1: 编号规则行
+    m = re.match(r"^(\s*\d+[.、．]\s*[^\n]{0,160}\n){1,2}\s*(?:-{3,}\s*\n*)*", text)
+    if m and any(k in m.group(0) for k in _RULE_KEYWORDS):
+        rest = text[m.end():].strip()
+        return rest if rest else text
+    # 模式2: 单行规则演绎（短首行 + 强规则词 + 非冒号结尾 + 其后有正文）
+    first_end = text.find("\n")
+    if first_end == -1:
+        return text
+    first = text[:first_end].strip()
+    if (0 < len(first) <= 60 and not first.endswith(":") and not first.endswith("：")
+            and any(k in first for k in _RULE_KEYWORDS_STRONG)):
+        rest = text[first_end:].strip("\n ")
+        if rest:
+            return rest
+    return text
 
 
 def _chitchat(query: str) -> str:
@@ -552,6 +600,28 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] 找到 {len(res['results'])} 条结果:")
             for item in res["results"][:3]:
                 lines.append(f"- {str(item.get('content', ''))[:300]}")
+        elif tool == "recommend_courses" and isinstance(res.get("recommendations"), list):
+            lines.append(f"[{tool}] 共返回 {len(res['recommendations'])} 门课（候选 {res.get('total_candidates')} 门）:")
+            for item in res["recommendations"]:
+                t_names = "、".join(x["name"] for x in item.get("teachers", [])[:3]) or "未知"
+                lines.append(f"- {item.get('name', '?')} | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
+                             f" | 学期 {'/'.join(item.get('terms') or [])} | 评论{len(item.get('top_reviews') or [])}条")
+                for rv in (item.get("top_reviews") or [])[:6]:
+                    lines.append(f"  > “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+        elif tool == "analyze_teacher" and isinstance(res.get("courses"), list):
+            lines.append(f"[{tool}] 教师「{res.get('teacher')}」共 {len(res['courses'])} 门课（均分 {res.get('avg_rating')}·{res.get('review_count')}条）:")
+            for c in res["courses"]:
+                lines.append(f"- {c.get('name', '?')} | {c.get('rating_avg')}分·{c.get('rate_count')}条")
+                for rv in (c.get("top_reviews") or [])[:2]:
+                    lines.append(f"  > “{rv.get('content', '')[:80]}”——{rv.get('author', '')}({rv.get('term', '')})")
+        elif tool == "analyze_teacher" and res.get("teachers") and "course" in res:
+            lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 位老师（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
+            for t in res["teachers"]:
+                lines.append(f"- {t['name']} | {t['rating_avg']}分·{t['rate_count']}条 | 维度 {t.get('dims_mode', {})}")
+            lines.append(f"  评论样本（每条已标注老师, 引用时必须与老师对应, 不得编造）:")
+            for rv in (res.get("reviews_sample") or [])[:6]:
+                tname = rv.get("teacher") or "未知老师"
+                lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
         else:
             lines.append(f"[{tool}] {json.dumps(res, ensure_ascii=False)[:800]}")
     return "\n".join(lines) if lines else "（无工具结果）"

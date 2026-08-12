@@ -40,8 +40,20 @@ else:
     db.run_script(SEED_SQL)
     course_count = db.query_one("SELECT COUNT(*) as cnt FROM student_courses")
     grade_count = db.query_one("SELECT COUNT(*) as cnt FROM student_grades")
-    review_count = db.query_one("SELECT COUNT(*) as cnt FROM course_reviews")
-    print(f"  课程: {course_count['cnt']} 门, 成绩: {grade_count['cnt']} 条, 评课: {review_count['cnt']} 门")
+    print(f"  课程: {course_count['cnt']} 门, 成绩: {grade_count['cnt']} 条")
+
+# 3.5 评课数据库（course_data.db, 由 scripts/build_course_db.py 构建）
+from pathlib import Path as _P
+course_db = _P(__file__).parent / "data" / "course_data.db"
+if course_db.exists():
+    import sqlite3
+    _c = sqlite3.connect(str(course_db))
+    _rc = _c.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+    _cc = _c.execute("SELECT COUNT(*) FROM courses").fetchone()[0]
+    _c.close()
+    print(f"  评课库: {_cc} 门课程, {_rc} 条真实评论")
+else:
+    print("  评课库: 未找到 data/course_data.db（运行 python scripts/crawl_icourse.py all && python scripts/build_course_db.py 构建）")
 
 # 4. 知识库加载
 print("\n[4/4] 加载知识库文档并构建向量索引...")

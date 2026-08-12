@@ -158,7 +158,7 @@ def main():
             st.markdown("**🔍 选课顾问**")
             for example in [
                 "推荐几门适合大二的AI方向选修课",
-                "李教授教书怎么样？",
+                "邵帅老师教课怎么样？",
                 "对比一下机器学习和深度学习",
             ]:
                 st.caption(f"  • {example}")

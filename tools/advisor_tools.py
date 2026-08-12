@@ -1,18 +1,52 @@
 """
 小蜗 — 选课顾问 Agent 工具
-提供课程推荐、课程对比、教师分析、偏好收集
+数据源: data/course_data.db（icourse.club 真实评课, 8 表结构见 database/schema_course.sql）
+
+推荐原则（与用户确认）:
+- 排序: 真实星级均分降序（不归一化）, 平手时样本量大优先
+- 老师维度: 同课多师并列, 各自均分/样本量/代表评论
+- 画像: 仅软过滤 + 理由生成, 不参与排序权重
+- 展示: 文字流（标题行 + 评分行 + 5-6 条真实评论引用, 点赞序, 作者去重）
 """
 
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from pathlib import Path
+
 from langchain_core.tools import tool
-from services.service_container import ServiceContainer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+COURSE_DB = PROJECT_ROOT / "data" / "course_data.db"
+
+DIM_KEYS = {"难度": "diff", "作业": "hw", "给分": "score", "收获": "gain"}
+
+# 画像定义（软过滤规则 + 理由模板）
+PROFILES = {
+    "easy_grade": {"name": "冲分保绩", "desc": "给分好、难度低优先"},
+    "learn_hard": {"name": "硬核学习", "desc": "收获大、有挑战优先"},
+    "balanced": {"name": "均衡兼顾", "desc": "评分与难度均衡考虑"},
+}
+
+# 中文偏好描述 → preference_type（宽容参数映射）
+_PREF_CN = {
+    "给分好": "easy_grade", "好拿分": "easy_grade", "轻松": "easy_grade",
+    "水课": "easy_grade", "不点名": "easy_grade", "任务少": "easy_grade",
+    "摸鱼": "easy_grade", "省时": "easy_grade", "硬核": "learn_hard",
+    "学东西": "learn_hard", "挑战": "learn_hard",
+}
 
 
-def _db():
-    """获取数据库实例"""
-    return ServiceContainer().db
+def _cdb() -> sqlite3.Connection:
+    """每次新建连接（本地 sqlite 开销小, 避免缓存坏连接）。"""
+    conn = sqlite3.connect(str(COURSE_DB), timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-# 偏好数据存储在 session 级别（模块单例，供多轮对话复用）
+# 偏好状态（session 级模块单例）
 _current_profile: dict = {}
 
 
@@ -25,10 +59,171 @@ def update_profile(**kwargs):
 
 
 def reset_profile():
-    """重置偏好（用于测试或新用户）"""
     global _current_profile
     _current_profile = {}
 
+
+# ───────────────────────── 展示辅助 ─────────────────────────
+
+def _term_text(y: int) -> str:
+    """20231 → 2023秋"""
+    return f"{y // 10}{['', '秋', '春', '夏'][y % 10]}"
+
+
+def _recent_terms(conn: sqlite3.Connection, course_id: int, n: int = 3) -> list[str]:
+    rows = conn.execute(
+        "SELECT term FROM course_terms WHERE course_id=? ORDER BY term DESC LIMIT ?",
+        (course_id, n),
+    ).fetchall()
+    return [_term_text(r["term"]) for r in rows]
+
+
+def _dims_info(conn: sqlite3.Connection, course_id: int) -> dict:
+    """课程维度: 映射均分 + 文本分布众数。"""
+    r = conn.execute(
+        "SELECT diff_avg, hw_avg, score_avg, gain_avg, dims_dist FROM course_rates WHERE course_id=?",
+        (course_id,),
+    ).fetchone()
+    if not r:
+        return {"avg": {}, "mode": {}}
+    dist = json.loads(r["dims_dist"] or "{}")
+    mode = {}
+    for k, v in dist.items():
+        if v:
+            mode[k] = max(v, key=v.get)
+    return {
+        "avg": {"难度": round(r["diff_avg"] or 0, 1), "作业": round(r["hw_avg"] or 0, 1),
+                "给分": round(r["score_avg"] or 0, 1), "收获": round(r["gain_avg"] or 0, 1)},
+        "mode": mode,
+    }
+
+
+def _norm_teacher(name: str) -> list[str]:
+    """合教名拆分: '计永胜, 石攀, 周永刚' → ['计永胜', '石攀', '周永刚']"""
+    parts = re.split(r"[,，、/]", name or "")
+    parts = [p.strip() for p in parts if p.strip()]
+    return parts or [name]
+
+
+def _teacher_cells(conn: sqlite3.Connection, course_id: int) -> list[dict]:
+    """同课多师: 各老师均分/样本量/维度分布（合教名拆分为单人后按名聚合）。"""
+    agg: dict[str, dict] = {}
+    for r in conn.execute(
+        "SELECT t.name, ct.rating_avg, ct.rating_count, ct.dims_dist "
+        "FROM course_teachers ct JOIN teachers t ON t.id = ct.teacher_id "
+        "WHERE ct.course_id=?",
+        (course_id,),
+    ).fetchall():
+        dist = json.loads(r["dims_dist"] or "{}")
+        for tname in _norm_teacher(r["name"]):
+            a = agg.setdefault(tname, {"sum": 0.0, "n": 0, "dist": {}})
+            a["sum"] += (r["rating_avg"] or 0) * (r["rating_count"] or 0)
+            a["n"] += r["rating_count"] or 0
+            for k, v in dist.items():
+                d = a["dist"].setdefault(k, {})
+                for kval, cnt in v.items():
+                    d[kval] = d.get(kval, 0) + cnt
+    out = []
+    for name, a in agg.items():
+        mode = {k: max(v, key=v.get) for k, v in a["dist"].items() if v}
+        out.append({
+            "name": name,
+            "rating_avg": round(a["sum"] / max(a["n"], 1), 1),
+            "rate_count": a["n"],
+            "dims_mode": mode,
+        })
+    out.sort(key=lambda x: (-x["rating_avg"], -x["rate_count"]))
+    return out
+
+
+def _top_reviews(conn: sqlite3.Connection, course_id: int, teacher: str | None = None,
+                 limit: int = 6) -> list[dict]:
+    """代表性评论: icourse 服务端按点赞最多排序（DOM 顺序即点赞序）, 作者去重（匿名不去重）。
+    teacher 为单人姓名时模糊匹配合教名（如 '计永胜' 也匹配 '计永胜, 石攀, 周永刚'）。"""
+    if teacher:
+        rows = conn.execute(
+            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content "
+            "FROM reviews WHERE course_id=? AND teacher LIKE ? ORDER BY id LIMIT 200",
+            (course_id, f"%{teacher}%"),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content "
+            "FROM reviews WHERE course_id=? ORDER BY id LIMIT 200",
+            (course_id,),
+        ).fetchall()
+    seen: set[str] = set()
+    out = []
+    for r in rows:
+        author = r["author"] or ""
+        if author and author != "匿名用户" and author in seen:
+            continue
+        if author:
+            seen.add(author)
+        content = (r["content"] or "").strip()
+        if len(content) < 10:
+            continue
+        dims = []
+        for k, v in (("难度", r["difficulty"]), ("作业", r["homework"]),
+                     ("给分", r["give_score"]), ("收获", r["harvest"])):
+            if v:
+                dims.append(f"{k}:{v}")
+        out.append({
+            "author": author or "匿名",
+            "teacher": r["teacher"] or "",
+            "stars": r["stars"],
+            "term": r["term"],
+            "dims": dims,
+            "content": content[:400],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _program_hint(conn: sqlite3.Connection, major: str | None, course_id: int) -> dict | None:
+    """培养方案弱标注: 该课程是否出现在用户专业相关的方案中（必修/选修 + 学期标注）。"""
+    if not major:
+        return None
+    hits = conn.execute(
+        "SELECT pc.required, pc.term, pc.category, p.name, p.grade "
+        "FROM program_courses pc JOIN programs p ON p.id = pc.program_id "
+        "WHERE pc.course_id=? AND (p.name LIKE ? OR p.college LIKE ?) LIMIT 3",
+        (course_id, f"%{major}%", f"%{major}%"),
+    ).fetchall()
+    if not hits:
+        return None
+    h = hits[0]
+    return {"required": h["required"], "term": h["term"], "program": h["name"], "grade": h["grade"]}
+
+
+def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict) -> list[str]:
+    """软过滤理由: 兴趣匹配 + 画像提示（不参与排序）。"""
+    reasons: list[str] = []
+    interests = profile.get("interests") or []
+    if interests:
+        matched = [k for k in interests if k and (k in course["name"] or k in course["dept"]
+                                                  or k in course["course_type"])]
+        if matched:
+            reasons.append(f"与兴趣「{'、'.join(matched[:3])}」相关")
+    pref = profile.get("preference_type", "balanced")
+    dims = course["dims"]["avg"]
+    if pref == "easy_grade":
+        if dims.get("给分", 0) >= 8:
+            reasons.append("给分评价好, 适合冲分")
+        if dims.get("难度", 0) and dims["难度"] <= 4.5:
+            reasons.append("注意: 难度评价较高, 冲分需谨慎")
+    elif pref == "learn_hard":
+        if dims.get("收获", 0) >= 8:
+            reasons.append("收获评价高, 值得深入学习")
+        if dims.get("难度", 0) and dims["难度"] <= 4.5:
+            reasons.append("课程有挑战性")
+    if course["rate_count"] < 10:
+        reasons.append("样本较少, 评分仅供参考")
+    return reasons
+
+
+# ───────────────────────── 工具 ─────────────────────────
 
 @tool
 def collect_preferences() -> dict:
@@ -37,13 +232,12 @@ def collect_preferences() -> dict:
     实际的多轮对话由Agent通过自然语言完成，此Tool仅用于标记状态。
 
     Returns:
-        {"status": "collecting", "collected_fields": [...], "remaining_fields": [...]}
+        {"status": "collecting", "collected_fields": [...], "remaining_fields": [...], "current_profile": {...}}
     """
     profile = get_profile()
     all_fields = ["major", "grade", "interests", "preference_type", "target_gpa"]
     collected = list(profile.keys())
     remaining = [f for f in all_fields if f not in profile]
-
     return {
         "status": "collecting" if remaining else "ready",
         "collected_fields": collected,
@@ -53,214 +247,282 @@ def collect_preferences() -> dict:
 
 
 @tool
-def recommend_courses(profile: dict) -> dict:
+def recommend_courses(profile: dict | None = None, major: str | None = None,
+                      grade: str | None = None, interests: list[str] | str | None = None,
+                      preference_type: str | None = None, preference: str | None = None,
+                      keywords: list[str] | str | None = None, max_results: int = 5) -> dict:
     """
-    根据用户偏好推荐课程。
+    根据用户画像推荐课程（真实均分降序, 同课多师并列, 附真实评论引用）。
 
     Args:
-        profile: 用户偏好字典，格式：
-            {"major": "计算机科学", "grade": "大二", "interests": ["人工智能"],
-             "preference_type": "balanced", "target_gpa": 3.5, "max_results": 5}
+        profile: 用户画像, 格式: {"major": "计算机科学", "grade": "大二",
+            "interests": ["人工智能", "数学"], "preference_type": "easy_grade|learn_hard|balanced",
+            "max_results": 5}；也可省略 profile 直接用下面的顶层参数
+        major: 专业名（可选，如 "计算机科学"）
+        grade: 年级（可选，如 "大二"）
+        interests: 兴趣方向（可选，列表或单个字符串，如 ["人工智能", "数学"]）
+        preference_type: 偏好类型（可选，easy_grade=冲分保绩/learn_hard=硬核学习/balanced=均衡）
+        preference: 中文偏好描述（可选，如 "给分好""不点名""任务少"→冲分保绩，"硬核""学东西"→硬核学习）
+        keywords: 限定候选范围的关键词（可选，如 ["数学分析"]，匹配课程名/院系/类型；
+            不要用“给分好”“不点名”这类偏好词）
+        max_results: 返回条数（默认 5）
 
     Returns:
         {"recommendations": [...], "total_candidates": N, "filtered_count": N}
+        每门课: {name, code, credit, dept, rating_avg, rate_count, dims, teachers,
+                 terms, top_reviews, program_hint, reasons}
     """
+    # 宽容参数: 顶层参数自动归一化进 profile（兼容 LLM 不定式传参）
+    p = dict(profile or {})
+    if major:
+        p.setdefault("major", major)
+    if grade:
+        p.setdefault("grade", grade)
+    if interests:
+        p.setdefault("interests", interests if isinstance(interests, list) else [interests])
+    if preference_type:
+        p.setdefault("preference_type", preference_type)
+    if preference:
+        p.setdefault("preference_type", _PREF_CN.get(preference, preference))
+    if p.get("preference") and not p.get("preference_type"):
+        p["preference_type"] = _PREF_CN.get(p["preference"], p["preference"])
+    if keywords:
+        p.setdefault("keywords", keywords if isinstance(keywords, list) else [keywords])
+    p.setdefault("max_results", max_results)
+    profile = p
+
     try:
-        db = _db()
-    except RuntimeError:
-        return {"recommendations": [], "total_candidates": 0, "filtered_count": 0, "error": "数据库未初始化"}
+        conn = _cdb()
+    except sqlite3.Error:
+        return {"recommendations": [], "total_candidates": 0, "filtered_count": 0, "error": "课程数据库不可用"}
 
-    all_courses = db.query("SELECT * FROM course_reviews")
-    if not all_courses:
-        return {"recommendations": [], "total_candidates": 0, "filtered_count": 0, "error": "暂无课程数据"}
+    keywords = profile.get("keywords") or profile.get("interests") or []
+    where, params = "r.rating_count > 0", []
+    if keywords:
+        like = " OR ".join("(c.name LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)" for _ in keywords)
+        where += f" AND ({like})"
+        for k in keywords:
+            params += [f"%{k}%", f"%{k}%", f"%{k}%"]
+    rows = conn.execute(
+        f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
+        f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
+        f"WHERE {where} ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT 200",
+        params,
+    ).fetchall()
+    keyword_fallback = False
+    if not rows and keywords:
+        # 关键词过窄（如偏好词被当课程名）无结果: 回退全量推荐
+        rows = conn.execute(
+            "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
+            "r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
+            "WHERE r.rating_count > 0 ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT 200"
+        ).fetchall()
+        keyword_fallback = True
+    total = len(rows)
 
-    interests = profile.get("interests", [])
-    pref_type = profile.get("preference_type", "balanced")
-
-    # 权重配置
-    weights = {
-        "easy_grade": {"rating": 0.3, "give_score": 0.5, "interest": 0.2},
-        "learn_hard": {"rating": 0.5, "give_score": 0.1, "interest": 0.4},
-        "balanced": {"rating": 0.4, "give_score": 0.3, "interest": 0.3},
-    }
-    w = weights.get(pref_type, weights["balanced"])
-
-    scored = []
-    for c in all_courses:
-        tags = [t.strip() for t in (c.get("tags") or "").split(",") if t.strip()]
-        if tags and interests:
-            match = len(set(tags) & set(interests)) / max(len(tags), 1) * 10
+    recommendations = []
+    for r in rows:
+        cid = r["id"]
+        teachers = _teacher_cells(conn, cid)
+        multi = len(teachers) > 1
+        # 评论引用: 单师 6 条; 同课多师每师最多 3 条, 总量封顶 6
+        if multi:
+            reviews = []
+            for t in teachers:
+                reviews.extend(_top_reviews(conn, cid, t["name"], limit=3))
+            reviews = reviews[:6]
         else:
-            match = 5.0
+            reviews = _top_reviews(conn, cid, limit=6)
+        item = {
+            "id": cid,
+            "name": r["name"],
+            "code": r["code"],
+            "credit": r["credit"],
+            "dept": r["dept"],
+            "course_type": r["course_type"],
+            "rating_avg": round(r["rating_avg"], 1),
+            "rate_count": r["rating_count"],
+            "dims": _dims_info(conn, cid),
+            "teachers": teachers,
+            "multi_teacher": multi,
+            "terms": _recent_terms(conn, cid),
+            "top_reviews": reviews,
+            "program_hint": _program_hint(conn, profile.get("major"), cid),
+            "reasons": _generate_reason(conn, {"name": r["name"], "dept": r["dept"],
+                                               "course_type": r["course_type"],
+                                               "rate_count": r["rating_count"],
+                                               "dims": _dims_info(conn, cid)}, profile),
+        }
+        recommendations.append(item)
 
-        give_label = c.get("give_score", "")
-        give_score = 8.0 if "好" in give_label else (2.0 if "差" in give_label else 5.0)
-
-        score = (
-            w["rating"] * (c.get("rating") or 5)
-            + w["give_score"] * give_score
-            + w["interest"] * match
-        )
-        scored.append({
-            "course_name": c["course_name"],
-            "course_code": c.get("course_code", ""),
-            "teacher": c.get("teacher", ""),
-            "credits": c.get("credits", 0),
-            "rating": c.get("rating", 0),
-            "difficulty": c.get("difficulty", 0),
-            "workload": c.get("workload", 0),
-            "give_score": c.get("give_score", ""),
-            "tags": c.get("tags", ""),
-            "reason": _generate_reason(c, interests, pref_type),
-            "review_summary": c.get("review_summary", ""),
-            "review_count": c.get("review_count", 0),
-            "_score": score,
-        })
-
-    scored.sort(key=lambda x: x["_score"], reverse=True)
+    conn.close()
     max_results = profile.get("max_results", 5)
-    top = scored[:max_results]
-    for item in top:
-        del item["_score"]
-
     return {
-        "recommendations": top,
-        "total_candidates": len(all_courses),
-        "filtered_count": len(top),
+        "recommendations": recommendations[:max_results],
+        "total_candidates": total,
+        "filtered_count": len(recommendations[:max_results]),
+        "profile_note": PROFILES.get(profile.get("preference_type", "balanced"), PROFILES["balanced"]),
+        "keyword_fallback": keyword_fallback,
     }
-
-
-def _generate_reason(course: dict, interests: list, pref_type: str) -> str:
-    """生成推荐理由"""
-    parts = []
-
-    tags = [t.strip() for t in (course.get("tags") or "").split(",") if t.strip()]
-    matched = set(tags) & set(interests)
-    if matched:
-        parts.append(f"与你的兴趣（{'、'.join(matched)}）高度匹配")
-
-    rating = course.get("rating") or 0
-    if rating >= 8:
-        parts.append(f"评课社区评分 {rating}，口碑很好")
-    elif rating >= 6:
-        parts.append(f"评课社区评分 {rating}，中等偏上")
-
-    give_score = course.get("give_score", "")
-    if "好" in give_score and pref_type in ("balanced", "easy_grade"):
-        parts.append("给分好")
-
-    difficulty = course.get("difficulty") or 0
-    if difficulty <= 4 and pref_type == "easy_grade":
-        parts.append("难度低，容易拿高分")
-
-    if not parts:
-        parts.append("综合评分不错，值得考虑")
-
-    return "；".join(parts)
 
 
 @tool
 def compare_courses(course_a: str, course_b: str) -> dict:
     """
-    对比两门课程。
+    对比两门课程（评分/难度/给分/收获 + 同课多师 + 代表评论）。
 
     Args:
-        course_a: 第一门课程名
-        course_b: 第二门课程名
+        course_a: 课程 A 名称（支持模糊）
+        course_b: 课程 B 名称（支持模糊）
 
     Returns:
         {"course_a": {...}, "course_b": {...}, "comparison": {...}}
     """
     try:
-        db = _db()
-    except RuntimeError:
-        return {"error": "数据库未初始化"}
+        conn = _cdb()
+    except sqlite3.Error:
+        return {"error": "课程数据库不可用"}
 
-    a = db.query("SELECT * FROM course_reviews WHERE course_name LIKE ?", (f"%{course_a}%",))
-    b = db.query("SELECT * FROM course_reviews WHERE course_name LIKE ?", (f"%{course_b}%",))
-
-    if not a:
-        return {"error": f"未找到课程：{course_a}"}
-    if not b:
-        return {"error": f"未找到课程：{course_b}"}
-
-    a, b = a[0], b[0]
-
-    def extract(c):
+    def find(name: str) -> dict | None:
+        r = conn.execute(
+            "SELECT c.id, c.name, c.code, c.credit, c.dept, r.rating_avg, r.rating_count "
+            "FROM courses c JOIN course_rates r ON r.course_id = c.id "
+            "WHERE c.name LIKE ? ORDER BY r.rating_count DESC LIMIT 1",
+            (f"%{name}%",),
+        ).fetchone()
+        if not r:
+            return None
+        cid = r["id"]
         return {
-            "name": c["course_name"],
-            "teacher": c.get("teacher", ""),
-            "rating": c.get("rating", 0),
-            "difficulty": c.get("difficulty", 0),
-            "workload": c.get("workload", 0),
-            "give_score": c.get("give_score", ""),
-            "review_summary": c.get("review_summary", ""),
+            "id": cid, "name": r["name"], "code": r["code"], "credit": r["credit"],
+            "dept": r["dept"], "rating_avg": round(r["rating_avg"], 1),
+            "rate_count": r["rating_count"],
+            "dims": _dims_info(conn, cid),
+            "teachers": _teacher_cells(conn, cid),
+            "terms": _recent_terms(conn, cid),
+            "top_reviews": _top_reviews(conn, cid, limit=4),
         }
 
-    ca, cb = extract(a), extract(b)
-    winner_rating = ca["name"] if ca["rating"] >= cb["rating"] else cb["name"]
-    winner_easy = ca["name"] if ca["difficulty"] <= cb["difficulty"] else cb["name"]
+    a = find(course_a)
+    if not a:
+        conn.close()
+        return {"error": f"未找到课程：{course_a}"}
+    b = find(course_b)
+    if not b:
+        conn.close()
+        return {"error": f"未找到课程：{course_b}"}
+    conn.close()
 
+    def dim(key):
+        return a["dims"]["avg"].get(key, 0), b["dims"]["avg"].get(key, 0)
+
+    ra, rb = a["rating_avg"], b["rating_avg"]
+    da, db_ = dim("难度")
+    sa, sb = dim("给分")
+    ga, gb = dim("收获")
     return {
-        "course_a": ca,
-        "course_b": cb,
+        "course_a": a,
+        "course_b": b,
         "comparison": {
-            "winner_rating": winner_rating,
-            "winner_easy": winner_easy,
-            "suggestion": "如果你想学到真东西，选评分高的；如果想轻松拿分，选难度低的。",
+            "rating_winner": a["name"] if ra >= rb else b["name"],
+            "rating_diff": round(abs(ra - rb), 1),
+            "easier": a["name"] if da >= db_ else b["name"],
+            "score_winner": a["name"] if sa >= sb else b["name"],
+            "gain_winner": a["name"] if ga >= gb else b["name"],
+            "suggestion": (
+                f"评分：{a['name']} {ra} vs {b['name']} {rb}；"
+                f"若以分数为重选评分高者, 若在意难度与体验请结合评论判断。"
+            ),
         },
     }
 
 
 @tool
-def analyze_teacher(teacher_name: str) -> dict:
+def analyze_teacher(teacher_name: str | None = None, course: str | None = None) -> dict:
     """
-    分析指定教师的评价。
+    分析指定教师的评价，或对比某课程下的所有老师。
 
     Args:
-        teacher_name: 教师姓名
+        teacher_name: 教师姓名（支持模糊），与 course 二选一或同时提供
+        course: 课程名称（支持模糊）；提供时返回该课程下各老师的评分对比
 
     Returns:
-        {"teacher": "...", "courses": [...], "avg_rating": ..., "teaching_style": "...",
-         "strengths": [...], "weaknesses": [...], "review_summary": "...", "review_count": N}
+        教师模式: {"teacher", "courses", "avg_rating", "review_count", "reviews_sample"}
+        课程模式: {"course", "teachers", "rating_avg", "rate_count", "reviews_sample"}
     """
     try:
-        db = _db()
-    except RuntimeError:
-        return {"error": "数据库未初始化"}
+        conn = _cdb()
+    except sqlite3.Error:
+        return {"error": "课程数据库不可用"}
 
-    teacher = db.query("SELECT * FROM teacher_reviews WHERE name LIKE ?", (f"%{teacher_name}%",))
+    if not teacher_name and not course:
+        conn.close()
+        return {"error": "请提供教师姓名（teacher_name）或课程名称（course）"}
 
-    if not teacher:
-        # 尝试从 course_reviews 聚合
-        courses = db.query(
-            "SELECT * FROM course_reviews WHERE teacher LIKE ?",
-            (f"%{teacher_name}%",),
-        )
-        if not courses:
-            return {"error": f"未找到教师：{teacher_name}"}
-
-        avg_rating = sum(c.get("rating") or 0 for c in courses) / len(courses)
-        course_names = [c["course_name"] for c in courses]
+    # 课程模式: 按课程查老师对比（支持 "XX课哪个老师好"）
+    if not teacher_name:
+        c = conn.execute(
+            "SELECT c.id, c.name, c.code, c.credit, c.dept, r.rating_avg, r.rating_count "
+            "FROM courses c JOIN course_rates r ON r.course_id = c.id "
+            "WHERE c.name LIKE ? ORDER BY r.rating_count DESC LIMIT 1",
+            (f"%{course}%",),
+        ).fetchone()
+        if not c:
+            conn.close()
+            return {"error": f"未找到课程：{course}"}
+        cid = c["id"]
+        teachers = _teacher_cells(conn, cid)
+        # 评论样本: 按老师分组取样（每师最多 2 条, 总量 ≤6）, 带 teacher 标注供引用
+        reviews: list[dict] = []
+        for t in teachers:
+            reviews.extend(_top_reviews(conn, cid, t["name"], limit=2))
+            if len(reviews) >= 6:
+                break
+        conn.close()
         return {
-            "teacher": teacher_name,
-            "courses": course_names,
-            "avg_rating": round(avg_rating, 1),
-            "teaching_style": "暂无详细教学风格数据",
-            "strengths": [],
-            "weaknesses": [],
-            "review_summary": f"该教师共教授 {len(courses)} 门课程，平均评分 {avg_rating:.1f}",
-            "review_count": sum(c.get("review_count") or 0 for c in courses),
+            "course": c["name"],
+            "code": c["code"],
+            "credit": c["credit"],
+            "dept": c["dept"],
+            "teachers": teachers,
+            "rating_avg": round(c["rating_avg"], 1),
+            "rate_count": c["rating_count"],
+            "reviews_sample": reviews[:6],
         }
 
-    t = teacher[0]
+    # 老师模式: 教师名模糊匹配 course_teachers（含合教组合, 如"魏海明, 计永胜"）, 同课多组合取样本量大者
+    rows = conn.execute(
+        "SELECT c.id, c.name, ct.rating_avg, ct.rating_count "
+        "FROM course_teachers ct JOIN courses c ON c.id = ct.course_id "
+        "WHERE ct.teacher_id IN (SELECT id FROM teachers WHERE name LIKE ?) "
+        "ORDER BY ct.rating_count DESC",
+        (f"%{teacher_name}%",),
+    ).fetchall()
+    if not rows:
+        conn.close()
+        return {"error": f"未找到教师：{teacher_name}"}
+    seen: dict[int, dict] = {}
+    for r in rows:
+        if r["id"] not in seen or r["rating_count"] > seen[r["id"]]["rate_count"]:
+            seen[r["id"]] = {
+                "name": r["name"],
+                "rating_avg": round(r["rating_avg"], 1),
+                "rate_count": r["rating_count"],
+                "top_reviews": _top_reviews(conn, r["id"], teacher_name, limit=2),
+            }
+    courses = list(seen.values())
+    courses.sort(key=lambda x: (-x["rating_avg"], -x["rate_count"]))
+
+    n_reviews = sum(c["rate_count"] for c in courses)
+    avg = round(sum(c["rating_avg"] * c["rate_count"] for c in courses) / max(n_reviews, 1), 1)
+    sample = []
+    for c in courses[:3]:
+        sample.extend(c["top_reviews"])
+    conn.close()
     return {
-        "teacher": t["name"],
-        "courses": (t.get("courses") or "").split(","),
-        "avg_rating": t.get("avg_rating", 0),
-        "teaching_style": t.get("teaching_style", ""),
-        "strengths": (t.get("strengths") or "").split(",") if t.get("strengths") else [],
-        "weaknesses": (t.get("weaknesses") or "").split(",") if t.get("weaknesses") else [],
-        "review_summary": t.get("review_summary", ""),
-        "review_count": t.get("review_count", 0),
+        "teacher": teacher_name,
+        "courses": courses,
+        "avg_rating": avg,
+        "review_count": n_reviews,
+        "reviews_sample": sample[:6],
     }
