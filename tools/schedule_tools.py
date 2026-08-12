@@ -6,7 +6,6 @@
 from langchain_core.tools import tool
 from datetime import date, datetime, timedelta
 
-from config import DEMO_STUDENT
 from services.service_container import ServiceContainer
 from utils.logger import get_logger
 

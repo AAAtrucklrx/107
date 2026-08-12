@@ -8,8 +8,6 @@ lessons_421 = data.get("lessons_421", [])
 exams_421 = data.get("exams_421", [])
 gen_exams_421 = data.get("gen_exams_421", [])
 
-STUDENT = "PB20240001"
-
 # ── 1. 从真实课程中选 8 门适合大二学生的课 ──
 # 选不同类型的课：数学/CS/物理/英语/通识
 selected_courses = []
@@ -71,31 +69,7 @@ print(f"选中 {len(selected_courses)} 门课程:")
 for c in selected_courses:
     print(f"  {c['code']} {c['name']} ({c['credits']}学分) - {c['teacher']}")
 
-# ── 2. 生成成绩数据（上学期的课） ──
-grade_courses = selected_courses[:6]
-import random
-random.seed(42)
-grades = []
-for c in grade_courses:
-    score = random.randint(72, 95)
-    gp = round(max(0, (score - 60) / 10 * 1.0 + 1.0), 1)
-    if score >= 90: gp = 4.0
-    elif score >= 85: gp = 3.7
-    elif score >= 82: gp = 3.3
-    elif score >= 78: gp = 3.0
-    elif score >= 75: gp = 2.7
-    elif score >= 72: gp = 2.3
-    elif score >= 68: gp = 2.0
-    elif score >= 64: gp = 1.5
-    else: gp = 1.0
-    grades.append({
-        "name": c["name"],
-        "credits": c["credits"],
-        "score": score,
-        "grade_point": gp,
-    })
-
-# ── 3. 选一些真实考试数据 ──
+# ── 2. 选一些真实考试数据 ──
 sample_exams = []
 for exam in exams_421[:20]:
     lesson = exam.get("lesson", {})
@@ -144,25 +118,6 @@ for i, c in enumerate(selected_courses):
     )
 sql_lines.append("")
 
-# student_courses 表
-sql_lines.append(f"-- 演示学生 {STUDENT} 课表（2026 春季学期）")
-for i, c in enumerate(selected_courses):
-    sql_lines.append(
-        f"INSERT OR REPLACE INTO student_courses (id, student_id, course_code, course_name, teacher, credits, time, location, semester) "
-        f"VALUES ({i+1}, '{STUDENT}', '{esc(c['code'])}', '{esc(c['name'])}', '{esc(c['teacher'])}', "
-        f"{c['credits']}, '{esc(c['time'])}', '{esc(c['location'])}', '2025-2026-2');"
-    )
-sql_lines.append("")
-
-# student_grades 表
-sql_lines.append(f"-- 演示学生 {STUDENT} 成绩（2025 秋季学期）")
-for i, g in enumerate(grades):
-    sql_lines.append(
-        f"INSERT OR REPLACE INTO student_grades (id, student_id, semester, course_name, credits, score, grade_point) "
-        f"VALUES ({i+1}, '{STUDENT}', '2025-2026-1', '{esc(g['name'])}', {g['credits']}, {g['score']}, {g['grade_point']});"
-    )
-sql_lines.append("")
-
 # course_reviews 表（保留原有评课数据，补充真实课程名）
 sql_lines.append("-- 评课社区数据（结合真实课程名）")
 review_courses = [
@@ -196,29 +151,13 @@ for i, t in enumerate(teacher_data):
     )
 sql_lines.append("")
 
-# events 表
-sql_lines.append(f"-- 演示学生日程事件")
-events = [
-    (STUDENT, "组会", "meeting", "2026-06-15 14:00", "2026-06-15 16:00", "科研楼301", "每周组会"),
-    (STUDENT, "期中考试-数学分析", "exam", "2026-04-15 09:00", "2026-04-15 11:00", "三教3A101", ""),
-    (STUDENT, "课程论文截止", "deadline", "2026-06-20 23:59", "2026-06-20 23:59", "", "操作系统课程论文"),
-]
-for i, e in enumerate(events):
-    sql_lines.append(
-        f"INSERT OR REPLACE INTO events (id, student_id, title, event_type, start_time, end_time, location, description) "
-        f"VALUES ({i+1}, '{STUDENT}', '{esc(e[1])}', '{esc(e[2])}', '{esc(e[3])}', '{esc(e[4])}', '{esc(e[5])}', '{esc(e[6])}');"
-    )
-
 # 输出
 sql_content = "\n".join(sql_lines)
 with open(r"f:\小蜗\database\seed_data.py", "w", encoding="utf-8") as f:
     f.write('"""\n小蜗 — 种子数据模块\n基于真实 catalog API 数据生成\n"""\n\n')
-    f.write(f'DEMO_STUDENT_ID = "{STUDENT}"\n\n')
     f.write(f'SEED_SQL = """\n{sql_content}\n"""\n')
 
 print(f"\n已生成 seed_data.py ({len(sql_lines)} 行 SQL)")
 print(f"  课程: {len(selected_courses)} 门")
-print(f"  成绩: {len(grades)} 门")
 print(f"  评课: {len(review_courses)} 门")
 print(f"  教师: {len(teacher_data)} 位")
-print(f"  事件: {len(events)} 个")

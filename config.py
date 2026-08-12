@@ -55,12 +55,3 @@ CAS_SERVICE_URL = os.getenv("CAS_SERVICE_URL", "http://localhost:8501")
 # 远期：学校开放官方接口后切换白名单接入（YoungService 已预留 Provider 抽象）
 YOUNG_TOKEN = os.getenv("YOUNG_TOKEN", "")
 YOUNG_PAGE_SIZE = int(os.getenv("YOUNG_PAGE_SIZE", "50"))
-
-# ── 演示学生配置 ──────────────────────────────
-DEMO_STUDENT = {
-    "id": "PB20240001",
-    "name": "张同学",
-    "major": "计算机科学",
-    "grade": "大二",
-    "semester": "2025-2026-2",
-}

@@ -61,22 +61,7 @@ print(f"\n选中 {len(selected)} 门课程:")
 for c in selected:
     print(f"  {c['code']} {c['name']} ({c['credits']}学分) - {c['teacher']}")
 
-# 生成成绩
-random.seed(42)
-grades = []
-for c in selected[:6]:
-    score = random.randint(72, 95)
-    if score >= 90: gp = 4.0
-    elif score >= 85: gp = 3.7
-    elif score >= 82: gp = 3.3
-    elif score >= 78: gp = 3.0
-    elif score >= 75: gp = 2.7
-    elif score >= 72: gp = 2.3
-    else: gp = 1.0
-    grades.append({"name": c["name"], "credits": c["credits"], "score": score, "grade_point": gp})
-
 # 生成 SQL
-STUDENT = "PB20240001"
 def esc(s): return str(s).replace("'", "''").replace('\n', ' ').replace('\r', '').strip()
 
 lines = []
@@ -84,8 +69,6 @@ lines.append('"""')
 lines.append('小蜗 — 种子数据模块')
 lines.append('基于真实 catalog API 数据生成 (2026 春季学期)')
 lines.append('"""')
-lines.append('')
-lines.append(f'DEMO_STUDENT_ID = "{STUDENT}"')
 lines.append('')
 lines.append('SEED_SQL = """')
 lines.append('-- ============================================')
@@ -100,25 +83,6 @@ for i, c in enumerate(selected):
         f"INSERT OR REPLACE INTO courses (id, code, name, teacher, credits, time, location, semester) "
         f"VALUES ({i+1}, '{esc(c['code'])}', '{esc(c['name'])}', '{esc(c['teacher'])}', "
         f"{c['credits']}, '{esc(c['time'])}', '{esc(c['location'])}', '2025-2026-2');"
-    )
-lines.append('')
-
-# student_courses
-lines.append(f'-- 演示学生 {STUDENT} 课表')
-for i, c in enumerate(selected):
-    lines.append(
-        f"INSERT OR REPLACE INTO student_courses (id, student_id, course_code, course_name, teacher, credits, time, location, semester) "
-        f"VALUES ({i+1}, '{STUDENT}', '{esc(c['code'])}', '{esc(c['name'])}', '{esc(c['teacher'])}', "
-        f"{c['credits']}, '{esc(c['time'])}', '{esc(c['location'])}', '2025-2026-2');"
-    )
-lines.append('')
-
-# student_grades
-lines.append(f'-- 演示学生成绩 (上学期)')
-for i, g in enumerate(grades):
-    lines.append(
-        f"INSERT OR REPLACE INTO student_grades (id, student_id, semester, course_name, credits, score, grade_point) "
-        f"VALUES ({i+1}, '{STUDENT}', '2025-2026-1', '{esc(g['name'])}', {g['credits']}, {g['score']}, {g['grade_point']});"
     )
 lines.append('')
 
@@ -154,19 +118,6 @@ for i, t in enumerate(teachers):
         f"VALUES ({i+1}, '{esc(t[0])}', '{esc(t[1])}', {t[2]}, '{esc(t[3])}', '{esc(t[4])}', '{esc(t[5])}', '{esc(t[6])}', {t[7]});"
     )
 lines.append('')
-
-# events
-lines.append('-- 日程事件')
-events = [
-    (STUDENT, "组会", "meeting", "2026-06-15 14:00", "2026-06-15 16:00", "科研楼301", "每周组会"),
-    (STUDENT, "期中考试-数学分析", "exam", "2026-04-15 09:00", "2026-04-15 11:00", "三教3A101", ""),
-    (STUDENT, "课程论文截止", "deadline", "2026-06-20 23:59", "2026-06-20 23:59", "", "操作系统课程论文"),
-]
-for i, e in enumerate(events):
-    lines.append(
-        f"INSERT OR REPLACE INTO events (id, student_id, title, event_type, start_time, end_time, location, description) "
-        f"VALUES ({i+1}, '{STUDENT}', '{esc(e[1])}', '{esc(e[2])}', '{esc(e[3])}', '{esc(e[4])}', '{esc(e[5])}', '{esc(e[6])}');"
-    )
 
 lines.append('"""')
 

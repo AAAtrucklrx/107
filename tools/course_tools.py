@@ -8,7 +8,6 @@ v3.0: 课表和成绩对接 jw 内部 API（需 CAS 登录），catalog API 对�
 from langchain_core.tools import tool
 from datetime import date, timedelta
 
-from config import DEMO_STUDENT
 from services.service_container import ServiceContainer
 from utils.logger import get_logger
 from utils.course_periods import parse_periods, periods_to_range
@@ -38,8 +37,8 @@ _LOGIN_MSG = "🔒 此功能需要登录教务系统。请在左侧侧边栏输�
 
 
 def _is_locked(student_id: str) -> bool:
-    """检查是否应该锁定个人数据查询（未登录 + 非演示学生）"""
-    return _cas() is None and student_id != DEMO_STUDENT["id"]
+    """检查是否应该锁定个人数据查询（未登录即锁定）"""
+    return _cas() is None
 
 
 # ── 内部查询函数（非 tool 装饰器，供 tool 复用） ──────
@@ -314,7 +313,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
     优先从 jw 内部 API 获取真实课表，失败时回退到 SQLite。
 
     Args:
-        student_id: 学号，如 "PB20240001"（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         week: 周次（可选），不指定则返回所有周的课表
         day: 星期几（可选），如 "周一"、"周二"
 
@@ -322,7 +321,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
         {"student_id": "...", "courses": [...], "count": N,
          "source": "real"|"fallback"}
     """
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 jw API
     cas = _cas()
@@ -354,7 +353,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
         except Exception as e:
             log.warning(f"课表 API 失败 (student_id={sid}, week={week}, day={day})，降级到本地数据: {e}")
 
-    # ── Fallback: SQLite（演示学生）或 锁定提示 ──
+    # ── Fallback: SQLite 本地缓存或 锁定提示 ──
     if _is_locked(sid):
         return {"student_id": sid, "courses": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
@@ -392,7 +391,7 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
          "count": N, "source": "real"|"fallback"|"locked"}
     """
     from utils.time_parser import parse_natural_time
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     if date:
         parsed = parse_natural_time(date)
@@ -579,7 +578,7 @@ def query_grade(student_id: str = None, course_name: str = None, semester: str =
     优先从 jw 内部 API 获取真实成绩，失败时回退到 SQLite。
 
     Args:
-        student_id: 学号（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         course_name: 课程名（可选），支持模糊匹配
         semester: 学期（可选），如 "2025-2026-1"
 
@@ -587,7 +586,7 @@ def query_grade(student_id: str = None, course_name: str = None, semester: str =
         {"student_id": "...", "grades": [...], "count": N,
          "source": "real"|"fallback"}
     """
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 jw API
     cas = _cas()
@@ -607,7 +606,7 @@ def query_grade(student_id: str = None, course_name: str = None, semester: str =
         except Exception as e:
             log.warning(f"成绩 API 失败 (student_id={sid}, course_name={course_name}, semester={semester})，降级到本地数据: {e}")
 
-    # ── Fallback: SQLite（演示学生）或 锁定提示 ──
+    # ── Fallback: SQLite 本地缓存或 锁定提示 ──
     if _is_locked(sid):
         return {"student_id": sid, "grades": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
@@ -625,7 +624,7 @@ def calc_gpa(student_id: str = None, semester: str = None) -> dict:
     优先从 jw API 获取真实成绩计算，失败时回退到 SQLite。
 
     Args:
-        student_id: 学号（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         semester: 学期（可选），不指定则计算所有学期累计GPA
 
     Returns:
@@ -634,7 +633,7 @@ def calc_gpa(student_id: str = None, semester: str = None) -> dict:
     """
     from utils.gpa_calculator import calculate_gpa
 
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 jw API
     cas = _cas()
@@ -658,7 +657,7 @@ def calc_gpa(student_id: str = None, semester: str = None) -> dict:
         except Exception as e:
             log.warning(f"GPA 计算 API 失败 (student_id={sid}, semester={semester})，降级到本地数据: {e}")
 
-    # ── Fallback: SQLite（演示学生）或 锁定提示 ──
+    # ── Fallback: SQLite 本地缓存或 锁定提示 ──
     if _is_locked(sid):
         return {"student_id": sid, "semester": semester or "全部学期",
                 "gpa": 0, "total_credits": 0, "details": [],
@@ -685,7 +684,7 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
     优先从真实 API 获取（专业课 + 通修课合并），失败时回退到模拟数据。
 
     Args:
-        student_id: 学号（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         course_name: 课程名（可选），不指定则返回所有考试
 
     Returns:
@@ -693,7 +692,7 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
                     "location": "...", "type": "期末考试"}, ...],
          "source": "real"|"fallback"}
     """
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 API
     try:
@@ -903,14 +902,14 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
     优先从 jw 内部 API 获取，失败时回退到本地课表数据。
 
     Args:
-        student_id: 学号（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         semester: 学期（可选），不指定则查询当前学期
 
     Returns:
         {"student_id": "...", "selections": [...], "count": N,
          "source": "real"|"fallback"}
     """
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 jw API
     cas = _cas()
@@ -941,7 +940,7 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
         except Exception as e:
             log.warning(f"选课结果 API 失败 (student_id={sid}, semester={semester})，降级到本地数据: {e}")
 
-    # ── Fallback: 本地数据（演示学生）或 锁定提示 ──
+    # ── Fallback: 本地数据或 锁定提示 ──
     if _is_locked(sid):
         return {"student_id": sid, "selections": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
@@ -968,13 +967,13 @@ def query_program(student_id: str = None, module_id: int = None) -> dict:
     优先从 jw 内部 API 获取，失败时返回提示信息。
 
     Args:
-        student_id: 学号（默认使用演示学生）
+        student_id: 学号（登录用户；未登录时此查询锁定）
         module_id: 模块ID（可选），不指定则获取根模块
 
     Returns:
         {"student_id": "...", "modules": [...], "source": "real"|"fallback"}
     """
-    sid = student_id or DEMO_STUDENT["id"]
+    sid = student_id
 
     # 尝试真实 jw API
     cas = _cas()

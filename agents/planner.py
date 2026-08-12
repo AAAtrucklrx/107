@@ -76,7 +76,7 @@ PLANNER_SYSTEM_PROMPT = """你是小蜗的任务规划器（Planner）。
    - 例如 Step 2 依赖 Step 1 的 gpa 结果：tool_args 中写 "{{step_1.gpa}}"
 4. 计划步骤数不超过 5 步
 5. 如果用户查询其实很简单（一个 Tool 就能完成），返回单步计划即可
-6. student_id 默认为 "PB20240001"，除非用户明确指定
+6. student_id 由调用方传入；未登录时为空，涉及个人数据的工具会返回锁定提示
 
 ## 输出格式（严格 JSON，不要其他文字）
 
@@ -88,7 +88,7 @@ PLANNER_SYSTEM_PROMPT = """你是小蜗的任务规划器（Planner）。
             "step_id": 1,
             "description": "查询用户当前GPA",
             "tool_name": "calc_gpa",
-            "tool_args": {{"student_id": "PB20240001"}},
+            "tool_args": {{"student_id": "{{student_id}}"}},
             "depends_on": []
         }},
         {{
@@ -110,7 +110,7 @@ def _build_tool_list_text() -> str:
     return ""
 
 
-def create_plan(user_query: str, student_id: str = "PB20240001") -> Plan:
+def create_plan(user_query: str, student_id: str = "") -> Plan:
     """
     调用 Planner LLM，将用户查询拆解为执行计划。
 

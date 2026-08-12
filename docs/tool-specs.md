@@ -94,7 +94,7 @@ query: str  # 用户自然语言问题，如 "学生证怎么补办"
 
 **参数**：
 ```python
-student_id: str = None  # 学号，默认 DEMO_STUDENT["id"] = "PB20240001"
+student_id: str = None  # 学号（登录用户；未登录时查询锁定）
 week: int = None        # 周次（可选）
 day: str = None         # 星期几，如 "周一"（可选）
 ```
