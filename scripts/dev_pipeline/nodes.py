@@ -62,10 +62,10 @@ def plan_node(state: dict) -> dict:
 
 # ---------------- 执行 ----------------
 
-def _run_cli(cmd: list[str], cwd: Path, timeout: int) -> str:
+def _run_cli(cmd: list[str], cwd: Path, timeout: int, env: dict | None = None) -> str:
     proc = subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-        encoding="utf-8", errors="replace",
+        encoding="utf-8", errors="replace", env=env,
     )
     out = (proc.stdout or "") + "\n" + (proc.stderr or "")
     return out.strip()[-8000:]
@@ -129,18 +129,29 @@ def execute_node(state: dict) -> dict:
             "--output-format", "text",
             "--permission-mode", "acceptEdits",
         ]
+        env = None
     elif executor == "codex":
         cmd = [
             config.CODEX_BIN, "exec",
             "-s", "workspace-write",
             prompt,
         ]
+        env = None
+    elif executor == "qoder":
+        # Qoder CLI（独立安装的 qodercli.exe，经 -p 非交互模式执行）
+        cmd = [
+            config.QODER_BIN, "-p", prompt,
+            "--output-format", "text",
+            "--permission-mode", "accept_edits",
+            "--cwd", str(PROJECT_ROOT),
+        ]
+        env = None
     else:
         raise ValueError(f"未知执行器: {executor}")
 
     # 变更摘要（执行前后内容哈希快照差集，排除项目历史未提交改动）
     before = _git_snapshot()
-    output = _run_cli(cmd, PROJECT_ROOT, config.EXEC_TIMEOUT_SEC)
+    output = _run_cli(cmd, PROJECT_ROOT, config.EXEC_TIMEOUT_SEC, env=env)
     after = _git_snapshot()
 
     new_files = sorted(f for f in after if f not in before)

@@ -21,6 +21,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
 # ---- 执行器 CLI ----
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", r"C:\claude\claude.exe")
 CODEX_BIN = os.environ.get("CODEX_BIN", r"C:\Users\Richelieu\AppData\Local\OpenAI\Codex\bin\cfac6bda2d141e07\codex.exe")
+QODER_BIN = os.environ.get("QODER_CLI_BIN", str(Path.home() / ".qoder" / "bin" / "qodercli" / "qodercli.exe"))
 
 # ---- 执行参数 ----
 DEFAULT_MAX_ROUNDS = 3          # 决策→执行循环上限

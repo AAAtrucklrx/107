@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_run = sub.add_parser("run", help="运行一轮完整的开发流水线")
     p_run.add_argument("task", help="开发任务描述")
-    p_run.add_argument("--executor", choices=["claude", "codex"], default="claude", help="执行器 CLI")
+    p_run.add_argument("--executor", choices=["claude", "codex", "qoder"], default="claude", help="执行器 CLI")
     p_run.add_argument("--rounds", type=int, default=3, help="决策循环上限")
     p_run.add_argument("--json", action="store_true", help="额外输出 JSON 状态")
     p_run.set_defaults(func=cmd_run)
