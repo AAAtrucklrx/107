@@ -8,9 +8,9 @@
 
 | 模块 | 能力 |
 |------|------|
-| 📚 智能问答 | 基于 50 篇校园知识库文档的 RAG 问答（办事指南、教务、生活、就业、科研与升学） |
+| 📚 智能问答 | 基于 50 篇校园知识库文档（220 条向量分块）的 RAG 问答（办事指南、教务、生活、就业、科研与升学） |
 | 📊 课业助手 | 成绩查询、课表查询、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
-| 🔍 选课顾问 | 基于课程目录（catalog）的真实课程数据推荐、评课参考 |
+| 🔍 选课顾问 | 基于 icourse.club 真实评课数据推荐（2351 门课程 / 4.4 万条评论）：真实均分降序、同课多师并列对比、5-6 条真实评论引用，支持画像软过滤与教师分析 |
 | 📅 日程管理 | 日程记录与查询、空闲时间匹配、校团委活动推荐 |
 
 所有降级/模拟数据均带有**来源标识**（实时数据 / 本地缓存 / 模拟数据），保证结果可追溯。
@@ -20,7 +20,7 @@
 - **前端/框架**: Streamlit（Web UI）
 - **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮 → act → compose）
 - **知识库**: ChromaDB 向量库 + SentenceTransformer / qwen3-embedding
-- **数据**: SQLite（`database/xiaowo.db`，含 schema 与 seed）
+- **数据**: SQLite 双库——`database/xiaowo.db`（主库，含 schema 与 seed）+ `data/course_data.db`（评课库，8 表，schema 见 `database/schema_course.sql`，由 `scripts/build_course_db.py` 构建）
 - **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、科大 LLM 平台
 
 ## 🚀 快速开始
@@ -34,10 +34,14 @@ pip install -r requirements.txt
 #    LLM_MODEL=deepseek-chat
 #    LLM_EMBEDDING_MODEL=qwen3-embedding
 
-# 3. 初始化检查（自动建库 + 知识库校验）
+# 3. 构建评课库（选课推荐数据源；已构建则跳过）
+python scripts/crawl_icourse.py all   # 全量抓取 icourse.club 评课（断点续爬，可选）
+python scripts/build_course_db.py     # 构建 data/course_data.db（8 表）
+
+# 4. 初始化检查（自动建库 + 知识库校验）
 python init_check.py
 
-# 4. 启动应用
+# 5. 启动应用
 streamlit run app.py
 ```
 
@@ -74,7 +78,7 @@ streamlit run app.py
 | 工具层冒烟测试 | `python scripts/verify_tools.py` | 17/17 断言通过（推荐排序 / 低 workload 筛选 / 教师对比，结果含来源标识） |
 | 智能体链路冒烟测试 | `python scripts/advisor_smoke.py` | 5/5 通过（推荐 / 低 workload / 教师对比 / 澄清 / FAQ 均正确路由） |
 | 浏览器端到端测试 | `python scripts/browser_e2e.py` | 6 场景全部通过（首页 + 5 类提问），截图见 `docs/e2e_v3_*.png` |
-| 初始化回归 | `python init_check.py` | 数据库 + 知识库（220 篇文档）初始化正常 |
+| 初始化回归 | `python init_check.py` | 数据库 + 知识库（50 篇文档 / 220 条向量）初始化正常 |
 | 历史修复回归 | `python scripts/test_fixes.py` | 23/23 通过（排序 / 多师并列 / 评论去重 / 画像理由 / 数据对账） |
 | 流水线验收 | `python -m scripts.dev_pipeline run "选课推荐全链路验收" --executor qoder` | PASS（1 轮），Canvas 报告见 `.qoder/canvases/` |
 
