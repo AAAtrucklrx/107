@@ -17,6 +17,7 @@ class QaState(TypedDict):
     candidates_found: bool  # 候选召回是否达到阈值
     student_id: str  # 学号（登录用户；未登录为空）
     user_profile: dict  # 用户信息（姓名/专业/年级/登录状态等）
+    chat_history: list[dict]  # 最近对话历史（多轮指代理解，保留最近20条）
     decision: str  # think 决策：clarify / retrieve / call_tool / compose
     retrieve_query: str  # retrieve 决策时改写后的检索词
     tool_calls: list[dict]  # call_tool 决策的工具调用 [{tool, args}]

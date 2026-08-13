@@ -55,8 +55,12 @@ def process_query(user_input: str, selected_module: str) -> str:
         }
 
     from agents.qa.graph import run_qa
+    # 多轮记忆：把最近对话历史传给 QA 链路（含当前问题），供指代理解
+    chat_history = [{"role": m.get("role", "user"), "content": m.get("content", "")}
+                    for m in (st.session_state.get("messages") or [])][-20:]
     result = run_qa(user_input, module_signal=selected_module,
-                    student_id=student_id, user_profile=user_profile)
+                    student_id=student_id, user_profile=user_profile,
+                    chat_history=chat_history)
     if result.get("error"):
         log.warning(f"QA 流程提示: {result['error']}")
     return (result.get("answer") or result.get("clarify_question")

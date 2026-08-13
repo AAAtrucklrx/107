@@ -80,7 +80,8 @@ def _ensure_services():
 
 
 def run_qa(query: str, module_signal: str = "自动判断",
-           student_id: str = None, user_profile: dict = None) -> dict:
+           student_id: str = None, user_profile: dict = None,
+           chat_history: list[dict] = None) -> dict:
     """
     统一问答入口（替换原 router/agent 分发）。
 
@@ -89,6 +90,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
         module_signal: 侧边栏模块信号（"自动判断" 或模块名，仅作软提示）
         student_id: 学号（登录用户；未登录为空）
         user_profile: 用户信息（姓名/专业/年级等）
+        chat_history: 最近对话历史 [{role, content}, ...]（多轮指代理解）
 
     Returns:
         {"answer": str, "clarify_question": str, "intent": str, "decision": str,
@@ -105,6 +107,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "candidates_found": False,
             "student_id": student_id or "",
             "user_profile": user_profile or {},
+            "chat_history": chat_history or [],
             "decision": "compose",
             "retrieve_query": "",
             "tool_calls": [],
@@ -131,6 +134,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "candidates_found": False,
             "student_id": student_id or "",
             "user_profile": user_profile or {},
+            "chat_history": chat_history or [],
             "decision": "compose",
             "retrieve_query": "",
             "tool_calls": [],
