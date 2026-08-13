@@ -104,5 +104,30 @@ ok("关键词归一化结果非空", len(kw_recs) > 0, f"{len(kw_recs)} 门")
 ok("关键词归一化全部含「数学分析」", all("数学分析" in c["name"] for c in kw_recs),
    [c["name"] for c in kw_recs][:5])
 
+# 9. 课程搜索跨库合并: 本地种子课程表仅少量样例,
+#    search_courses 应合并评课库完整课程表, 使「数学分析B1」可被检索
+from database.db_manager import DatabaseManager
+from services.service_container import ServiceContainer
+ServiceContainer()._db = DatabaseManager("database/xiaowo.db")
+# 注入假 Catalog（始终失败）, 让断言确定性地覆盖本地 fallback 路径
+class _OfflineCatalog:
+    def search_courses(self, keyword):
+        raise RuntimeError("offline")
+ServiceContainer()._catalog_api = _OfflineCatalog()
+from tools.course_tools import search_courses, _norm_course_name
+
+r_sc = search_courses.invoke({"keyword": "数学分析B1"})
+sc_names = [c["course_name"] for c in (r_sc.get("courses") or [])]
+ok("课程搜索跨库命中 B1", r_sc.get("count", 0) >= 1 and "数学分析(B1)" in sc_names,
+   f"count={r_sc.get('count')}, {sc_names}")
+
+r_sc2 = search_courses.invoke({"keyword": "数学分析"})
+sc2_names = [c["course_name"] for c in (r_sc2.get("courses") or [])]
+ok("课程搜索多班型覆盖", "数学分析(B1)" in sc2_names and "数学分析(B2)" in sc2_names,
+   f"{len(sc2_names)} 门: {sc2_names}")
+ok("课程搜索无重复课程名",
+   len({_norm_course_name(n) for n in sc2_names}) == len(sc2_names),
+   sc2_names)
+
 
 print(f"\n结果: {PASS}/{PASS} 断言通过")

@@ -7,6 +7,8 @@ v3.0: 课表和成绩对接 jw 内部 API（需 CAS 登录），catalog API 对�
 
 from langchain_core.tools import tool
 from datetime import date, timedelta
+import sqlite3
+from pathlib import Path
 
 from services.service_container import ServiceContainer
 from utils.logger import get_logger
@@ -14,6 +16,10 @@ from utils.course_periods import parse_periods, periods_to_range
 import re as _re
 
 log = get_logger("xiaowo.tools.course")
+
+# 评课库课程表路径（与 advisor_tools 的 COURSE_DB 相同）: 完整 2351 门课程。
+# 本地种子课程表仅少量样例，课程搜索时合并两份数据避免「数学分析B1」搜不到。
+_REVIEW_DB = Path(__file__).resolve().parents[1] / "data" / "course_data.db"
 
 
 def _db():
@@ -851,6 +857,28 @@ def search_courses(keyword: str, limit: int = 10) -> dict:
     courses = [{"course_code": r.get("code", ""), "course_name": r.get("name", ""),
                 "teacher": r.get("teacher", ""), "credits": r.get("credits", 0)}
                for r in rows]
+    # 本地种子课程表仅少量样例（如只有数学分析(B2)）: 再合并评课库完整课程表,
+    # 保证「数学分析B1」这类课程名也能被检索到（按归一化课程名去重）
+    seen = {_norm_course_name(c["course_name"]) for c in courses}
+    try:
+        with sqlite3.connect(str(_REVIEW_DB), timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            extra = conn.execute(
+                "SELECT code, name, credit FROM courses WHERE "
+                "REPLACE(REPLACE(REPLACE(REPLACE(name,'(',''),')',''),' ',''),'　','') LIKE ? "
+                "LIMIT ?",
+                (f"%{_norm_course_name(keyword)}%", limit),
+            ).fetchall()
+        for r in extra:
+            key = _norm_course_name(r["name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            courses.append({"course_code": r["code"] or "", "course_name": r["name"],
+                            "teacher": "", "credits": r["credit"] or 0})
+    except Exception as e:
+        log.warning(f"评课库课程检索合并失败 (keyword={keyword}): {e}")
+    courses = courses[:limit]
     return {"keyword": keyword, "courses": courses, "count": len(courses),
             "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地课程数据，仅供参考"}
 
