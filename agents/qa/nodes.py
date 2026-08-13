@@ -24,6 +24,95 @@ log = get_logger("xiaowo.qa.nodes")
 
 MAX_ROUNDS = 4
 
+# 需要 student_id 的个人数据工具（act 层兜底注入学号，防 LLM 漏传导致查空）
+_PERSONAL_TOOLS = frozenset({
+    "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa",
+    "query_exam", "query_course_selection", "query_program",
+    "add_event", "get_day_view", "get_week_view", "check_conflict", "import_schedule",
+})
+
+
+# ── 选课推荐参数兜底 ────────────────────────────────
+
+
+def _load_taken_courses(student_id: str) -> list[str]:
+    """从本地成绩表读取已修课程名（供推荐排除已修课程）"""
+    if not student_id:
+        return []
+    try:
+        import sqlite3
+        from config import DATABASE_PATH
+        conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT course_name FROM student_grades WHERE student_id = ?",
+                (student_id,)).fetchall()
+        finally:
+            conn.close()
+        return [r[0] for r in rows]
+    except Exception as e:
+        log.warning(f"读取已修课程失败，推荐将不排除已修: {e}")
+        return []
+
+
+def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
+    """recommend_courses 参数兜底：补齐专业/年级/已修课程/学年号。
+
+    LLM 决策常只传兴趣漏传身份，导致方案定位失败退化成全量评分乱推；
+    此处从登录用户画像与本地成绩表补齐，保证命中培养方案分组推荐。"""
+    profile = dict(args.get("profile") or {})
+    up = state.get("user_profile") or {}
+    if not profile.get("major") and not args.get("major"):
+        profile["major"] = up.get("major") or "计算机科学"
+    if not profile.get("grade") and not args.get("grade"):
+        profile["grade"] = up.get("grade") or "大二"
+    if not profile.get("taken_courses") and not args.get("taken_courses") and sid:
+        taken = _load_taken_courses(sid)
+        if taken:
+            profile["taken_courses"] = taken
+    if not profile.get("current_year_index") and not args.get("current_year_index"):
+        from tools.advisor_tools import _infer_current_year_index
+        yi = _infer_current_year_index(profile.get("grade"))
+        if yi:
+            profile["current_year_index"] = yi
+    args["profile"] = profile
+
+
+def _load_personal_tree():
+    """从 CAS 客户端拉取个人方案树（登录态注入，测试模式已替换为备份数据）。"""
+    try:
+        from services.service_container import ServiceContainer
+        sc = ServiceContainer()
+        if not sc.has_cas():
+            return None
+        tree = sc.cas_client.get_my_program_tree()
+        if isinstance(tree, dict) and "error" in tree:
+            return None
+        return tree
+    except Exception:
+        return None
+
+
+def _enrich_program_args(args: dict, state: QaState, sid: str) -> None:
+    """培养方案工具参数兜底：补齐专业/年级/已修课程/个人方案树。
+
+    get_program_progress 缺 taken_courses 时会把已修课程误判为必修缺口（"已修0"），
+    get_my_program/plan_semester 缺 personal_tree 时退化成全量库方案；
+    此处统一从登录画像、本地成绩表与 CAS 方案树补齐。"""
+    up = state.get("user_profile") or {}
+    if not args.get("major"):
+        args["major"] = up.get("major") or "计算机科学"
+    if not args.get("grade"):
+        args["grade"] = up.get("grade") or ""
+    if not args.get("taken_courses") and sid:
+        taken = _load_taken_courses(sid)
+        if taken:
+            args["taken_courses"] = taken
+    if not args.get("personal_tree"):
+        tree = _load_personal_tree()
+        if tree is not None:
+            args["personal_tree"] = tree
+
 # ── 模块信号 → 意图（仅作软提示，不强制覆盖） ──────────
 
 MODULE_TO_INTENT = {
@@ -43,8 +132,8 @@ _TOOL_LIST = (
     "query_grade(成绩), calc_gpa(绩点), query_exam(考试安排), "
     "search_courses(课程搜索), get_semester_list(学期列表), "
     "query_course_selection(选课情况), query_program(培养方案), "
-    "get_my_program(培养方案-我的方案, 参数 major/grade), get_program_progress(培养进度, 参数 major/grade/taken_courses), "
-    "plan_semester(学期规划, 参数 major/grade/year_index), "
+    "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入), get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入), "
+    "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入), "
     "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\"} 或顶层 major/grade/interests/preference/keywords), "
     "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
@@ -89,6 +178,10 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 {tools}
 
 ## 输入
+学生信息（登录用户才有；个人数据工具必须携带 student_id）:
+{student_info}
+对话历史（最近对话，理解"我的/刚才/之前/那个"等指代，仅供参考）:
+{chat_history}
 用户问题: {query}
 模块信号（用户可能手动选择了模块，仅供参考，可忽略）: {module_signal}
 意图参考（embedding 分类结果，仅供参考，若与真实意图不符必须自行修正）: {intent} —— {intent_hint}
@@ -113,6 +206,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
+16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -131,6 +225,54 @@ _GRADE_WORDS = ["大一", "大二", "大三", "大四"]
 _SENSITIVE_WORDS = ["作弊", "改成绩", "代考", "抄袭", "替考", "考试答案", "舞弊"]
 
 _CHITCHAT_WORDS = ["你好", "您好", "嗨", "哈喽", "hello", "hi", "在吗", "谢谢", "感谢", "辛苦", "你是谁", "拜拜", "再见"]
+
+# 个人信息问答（快速通道，稳定模板回答，避免 LLM 顺着误分类意图编造数据）
+_PERSONAL_QA = [
+    (r"大几|几年级|哪个年级|什么年级", "grade"),
+    (r"什么专业|哪个专业", "major"),
+    (r"我?(叫|是)?谁|叫什么名字", "name"),
+    (r"学号(是|为)?(多少|什么)?", "id"),
+]
+
+
+_PERSONAL_QA_ANSWER = {
+    "grade": "根据你的学籍信息，你是{name}（{id}），{grade}，{major}专业。",
+    "major": "你的专业是{major}（{grade}，{name}）。",
+    "name": "你是{name}（学号{id}），{major}专业{grade}。",
+    "id": "你的学号是{id}（{name}，{major}专业{grade}）。",
+}
+
+
+def _is_personal_qa(query: str) -> str | None:
+    """个人信息问答识别：返回命中的字段名；未命中返回 None。
+    要求问题为第一人称问自己，避免误伤“他大几”等问别人。"""
+    q = (query or "").strip()
+    if not re.search(r"我|自己", q) or "他" in q or "她" in q:
+        return None
+    if len(q) > 16:  # 过长的复合问题不走模板，交给 LLM
+        return None
+    for pat, field in _PERSONAL_QA:
+        if re.search(pat, q):
+            return field
+    return None
+
+
+def _personal_qa_answer(field: str, state: QaState) -> str:
+    """个人信息模板回答（从登录画像取值，未登录说明）"""
+    up = state.get("user_profile") or {}
+    sid = state.get("student_id") or ""
+    name = up.get("name") or ""
+    major = up.get("major") or ""
+    grade = str(up.get("grade") or "")
+    if grade and not re.search(r"大[一二三四五六]", grade):
+        from tools.advisor_tools import _infer_current_year_index
+        yi = _infer_current_year_index(grade)
+        if yi and 1 <= yi <= 6:
+            grade = f"{grade}（大{'一二三四五六'[yi - 1]}）"
+    if not (name or sid or major or grade):
+        return "你还没有登录，登录后我可以告诉你你的学籍信息哦～"
+    return _PERSONAL_QA_ANSWER[field].format(name=name or "同学", id=sid or "未绑定学号",
+                                            major=major or "未知专业", grade=grade or "未知年级")
 
 
 def _is_chitchat(query: str) -> bool:
@@ -154,6 +296,11 @@ def think(state: QaState) -> dict:
     if intent == "闲聊" and _is_chitchat(query):
         return {"decision": "compose", "tool_calls": [],
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": "闲聊问候，直接回应"}]}
+    # 个人信息问答快速通道（稳定模板，避免 LLM 顺着误分类意图编造数据）
+    personal_field = _is_personal_qa(query)
+    if personal_field:
+        return {"decision": "compose", "personal_qa": personal_field, "tool_calls": [],
+                "thought_log": [{"round": rounds, "decision": "compose", "reason": f"个人信息问答({personal_field})，模板回答"}]}
 
     candidates = state.get("candidates") or []
     results = state.get("tool_results") or []
@@ -170,6 +317,8 @@ def think(state: QaState) -> dict:
         response = (prompt | llm).invoke({
             "tools": _TOOL_LIST,
             "query": query,
+            "student_info": _build_student_info(state),
+            "chat_history": _build_chat_history(state.get("chat_history") or []),
             "module_signal": state.get("module_signal") or "自动判断",
             "intent": intent,
             "intent_hint": intent_hint(intent),
@@ -279,6 +428,38 @@ def _build_candidates_summary(candidates: list[dict]) -> str:
         title = c.get("title") or c.get("source") or "未命名"
         content = str(c.get("content", ""))[:220]
         lines.append(f"[{i}] 《{title}》 score={c.get('score')} is_official={c.get('is_official', True)}: {content}")
+    return "\n".join(lines)
+
+
+def _build_student_info(state: QaState) -> str:
+    """学生信息摘要（供 think/compose 决策与回答时识别用户身份）"""
+    sid = state.get("student_id") or ""
+    profile = state.get("user_profile") or {}
+    parts = [f"学号: {sid}"] if sid else []
+    if profile.get("name"):
+        parts.append(f"姓名: {profile.get('name')}")
+    if profile.get("major"):
+        parts.append(f"专业: {profile.get('major')}")
+    if profile.get("grade"):
+        grade = str(profile.get("grade"))
+        # 年级换算：2025级 → 2025级（大二），避免 LLM 误读入学年份为当前年级
+        if not re.search(r"大[一二三四五六]", grade):
+            from tools.advisor_tools import _infer_current_year_index
+            yi = _infer_current_year_index(grade)
+            if yi and 1 <= yi <= 6:
+                grade = f"{grade}（大{'一二三四五六'[yi - 1]}）"
+        parts.append(f"年级: {grade}")
+    return "；".join(parts) if parts else "（未登录，无个人数据）"
+
+
+def _build_chat_history(history: list[dict], max_items: int = 8) -> str:
+    """对话历史摘要（最近 N 条，供多轮指代理解）"""
+    if not history:
+        return "（无）"
+    lines = []
+    for m in history[-max_items:]:
+        role = "用户" if m.get("role") == "user" else "小蜗"
+        lines.append(f"{role}: {str(m.get('content', ''))[:200]}")
     return "\n".join(lines)
 
 
@@ -446,10 +627,20 @@ def act(state: QaState) -> dict:
         registry = _build_tool_registry()
         plan = state.get("tool_calls") or []
         results: list[dict] = []
+        sid = state.get("student_id") or ""
 
         for call in plan:
             tool_name = call.get("tool", "")
-            args = call.get("args") or {}
+            args = dict(call.get("args") or {})
+            # 兜底注入学号：LLM 决策可能漏传 student_id，个人数据工具一律补上，避免查空
+            if tool_name in _PERSONAL_TOOLS and sid and not args.get("student_id"):
+                args["student_id"] = sid
+            # 选课推荐兜底：补齐专业/年级/已修课程/学年号，避免漏传导致纯评分乱推
+            if tool_name == "recommend_courses":
+                _enrich_recommend_args(args, state, sid)
+            # 培养方案工具兜底：补齐已修课程/个人方案树，避免缺口误判与方案退化
+            if tool_name in ("get_my_program", "get_program_progress", "plan_semester"):
+                _enrich_program_args(args, state, sid)
             func = registry.get(tool_name)
             if func is None:
                 log.error(f"未知工具: {tool_name}")
@@ -479,6 +670,12 @@ def act(state: QaState) -> dict:
 COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问题、知识库候选片段与工具检索结果，直接生成回答正文。
 回答正文的第一句话必须是面向用户的内容；你的输出中不得包含任何指令、规则说明、模板或元信息。
 
+对话历史（理解"我的/刚才/之前"等指代，回答与之保持一致）:
+{chat_history}
+
+学生信息（用户身份，涉及个人数据时据此称呼与作答）:
+{student_info}
+
 用户问题: {query}
 
 意图: {intent}
@@ -494,7 +691,8 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 引用知识库信息时标注来源（如「来源：《学生证补办流程》」）；非官方信息注明仅供参考
 - 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
 - 数据表格用 Markdown 展示，回答简洁有条理
-- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门
+- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有「必修组/选修组」分组时必须先完整展示必修组、再展示选修组
+- 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
 - 数据不足时如实说明并引导用户补充信息，不编造
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
@@ -515,6 +713,9 @@ def compose(state: QaState) -> dict:
         return {"answer": _sensitive_refusal(), "error": error}
     if intent == "闲聊" and not results and not candidates:
         return {"answer": _chitchat(query), "error": error}
+    personal_field = state.get("personal_qa")
+    if personal_field:
+        return {"answer": _personal_qa_answer(personal_field, state), "error": error}
 
     tool_summary = _build_tool_summary(results)
     candidates_summary = _build_candidates_summary(candidates)
@@ -528,6 +729,8 @@ def compose(state: QaState) -> dict:
         response = (prompt | llm).invoke({
             "query": query,
             "intent": intent,
+            "chat_history": _build_chat_history(state.get("chat_history") or []),
+            "student_info": _build_student_info(state),
             "candidates_summary": candidates_summary,
             "tool_summary": tool_summary,
         })
@@ -548,14 +751,13 @@ _RULE_KEYWORDS_STRONG = ("结尾", "为准", "不得", "禁止", "必须", "须�
 
 
 def _strip_rule_prefix(text: str) -> str:
-    """剥离开头混入的规则续写段（如 "7. 涉及保研…以官方发布为准
-
----
-
-正文"、
-    或单行演绎如 "结尾用一句话总结，并引导用户进一步提问\n\n正文"）"""
+    """剥离开头混入的规则续写段与模型脏前缀（如 "smart_toy | " 对话痕迹）。"""
     if not text:
         return text
+    # 模式0: 模型输出残留的英文 token + 分隔符脏前缀（如 "smart_toy | 小蜗来啦…" 或 "smart_toy\n\n小蜗来啦…"，分隔符可为竖线或换行、可重复）
+    m = re.match(r"^[a-z_][a-z_]{1,19}(?:\s*(?:[|｜]|\n)\s*)+(?=[\u4e00-\u9fff\d])", text)
+    if m:
+        text = text[m.end():].strip()
     # 模式1: 编号规则行
     m = re.match(r"^(\s*\d+[.、．]\s*[^\n]{0,160}\n){1,2}\s*(?:-{3,}\s*\n*)*", text)
     if m and any(k in m.group(0) for k in _RULE_KEYWORDS):
@@ -606,19 +808,46 @@ def _build_tool_summary(results: list[dict]) -> str:
             for item in res["results"][:3]:
                 lines.append(f"- {str(item.get('content', ''))[:300]}")
         elif tool == "recommend_courses" and isinstance(res.get("recommendations"), list):
+            groups = res.get("groups") or {}
+            req = groups.get("required") or []
+            elec = groups.get("elective") or []
             lines.append(f"[{tool}] 共返回 {len(res['recommendations'])} 门课（候选 {res.get('total_candidates')} 门）:")
-            for item in res["recommendations"]:
-                t_names = "、".join(x["name"] for x in item.get("teachers", [])[:3]) or "未知"
-                lines.append(f"- {item.get('name', '?')} | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
-                             f" | 学期 {'/'.join(item.get('terms') or [])} | 评论{len(item.get('top_reviews') or [])}条")
-                for rv in (item.get("top_reviews") or [])[:6]:
-                    lines.append(f"  > “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
-        elif tool == "analyze_teacher" and isinstance(res.get("courses"), list):
-            lines.append(f"[{tool}] 教师「{res.get('teacher')}」共 {len(res['courses'])} 门课（均分 {res.get('avg_rating')}·{res.get('review_count')}条）:")
-            for c in res["courses"]:
-                lines.append(f"- {c.get('name', '?')} | {c.get('rating_avg')}分·{c.get('rate_count')}条")
-                for rv in (c.get("top_reviews") or [])[:2]:
-                    lines.append(f"  > “{rv.get('content', '')[:80]}”——{rv.get('author', '')}({rv.get('term', '')})")
+
+            def _dump(items, prefix=""):
+                for item in items:
+                    t_names = "、".join(x["name"] for x in item.get("teachers", [])[:3]) or "未知"
+                    hint = item.get("program_hint") or {}
+                    if hint:
+                        hint_txt = (f"｜方案:{hint.get('program', '')[:20]}/"
+                                    f"方案学期{hint.get('term', '?')}/{hint.get('required', '')}")
+                    else:
+                        hint_txt = ""
+                    # terms 是评课库历史开课学期（供参考），方案学期以 program_hint.term 为准
+                    terms_txt = "/".join(item.get("terms") or []) or "未知"
+                    credit = item.get("credit")
+                    credit_txt = f"{credit}学分" if credit else ""
+                    lines.append(f"- {item.get('name', '?')}（{credit_txt}） | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
+                                 f" | 近3次开课 {terms_txt}{hint_txt} | 评论{len(item.get('top_reviews') or [])}条")
+                    for rv in (item.get("top_reviews") or [])[:6]:
+                        lines.append(f"  > “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+
+            if req:
+                lines.append(f"【必修组·共{len(req)}门，培养方案要求，回答时必须置前展示】")
+                _dump(req)
+            if elec:
+                lines.append(f"【选修组·共{len(elec)}门，方案内选修，按评分排序，回答时置于必修组之后】")
+                _dump(elec)
+            if not req and not elec:
+                _dump(res["recommendations"])
+            # 选课季语义提示：方案学期“2秋”指大二上学期，避免 LLM 把评课库历史开课学期当“下学期”
+            try:
+                from tools.advisor_tools import _infer_current_term
+                cur = _infer_current_term()
+            except Exception:
+                cur = ""
+            if cur:
+                lines.append(f"说明：当前选课季为 {cur}；方案学期「2秋」指大二上学期（以此类推），"
+                             f"不要用近3次开课学期代替方案学期。")
         elif tool == "analyze_teacher" and res.get("teachers") and "course" in res:
             lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 位老师（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
             for t in res["teachers"]:
@@ -627,6 +856,66 @@ def _build_tool_summary(results: list[dict]) -> str:
             for rv in (res.get("reviews_sample") or [])[:6]:
                 tname = rv.get("teacher") or "未知老师"
                 lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+        elif tool == "query_grade" and isinstance(res.get("grades"), list):
+            grades = res["grades"]
+            lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{res.get('source', '')}）:")
+            for g in grades[:60]:
+                lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
+                             f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
+            if len(grades) > 60:
+                lines.append(f"  ... 其余 {len(grades) - 60} 门略")
+        elif tool == "calc_gpa" and isinstance(res.get("details"), list):
+            lines.append(f"[{tool}] 总GPA {res.get('gpa')}（{res.get('semester')}），总学分 {res.get('total_credits')}")
+            details = res["details"]
+            lines.append(f"  明细 {len(details)} 门:")
+            for g in details[:60]:
+                lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
+                             f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
+        elif tool in ("query_schedule", "query_daily_schedule") and isinstance(res.get("courses"), list):
+            courses = res["courses"]
+            lines.append(f"[{tool}] 共 {len(courses)} 门课（{res.get('source', '')}，{res.get('semester', '')}）:")
+            for c in courses[:80]:
+                lines.append(f"- {c.get('course_name', '?')} {c.get('teacher', '')} "
+                             f"{c.get('time', '')} {c.get('location', '')}")
+        elif tool == "query_course_selection" and isinstance(res.get("selections"), list):
+            sels = res["selections"]
+            lines.append(f"[{tool}] 共 {len(sels)} 门已选课程:")
+            for s in sels[:80]:
+                lines.append(f"- {s.get('course_name', '?')} {s.get('teacher', '')} "
+                             f"{s.get('credits', '')}学分 {s.get('status', '')}")
+        elif tool == "query_exam" and isinstance(res.get("exams"), list):
+            exams = res["exams"]
+            lines.append(f"[{tool}] 共 {len(exams)} 场考试（{res.get('source', '')}）:")
+            for e in exams[:60]:
+                lines.append(f"- {e.get('course', '?')} {e.get('date', '')} {e.get('time', '')} "
+                             f"{e.get('location', '')} {e.get('type', '')}")
+        elif tool == "get_program_progress":
+            lines.append(f"[{tool}] {res.get('name', '')} 必修已修 {res.get('required_taken')}/"
+                         f"{res.get('required_total')} 门，学分 {res.get('credits_taken')}/"
+                         f"{res.get('credits_required')}（{res.get('percent')}%）")
+            rem = res.get("required_remaining") or []
+            lines.append(f"  必修缺口 {len(rem)} 门:")
+            for c in rem[:80]:
+                lines.append(f"- {c.get('name', '?')} {c.get('credit', '')}学分 "
+                             f"{c.get('term', '')} [{c.get('category', '')}]")
+            mp = res.get("modules_progress") or []
+            if mp:
+                lines.append("  模块进度: " + "、".join(
+                    f"{m['category']} {m['taken']}/{m['total']}" for m in mp))
+        elif tool == "get_my_program" and isinstance(res.get("courses"), list):
+            courses = res["courses"]
+            lines.append(f"[{tool}] {res.get('name', '')}（{res.get('grade', '')}）共 {len(courses)} 门课程:")
+            for c in courses[:80]:
+                lines.append(f"- {c.get('name', '?')} {c.get('code', '')} {c.get('credit', '')}学分 "
+                             f"{c.get('required', '')} {c.get('term', '')} [{c.get('category', '')}]")
+        elif tool == "plan_semester" and isinstance(res.get("terms"), list):
+            terms = res["terms"]
+            lines.append(f"[{tool}] 第 {res.get('year_index')} 学年规划，总学分 {res.get('total_credits')}:")
+            for t in terms:
+                lines.append(f"- {t['term']} 学期 {len(t['courses'])} 门:")
+                for c in t["courses"][:60]:
+                    lines.append(f"  * {c.get('name', '?')} {c.get('credit', '')}学分 "
+                                 f"{c.get('required', '')} [{c.get('category', '')}]")
         else:
             lines.append(f"[{tool}] {json.dumps(res, ensure_ascii=False)[:800]}")
     return "\n".join(lines) if lines else "（无工具结果）"

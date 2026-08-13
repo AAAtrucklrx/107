@@ -61,10 +61,17 @@ def _resolve_program(conn: sqlite3.Connection, major: str, grade: str = None) ->
     """
     if not major:
         return None
+    # name 匹配优先：college LIKE 会误伤（如 major="人工智能" 命中 人工智能与数据科学学院 的
+    # 数据科学与大数据技术方案），仅当 name 无命中时才回退 college
     rows = conn.execute(
-        "SELECT * FROM programs WHERE name LIKE ? OR college LIKE ? ORDER BY grade DESC",
-        (f"%{major}%", f"%{major}%"),
+        "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
+        (f"%{major}%",),
     ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
+            (f"%{major}%",),
+        ).fetchall()
     if not rows:
         return None
 

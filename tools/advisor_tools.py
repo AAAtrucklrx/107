@@ -48,13 +48,16 @@ def _cdb() -> sqlite3.Connection:
 
 
 def _norm_course_name(name: str) -> str:
-    """归一化课程名: 去全角/半角括号、空格与全角空格, ASCII 大写。
+    """归一化课程名: 去全角/半角括号、引号、空格与全角空格, ASCII 大写。
 
     使 '数学分析 (B1)'、'数学分析（B1）'、'数学分析 B1' 等变体都收敛成
-    同一 '数学分析B1', 与数据库里 '数学分析(B1)' 的写法互相匹配。
+    同一 '数学分析B1', 与数据库里 '数学分析(B1)' 的写法互相匹配;
+    中文/英文引号不影响课程名匹配, 一并去掉（如 '"科学与社会"研讨课'）。
     """
     s = (name or "").translate(str.maketrans("（）", "()")).replace("　", " ")
     s = s.replace("(", "").replace(")", "").replace(" ", "")
+    for ch in "\"'“”‘’":
+        s = s.replace(ch, "")
     return s.upper()
 
 
@@ -215,16 +218,43 @@ def _top_reviews(conn: sqlite3.Connection, course_id: int, teacher: str | None =
     return out
 
 
-def _program_hint(conn: sqlite3.Connection, major: str | None, course_id: int) -> dict | None:
-    """培养方案弱标注: 该课程是否出现在用户专业相关的方案中（必修/选修 + 学期标注）。"""
+def _program_hint(conn: sqlite3.Connection, major: str | None, course_id: int,
+                  grade: str | None = None) -> dict | None:
+    """培养方案弱标注: 该课程是否出现在用户专业相关的方案中（必修/选修 + 学期标注）。
+
+    优先展示「同年级 + 普通专业方案」，与 _resolve_program 的实际定位一致，
+    避免给 2025 级用户标注 2026 级方案造成误导；其次才是普通方案 / 最新方案。"""
     if not major:
         return None
-    hits = conn.execute(
+    g = _parse_grade_key(grade)
+    # name 匹配优先：与 _resolve_program 一致，避免 college 模糊误伤（如 "人工智能" 命中数据科学方案）
+    rows = conn.execute(
+        "SELECT id FROM programs WHERE name LIKE ? ORDER BY grade DESC",
+        (f"%{major}%",),
+    ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT id FROM programs WHERE college LIKE ? ORDER BY grade DESC",
+            (f"%{major}%",),
+        ).fetchall()
+    if not rows:
+        return None
+    prog_ids = [r["id"] for r in rows[:50]]
+    placeholders = ",".join("?" * len(prog_ids))
+    params = [course_id] + prog_ids
+    grade_clause = ""
+    if g:
+        grade_clause = "CASE WHEN p.grade LIKE ? THEN 0 ELSE 1 END, "
+        params.append(f"%{g}级%")
+    sql = (
         "SELECT pc.required, pc.term, pc.category, p.name, p.grade "
         "FROM program_courses pc JOIN programs p ON p.id = pc.program_id "
-        "WHERE pc.course_id=? AND (p.name LIKE ? OR p.college LIKE ?) LIMIT 3",
-        (course_id, f"%{major}%", f"%{major}%"),
-    ).fetchall()
+        f"WHERE pc.course_id=? AND p.id IN ({placeholders}) "
+        f"ORDER BY {grade_clause}"
+        "CASE WHEN p.name LIKE '%专业培养方案%' AND p.name NOT LIKE '%英才班%' "
+        " AND p.name NOT LIKE '%辅修%' THEN 0 ELSE 1 END, p.grade DESC LIMIT 3"
+    )
+    hits = conn.execute(sql, params).fetchall()
     if not hits:
         return None
     h = hits[0]
@@ -269,29 +299,53 @@ def _parse_grade_key(grade: str) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _prog_priority(r) -> int:
+    """方案类型优先级：普通专业方案 0；英才班/带括号特殊方案 1；辅修 2。
+
+    同年级多方案命中（普通班 vs 英才班/少年班等）时优先普通专业方案，
+    避免给普通班学生推荐英才班专属课程（如量子物理、并行计算A 等）。"""
+    name = r["name"] or ""
+    if "辅修" in name:
+        return 2
+    if "英才班" in name or "（" in name or "(" in name:
+        return 1
+    return 0
+
+
 def _resolve_program(conn: sqlite3.Connection, major: str | None,
                      grade: str | None = None) -> tuple[int | None, str | None]:
-    """全量库方案定位：同年级 → 最近低年级 → 最新。
+    """全量库方案定位：同年级 → 最近低年级 → 最新；同年级内普通专业方案优先。
 
     Returns:
         (program_id, program_name)；无 major 或未命中时 (None, None)。
     """
     if not major:
         return None, None
+    # name 精确优先：college LIKE 会误伤（如 major="人工智能" 命中 人工智能与数据科学学院 的
+    # 数据科学与大数据技术方案，把计算机学生推向别专业课程），仅当 name 无命中时才回退 college
     rows = conn.execute(
-        "SELECT * FROM programs WHERE name LIKE ? OR college LIKE ? ORDER BY grade DESC",
-        (f"%{major}%", f"%{major}%"),
+        "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
+        (f"%{major}%",),
     ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
+            (f"%{major}%",),
+        ).fetchall()
     if not rows:
         return None, None
     target = _parse_grade_key(grade)
-    if target:
-        def _sort_key(r):
-            g = _parse_grade_key(r["grade"])
+
+    def _sort_key(r):
+        g = _parse_grade_key(r["grade"])
+        if target:
             diff = g - target
             bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
-            return (bucket, -g)  # 低年级桶内最近低年级在前, 高年级桶内最新方案在前
-        rows = sorted(rows, key=_sort_key)
+        else:
+            bucket = 0  # 无年级信息: 不按年级分桶, 普通方案优先 + 最新在前
+        return (bucket, _prog_priority(r), -g)
+
+    rows = sorted(rows, key=_sort_key)
     row = rows[0]
     return row["id"], row["name"]
 
@@ -305,21 +359,28 @@ def _parse_term_year(term: str) -> int | None:
 def _term_urgency(term: str, current_yi: int | None) -> int:
     """学期紧迫度档位（必修组内排序）：
     0=已过期应修未修（学年号 < current_year_index）置顶；
-    1=当前学年该修（== current_year_index）其次；2=未来学期最后。
-    term 为空或无法解析的按当前学年档（1）处理。"""
+    1=当前学年且为下学期（1-8 月面向秋季、9-12 月面向春季）该修；
+    2=当前学年但非下学期（可稍后修）；3=未来学年或无法解析（最后）。
+    春/秋区分避免「2春」与「2秋」同档按评分乱排（如 8 月选课应 2秋 优先于 2春）。"""
     y = _parse_term_year(term)
     if y is None or current_yi is None:
-        return 1
+        return 3
     if y < current_yi:
         return 0
-    if y == current_yi:
-        return 1
-    return 2
+    if y > current_yi:
+        return 3
+    # 当前学年：区分春秋——「下学期」优先（8 月前面向秋季选课, 9 月起面向春季选课）
+    month = date.today().month
+    next_is_autumn = month <= 8
+    season = "秋" if "秋" in (term or "") else "春"
+    return 1 if (season == "秋") == next_is_autumn else 2
 
 
 def _infer_current_year_index(grade: str | None) -> int | None:
-    """由年级推算当前学年号："大二"→2；"2024级"→当前日期所在学年 - 入学年 + 1。
-    无法推算时返 None（此时必修组全体按当前学年档处理）。"""
+    """由年级推算当前学年号："大二"→2；"2024级"→面向今年 9 月开学学年 - 入学年 + 1。
+
+    选课场景以 9 月开学为新学年基准（暑假选课即面向下学期开学后的新学年）：
+    2025 级在 2026 年 8 月/9 月 → 2（大二）。无法推算时返 None（必修组全体按当前学年档处理）。"""
     gs = str(grade or "")
     for idx, zh in enumerate(["一", "二", "三", "四"], start=1):
         if f"大{zh}" in gs:
@@ -328,7 +389,7 @@ def _infer_current_year_index(grade: str | None) -> int | None:
     if not g:
         return None
     today = date.today()
-    ay = today.year - 1 if today.month < 9 else today.year  # 当前学年起始年
+    ay = today.year  # 选课永远面向今年 9 月开学的新学年（1-8 月为下学期选课, 9-12 月已在新学年）
     return max(ay - g + 1, 1)
 
 
@@ -385,7 +446,7 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         "multi_teacher": multi,
         "terms": _recent_terms(conn, cid),
         "top_reviews": reviews,
-        "program_hint": _program_hint(conn, profile.get("major"), cid),
+        "program_hint": _program_hint(conn, profile.get("major"), cid, profile.get("grade")),
         "reasons": _generate_reason(conn, {"name": row["name"], "dept": row["dept"],
                                            "course_type": row["course_type"],
                                            "rate_count": row["rating_count"], "dims": dims},
@@ -437,12 +498,20 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
         "WHERE pc.program_id=? AND pc.required='必修' AND pc.course_id IS NOT NULL",
         (prog_id,),
     ).fetchall()
-    req_rows.sort(key=lambda rr: (_term_urgency(rr["term"], current_yi), -(rr["rating_avg"] or 0)))
+
+    def _req_sort_key(rr):
+        urgency = _term_urgency(rr["term"], current_yi)
+        if "毕业" in (rr["name"] or ""):
+            urgency = 3  # 毕业论文/设计仅毕业年级修, 非毕业班一律排最后
+        return (urgency, -(rr["rating_avg"] or 0))
+
+    req_rows.sort(key=_req_sort_key)
     required = [_build_item(conn, rr, profile) for rr in req_rows
                 if _norm_course_name(rr["name"]) not in taken]
     required_ids = {it["id"] for it in required}  # 必修组整体排除出选修组，保证两组不重叠
 
-    # ── 选修组候选: 方案内选修 + 方案外评分池（减必修已选与已修）──
+    # ── 选修组候选: 方案内选修优先（按评分降序），方案外高分池仅作条数补足 ──
+    # （避免方案外课程混排靠前造成“乱推”观感）
     elective: list[dict] = []
     seen_ids: set[int] = set()
     for pr in conn.execute(
@@ -456,12 +525,12 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
             continue
         seen_ids.add(pr["id"])
         elective.append(_build_item(conn, pr, profile))
+    elective.sort(key=lambda it: (-it["rating_avg"], -it["rate_count"]))
     for r in _pool_rows(conn, keywords):
         if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
             continue
         seen_ids.add(r["id"])
         elective.append(_build_item(conn, r, profile))
-    elective.sort(key=lambda it: (-it["rating_avg"], -it["rate_count"]))
 
     # ── 条数拆分: 60%/40%（不足互补）──
     req_target, elec_target = _split_targets(max_results)
@@ -603,8 +672,14 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     current_yi = profile.get("current_year_index")
     if current_yi is None:
         current_yi = _infer_current_year_index(profile.get("grade"))
-    # 已修课程（归一化集合）; 未提供视为全部未修
-    taken = {_norm_course_name(tc) for tc in (profile.get("taken_courses") or [])}
+    # 已修课程（归一化集合）; 未提供视为全部未修。
+    # (L) 实验/语言班型后缀兼容：成绩里 "计算机程序设计(L)" 视同 "计算机程序设计" 已修。
+    taken: set[str] = set()
+    for tc in (profile.get("taken_courses") or []):
+        n = _norm_course_name(tc)
+        taken.add(n)
+        if n.endswith("L") and len(n) > 1:
+            taken.add(n[:-1])
 
     # 方案定位：无 major / 未命中 / 库缺方案表 → 纯评分推荐
     try:
