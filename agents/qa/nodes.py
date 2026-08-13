@@ -43,6 +43,8 @@ _TOOL_LIST = (
     "query_grade(成绩), calc_gpa(绩点), query_exam(考试安排), "
     "search_courses(课程搜索), get_semester_list(学期列表), "
     "query_course_selection(选课情况), query_program(培养方案), "
+    "get_my_program(培养方案-我的方案, 参数 major/grade), get_program_progress(培养进度, 参数 major/grade/taken_courses), "
+    "plan_semester(学期规划, 参数 major/grade/year_index), "
     "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\"} 或顶层 major/grade/interests/preference/keywords), "
     "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "

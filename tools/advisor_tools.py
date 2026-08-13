@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -256,6 +257,252 @@ def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict) -> l
     return reasons
 
 
+# ───────────────────────── 方案分组辅助 ─────────────────────────
+#
+# 必修组 + 选修组两段式推荐（任务 2）。方案定位规则与 tools/program_tools.py
+# 的 _resolve_program 一致（同年级 → 最近低年级 → 最新；programs 表只含 2022
+# 级及以后）。此处独立复刻，避免跨模块导入引入循环依赖。
+
+def _parse_grade_key(grade: str) -> int:
+    """年级 → 可排序整数（"2024级"→2024，"大二"→无法解析返回 0）。"""
+    m = re.match(r"\D*(\d{4})\D*", str(grade or ""))
+    return int(m.group(1)) if m else 0
+
+
+def _resolve_program(conn: sqlite3.Connection, major: str | None,
+                     grade: str | None = None) -> tuple[int | None, str | None]:
+    """全量库方案定位：同年级 → 最近低年级 → 最新。
+
+    Returns:
+        (program_id, program_name)；无 major 或未命中时 (None, None)。
+    """
+    if not major:
+        return None, None
+    rows = conn.execute(
+        "SELECT * FROM programs WHERE name LIKE ? OR college LIKE ? ORDER BY grade DESC",
+        (f"%{major}%", f"%{major}%"),
+    ).fetchall()
+    if not rows:
+        return None, None
+    target = _parse_grade_key(grade)
+    if target:
+        def _sort_key(r):
+            g = _parse_grade_key(r["grade"])
+            diff = g - target
+            bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
+            return (bucket, -g)  # 低年级桶内最近低年级在前, 高年级桶内最新方案在前
+        rows = sorted(rows, key=_sort_key)
+    row = rows[0]
+    return row["id"], row["name"]
+
+
+def _parse_term_year(term: str) -> int | None:
+    """从 term 首字符解析学年号（"2秋"→2）；无前缀/无法解析返 None。"""
+    m = re.match(r"\s*(\d)", term or "")
+    return int(m.group(1)) if m else None
+
+
+def _term_urgency(term: str, current_yi: int | None) -> int:
+    """学期紧迫度档位（必修组内排序）：
+    0=已过期应修未修（学年号 < current_year_index）置顶；
+    1=当前学年该修（== current_year_index）其次；2=未来学期最后。
+    term 为空或无法解析的按当前学年档（1）处理。"""
+    y = _parse_term_year(term)
+    if y is None or current_yi is None:
+        return 1
+    if y < current_yi:
+        return 0
+    if y == current_yi:
+        return 1
+    return 2
+
+
+def _infer_current_year_index(grade: str | None) -> int | None:
+    """由年级推算当前学年号："大二"→2；"2024级"→当前日期所在学年 - 入学年 + 1。
+    无法推算时返 None（此时必修组全体按当前学年档处理）。"""
+    gs = str(grade or "")
+    for idx, zh in enumerate(["一", "二", "三", "四"], start=1):
+        if f"大{zh}" in gs:
+            return idx
+    g = _parse_grade_key(grade)
+    if not g:
+        return None
+    today = date.today()
+    ay = today.year - 1 if today.month < 9 else today.year  # 当前学年起始年
+    return max(ay - g + 1, 1)
+
+
+def _infer_current_term() -> str:
+    """由当前日期推断当前学期："2026秋"（9 月起）/"2025春"（2-8 月）。"""
+    today = date.today()
+    return f"{today.year}秋" if today.month >= 9 else f"{today.year - 1}春"
+
+
+def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) -> list:
+    """全量评分候选池（真实均分降序），keywords 可选过滤课程名/院系/类型。"""
+    where, params = "r.rating_count > 0", []
+    if keywords:
+        like = " OR ".join(
+            f"({_SQL_NORM_NAME} LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)"
+            for _ in keywords
+        )
+        where += f" AND ({like})"
+        for k in keywords:
+            params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%"]
+    return conn.execute(
+        f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
+        f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
+        f"WHERE {where} ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT ?",
+        params + [limit],
+    ).fetchall()
+
+
+def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
+    """由课程行构建完整推荐条目（字段与旧实现一致）。
+    row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。"""
+    cid = row["id"]
+    dims = _dims_info(conn, cid)
+    teachers = _teacher_cells(conn, cid)
+    multi = len(teachers) > 1
+    if multi:  # 同课多师: 每师最多 3 条, 总量封顶 6
+        reviews = []
+        for t in teachers:
+            reviews.extend(_top_reviews(conn, cid, t["name"], limit=3))
+        reviews = reviews[:6]
+    else:
+        reviews = _top_reviews(conn, cid, limit=6)
+    return {
+        "id": cid,
+        "name": row["name"],
+        "code": row["code"],
+        "credit": row["credit"],
+        "dept": row["dept"],
+        "course_type": row["course_type"],
+        "rating_avg": round(row["rating_avg"], 1),
+        "rate_count": row["rating_count"],
+        "dims": dims,
+        "teachers": teachers,
+        "multi_teacher": multi,
+        "terms": _recent_terms(conn, cid),
+        "top_reviews": reviews,
+        "program_hint": _program_hint(conn, profile.get("major"), cid),
+        "reasons": _generate_reason(conn, {"name": row["name"], "dept": row["dept"],
+                                           "course_type": row["course_type"],
+                                           "rate_count": row["rating_count"], "dims": dims},
+                                    profile),
+    }
+
+
+def _split_targets(max_results: int) -> tuple[int, int]:
+    """条数拆分：默认 10（6 必修 + 4 选修，60%/40%）；<=1 时全给第一组。"""
+    if max_results <= 1:
+        return max_results, 0
+    req = int(round(max_results * 0.6))
+    return req, max_results - req
+
+
+def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str],
+                    max_results: int, taken: set[str]) -> dict:
+    """无方案命中：纯评分推荐（保留关键字过滤与过窄回退全量）。"""
+    rows = _pool_rows(conn, keywords)
+    keyword_fallback = False
+    if not rows and keywords:
+        keyword_fallback = True
+        rows = _pool_rows(conn, None)
+    total = len(rows)
+    items = []
+    for r in rows:
+        if _norm_course_name(r["name"]) in taken:
+            continue
+        items.append(_build_item(conn, r, profile))
+    return {
+        "recommendations": items[:max_results],
+        "groups": None,
+        "progress": None,
+        "total_candidates": total,
+        "filtered_count": len(items[:max_results]),
+        "keyword_fallback": keyword_fallback,
+    }
+
+
+def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[str],
+                       max_results: int, taken: set[str], current_yi: int | None,
+                       prog_id: int, prog_name: str) -> dict:
+    """分成「必修组 + 选修组」：必修组前置、按学期紧迫度 + 评分；选修组按评分降序。"""
+    # ── 必修组候选: 方案必修且未修, 按紧迫度（已过期置顶→当前学年→未来）再按评分降序 ──
+    req_rows = conn.execute(
+        "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
+        "r.rating_avg, r.rating_count, pc.term FROM program_courses pc "
+        "JOIN courses c ON c.id = pc.course_id JOIN course_rates r ON r.course_id = c.id "
+        "WHERE pc.program_id=? AND pc.required='必修' AND pc.course_id IS NOT NULL",
+        (prog_id,),
+    ).fetchall()
+    req_rows.sort(key=lambda rr: (_term_urgency(rr["term"], current_yi), -(rr["rating_avg"] or 0)))
+    required = [_build_item(conn, rr, profile) for rr in req_rows
+                if _norm_course_name(rr["name"]) not in taken]
+    required_ids = {it["id"] for it in required}  # 必修组整体排除出选修组，保证两组不重叠
+
+    # ── 选修组候选: 方案内选修 + 方案外评分池（减必修已选与已修）──
+    elective: list[dict] = []
+    seen_ids: set[int] = set()
+    for pr in conn.execute(
+        "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
+        "r.rating_avg, r.rating_count FROM program_courses pc "
+        "JOIN courses c ON c.id = pc.course_id JOIN course_rates r ON r.course_id = c.id "
+        "WHERE pc.program_id=? AND pc.required='选修' AND pc.course_id IS NOT NULL",
+        (prog_id,),
+    ).fetchall():
+        if _norm_course_name(pr["name"]) in taken or pr["id"] in required_ids or pr["id"] in seen_ids:
+            continue
+        seen_ids.add(pr["id"])
+        elective.append(_build_item(conn, pr, profile))
+    for r in _pool_rows(conn, keywords):
+        if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
+            continue
+        seen_ids.add(r["id"])
+        elective.append(_build_item(conn, r, profile))
+    elective.sort(key=lambda it: (-it["rating_avg"], -it["rate_count"]))
+
+    # ── 条数拆分: 60%/40%（不足互补）──
+    req_target, elec_target = _split_targets(max_results)
+    req_sel = required[:req_target]
+    if max_results <= 1:
+        elec_sel: list[dict] = []
+    else:
+        short = max(req_target - len(req_sel), 0)  # 必修不足其目标时选修补足
+        elec_sel = elective[:elec_target + short]
+
+    # ── 进度摘要: 已修必修/方案必修总数/已修学分（用方案行 credit 汇总）──
+    progress = None
+    if taken:
+        total_req = 0
+        taken_req = 0
+        credits_taken = 0.0
+        for pc in conn.execute(
+            "SELECT name, credit FROM program_courses WHERE program_id=? AND required='必修'",
+            (prog_id,),
+        ):
+            total_req += 1
+            if _norm_course_name(pc["name"]) in taken:
+                taken_req += 1
+                try:
+                    credits_taken += float(pc["credit"]) if pc["credit"] else 0.0
+                except (TypeError, ValueError):
+                    pass
+        progress = {"required_taken": taken_req, "required_total": total_req,
+                    "credits_taken": round(credits_taken, 1)}
+
+    recommendations = req_sel + elec_sel
+    return {
+        "recommendations": recommendations,
+        "groups": {"required": req_sel, "elective": elec_sel},
+        "progress": progress,
+        "total_candidates": len(req_rows) + len(_pool_rows(conn, keywords)),
+        "filtered_count": len(recommendations),
+        "keyword_fallback": False,
+    }
+
+
 # ───────────────────────── 工具 ─────────────────────────
 
 @tool
@@ -283,27 +530,40 @@ def collect_preferences() -> dict:
 def recommend_courses(profile: dict | None = None, major: str | None = None,
                       grade: str | None = None, interests: list[str] | str | None = None,
                       preference_type: str | None = None, preference: str | None = None,
-                      keywords: list[str] | str | None = None, max_results: int = 5) -> dict:
+                      keywords: list[str] | str | None = None, max_results: int = 10,
+                      taken_courses: list[str] | None = None,
+                      current_year_index: int | None = None,
+                      current_term: str | None = None) -> dict:
     """
-    根据用户画像推荐课程（真实均分降序, 同课多师并列, 附真实评论引用）。
+    根据用户画像推荐课程。有专业方案时按「必修组 + 选修组」两段式返回（必修组前置、
+    按学期紧迫度 + 评分排序）；无专业/未命中方案时保持纯评分推荐。
 
     Args:
         profile: 用户画像, 格式: {"major": "计算机科学", "grade": "大二",
             "interests": ["人工智能", "数学"], "preference_type": "easy_grade|learn_hard|balanced",
-            "max_results": 5}；也可省略 profile 直接用下面的顶层参数
+            "max_results": 10, "taken_courses": [...], "current_year_index": 3}；
+            也可省略 profile 直接用下面的顶层参数
         major: 专业名（可选，如 "计算机科学"）
-        grade: 年级（可选，如 "大二"）
+        grade: 年级（可选，如 "大二"、"2024级"）
         interests: 兴趣方向（可选，列表或单个字符串，如 ["人工智能", "数学"]）
         preference_type: 偏好类型（可选，easy_grade=冲分保绩/learn_hard=硬核学习/balanced=均衡）
         preference: 中文偏好描述（可选，如 "给分好""不点名""任务少"→冲分保绩，"硬核""学东西"→硬核学习）
         keywords: 限定候选范围的关键词（可选，如 ["数学分析"]，匹配课程名/院系/类型；
             不要用“给分好”“不点名”这类偏好词）
-        max_results: 返回条数（默认 5）
+        max_results: 返回条数（默认 10，约 6 必修 + 4 选修，不足互补）
+        taken_courses: 已修课程名列表（可选，登录后由上层从成绩单读取传入；
+            None 视为全部未修）
+        current_year_index: 当前学年（可选，1=大一，2=大二…）；None 时按 profile.grade
+            推算（"大二"→2；"2024级"→当前日期所在学年）
+        current_term: 当前学期标识（可选，如 "2026秋"）；None 时由当前日期推断
 
     Returns:
-        {"recommendations": [...], "total_candidates": N, "filtered_count": N}
+        {"recommendations": [...], "groups": {"required": [...], "elective": [...]},
+         "progress": {"required_taken", "required_total", "credits_taken"},
+         "total_candidates": N, "filtered_count": N, "profile_note": {...}, "keyword_fallback": bool}
         每门课: {name, code, credit, dept, rating_avg, rate_count, dims, teachers,
                  terms, top_reviews, program_hint, reasons}
+        recommendations = 必修组 + 选修组拼接（向后兼容）; 无分组时 groups 为 None。
     """
     # 宽容参数: 顶层参数自动归一化进 profile（兼容 LLM 不定式传参）
     p = dict(profile or {})
@@ -321,87 +581,47 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         p["preference_type"] = _PREF_CN.get(p["preference"], p["preference"])
     if keywords:
         p.setdefault("keywords", keywords if isinstance(keywords, list) else [keywords])
+    if taken_courses:
+        p.setdefault("taken_courses", taken_courses)
+    if current_year_index:
+        p.setdefault("current_year_index", current_year_index)
+    if current_term:
+        p.setdefault("current_term", current_term)
     p.setdefault("max_results", max_results)
     profile = p
 
     try:
         conn = _cdb()
     except sqlite3.Error:
-        return {"recommendations": [], "total_candidates": 0, "filtered_count": 0, "error": "课程数据库不可用"}
+        return {"recommendations": [], "groups": None, "progress": None,
+                "total_candidates": 0, "filtered_count": 0, "error": "课程数据库不可用"}
 
     keywords = profile.get("keywords") or profile.get("interests") or []
-    where, params = "r.rating_count > 0", []
-    if keywords:
-        # 课程名按归一化形式匹配（'数学分析B1' 也能命中 '数学分析(B1)'）;
-        # 院系/类型保持原样 LIKE
-        like = " OR ".join(
-            f"({_SQL_NORM_NAME} LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)"
-            for _ in keywords
-        )
-        where += f" AND ({like})"
-        for k in keywords:
-            params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%"]
-    rows = conn.execute(
-        f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-        f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
-        f"WHERE {where} ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT 200",
-        params,
-    ).fetchall()
-    keyword_fallback = False
-    if not rows and keywords:
-        # 关键词过窄（如偏好词被当课程名）无结果: 回退全量推荐
-        rows = conn.execute(
-            "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-            "r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
-            "WHERE r.rating_count > 0 ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT 200"
-        ).fetchall()
-        keyword_fallback = True
-    total = len(rows)
+    max_results = profile.get("max_results", 10)
 
-    recommendations = []
-    for r in rows:
-        cid = r["id"]
-        teachers = _teacher_cells(conn, cid)
-        multi = len(teachers) > 1
-        # 评论引用: 单师 6 条; 同课多师每师最多 3 条, 总量封顶 6
-        if multi:
-            reviews = []
-            for t in teachers:
-                reviews.extend(_top_reviews(conn, cid, t["name"], limit=3))
-            reviews = reviews[:6]
-        else:
-            reviews = _top_reviews(conn, cid, limit=6)
-        item = {
-            "id": cid,
-            "name": r["name"],
-            "code": r["code"],
-            "credit": r["credit"],
-            "dept": r["dept"],
-            "course_type": r["course_type"],
-            "rating_avg": round(r["rating_avg"], 1),
-            "rate_count": r["rating_count"],
-            "dims": _dims_info(conn, cid),
-            "teachers": teachers,
-            "multi_teacher": multi,
-            "terms": _recent_terms(conn, cid),
-            "top_reviews": reviews,
-            "program_hint": _program_hint(conn, profile.get("major"), cid),
-            "reasons": _generate_reason(conn, {"name": r["name"], "dept": r["dept"],
-                                               "course_type": r["course_type"],
-                                               "rate_count": r["rating_count"],
-                                               "dims": _dims_info(conn, cid)}, profile),
-        }
-        recommendations.append(item)
+    # 当前学年：显式传入优先，否则按年级推算
+    current_yi = profile.get("current_year_index")
+    if current_yi is None:
+        current_yi = _infer_current_year_index(profile.get("grade"))
+    # 已修课程（归一化集合）; 未提供视为全部未修
+    taken = {_norm_course_name(tc) for tc in (profile.get("taken_courses") or [])}
+
+    # 方案定位：无 major / 未命中 / 库缺方案表 → 纯评分推荐
+    try:
+        prog_id, prog_name = _resolve_program(conn, profile.get("major"), profile.get("grade"))
+    except sqlite3.Error:
+        prog_id, prog_name = None, None
+
+    if prog_id is None:
+        result = _recommend_flat(conn, profile, keywords, max_results, taken)
+    else:
+        result = _recommend_grouped(conn, profile, keywords, max_results, taken,
+                                    current_yi, prog_id, prog_name)
 
     conn.close()
-    max_results = profile.get("max_results", 5)
-    return {
-        "recommendations": recommendations[:max_results],
-        "total_candidates": total,
-        "filtered_count": len(recommendations[:max_results]),
-        "profile_note": PROFILES.get(profile.get("preference_type", "balanced"), PROFILES["balanced"]),
-        "keyword_fallback": keyword_fallback,
-    }
+    result.setdefault("profile_note",
+                      PROFILES.get(profile.get("preference_type", "balanced"), PROFILES["balanced"]))
+    return result
 
 
 @tool

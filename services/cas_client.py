@@ -512,6 +512,37 @@ class CASClient:
         path = f"/for-std/program/root-module-json/{mid}"
         return self.get_json(path)
 
+    def get_my_program_tree(self) -> dict | list:
+        """
+        获取学生个人培养方案模块树（登录后优先使用，比全量库方案更精准）。
+
+        实测链路（2026-08-13）：
+        1. GET /for-std/program → 302 到 /for-std/program/info/{dataId}，
+           HTML 内嵌 program JSON（含 'hasAttachment':null,'id':{programId}）；
+        2. GET /for-std/program/root-module-json/{programId} → 个人模块树
+           （节点 children 递归、type.nameZh 模块名、planCourses[].course、
+           readableTerms(list)、compulsory、credits）。
+
+        Returns:
+            模块树 dict；未登录或解析失败返回 {"error": ...}
+        """
+        if not self._logged_in:
+            return {"error": "未登录"}
+        try:
+            resp = self._session.get(f"{self.JW_BASE}/for-std/program", timeout=self.TIMEOUT)
+            resp.raise_for_status()
+            html = resp.text
+            # HTML 内嵌 program JSON 锚点（hasAttachment 为 program 特有字段，其后紧跟 id）
+            m = re.search(r"'hasAttachment':null,'id':(\d+),'logs'", html)
+            if not m:
+                log.warning("未能从个人方案页提取 program id（可能未登录）")
+                return {"error": "未能定位个人培养方案"}
+            program_id = int(m.group(1))
+            return self.get_json(f"/for-std/program/root-module-json/{program_id}")
+        except Exception as e:
+            log.error(f"获取个人培养方案失败: {e}")
+            return {"error": str(e)}
+
     def logout(self) -> None:
         """清除会话"""
         self._session.cookies.clear()

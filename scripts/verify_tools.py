@@ -31,7 +31,39 @@ r = recommend_courses.invoke({
 recs = r["recommendations"]
 ok("推荐非空", len(recs) > 0, f"{len(recs)} 门, 候选 {r['total_candidates']}")
 avgs = [c["rating_avg"] for c in recs]
-ok("均分降序排序", avgs == sorted(avgs, reverse=True), f"{avgs}")
+# 分组排序语义（2026-08 重构）: 必修组前置（学期紧迫度非降, 同档评分降序）,
+# 选修组评分降序; 不再要求全局均分降序（低分必修可能排在高分选修前）
+import re as _re
+groups = r.get("groups") or {}
+req_recs, ele_recs = groups.get("required") or [], groups.get("elective") or []
+
+def _term_year(c):
+    hint = c.get("program_hint") or {}
+    m = _re.match(r"\s*(\d)", str(hint.get("term", "")))
+    return int(m.group(1)) if m else 2
+
+def _urgency(c):
+    y = _term_year(c)
+    return 0 if y < 2 else (1 if y == 2 else 2)
+
+req_urg = [_urgency(c) for c in req_recs]
+ok("必修组紧迫度非降(过期置顶)", req_urg == sorted(req_urg), f"{req_urg}")
+seg_ok = True
+i = 0
+while i < len(req_recs):
+    j = i
+    while j + 1 < len(req_recs) and req_urg[j + 1] == req_urg[i]:
+        j += 1
+    seg = [c["rating_avg"] for c in req_recs[i:j + 1]]
+    if seg != sorted(seg, reverse=True):
+        seg_ok = False
+    i = j + 1
+ok("必修组同档评分降序", seg_ok,
+   [f"{c['name']}:{c['rating_avg']}({_term_year(c)})" for c in req_recs][:6])
+ele_avgs = [c["rating_avg"] for c in ele_recs]
+ok("选修组评分降序", ele_avgs == sorted(ele_avgs, reverse=True), f"{ele_avgs}")
+ok("必修组前置", recs[:len(req_recs)] == req_recs,
+   f"必修 {len(req_recs)} 门 + 选修 {len(ele_recs)} 门")
 ok("推荐含关键字段", all(c.get("name") and c.get("teachers") is not None
                         and c.get("rating_avg") and c.get("dims") for c in recs),
    f"首课: {recs[0]['name']} | {recs[0]['rating_avg']}分·{recs[0]['rate_count']}条")

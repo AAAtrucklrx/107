@@ -121,13 +121,21 @@ def run() -> None:
     import tools.advisor_tools as at
     at.COURSE_DB = Path(db_path)
 
-    # ── 1. 推荐排序 = 真实均分降序 ──
+    # ── 1. 推荐排序 = 必修组前置 + 组内真实均分降序 ──
     r = at.recommend_courses.invoke({"profile": {"major": "数学与应用数学", "max_results": 10}})
     recs = r["recommendations"]
     names = [c["name"] for c in recs]
     t("推荐返回非空", len(recs) >= 4, f"共 {len(recs)} 门")
-    sorted_ok = all(recs[i]["rating_avg"] >= recs[i + 1]["rating_avg"] for i in range(len(recs) - 1))
-    t("真实均分降序", sorted_ok, f"均分序列: {[c['rating_avg'] for c in recs]}")
+    # 分组语义: 必修组前置（同档按评分降序）, 选修组评分降序; 不再要求全局均分降序
+    groups = r.get("groups") or {}
+    req_recs = groups.get("required") or []
+    ele_recs = groups.get("elective") or []
+    req_ok = all(req_recs[i]["rating_avg"] >= req_recs[i + 1]["rating_avg"]
+                 for i in range(len(req_recs) - 1))
+    ele_ok = all(ele_recs[i]["rating_avg"] >= ele_recs[i + 1]["rating_avg"]
+                 for i in range(len(ele_recs) - 1))
+    t("必修组前置且组内降序", req_ok and ele_ok and recs[:len(req_recs)] == req_recs,
+      f"必修 {len(req_recs)} 门 / 选修 {len(ele_recs)} 门")
     # 数学分析(B1): 5 条评论（汪 5,5,4 + 李 3,2）→ (19×2)/5 = 7.6, 与 course_rates 一致
     math = next((c for c in recs if c["name"] == "数学分析(B1)"), None)
     if math:

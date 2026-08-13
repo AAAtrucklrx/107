@@ -30,6 +30,9 @@ GAIN_MAP = {"没有": 2.0, "少": 4.0, "一般": 6.0, "多": 8.0, "很多": 10.0
 TERM_RE = re.compile(r"20(\d{2})([春秋夏])")
 TERM_CN = {"秋": 1, "春": 2, "夏": 3}
 
+# 入学年级下限（闭区间）: 只入库 2022 级及以后方案，旧方案（2015~2021 级）过滤掉。
+MIN_PROGRAM_GRADE = 2022
+
 
 def term_to_yyyyn(term_text: str) -> int | None:
     m = TERM_RE.search(term_text or "")
@@ -55,6 +58,8 @@ def load_programs() -> list[dict]:
 
     字段对齐: jw 原始字段 department -> college，其余 name/grade/courses 与
     下游逻辑一致（grade 已是 "2015级" 格式，courses 中 term 为 "2秋" 等）。
+
+    只入库 MIN_PROGRAM_GRADE 及以后（如 "2022级"）的方案，旧方案过滤掉。
     """
     out = []
     for f in sorted(PROG_DIR.glob("*.json")):
@@ -66,6 +71,10 @@ def load_programs() -> list[dict]:
         # jw 权威字段映射: college <- department
         p.setdefault("college", p.get("department", ""))
         out.append(p)
+    before = len(out)
+    out = [p for p in out
+           if int(str(p.get("grade", "")).rstrip("级")[:4]) >= MIN_PROGRAM_GRADE]
+    print(f"过滤掉 {before - len(out)} 个旧方案（{MIN_PROGRAM_GRADE} 级以下），保留 {len(out)} 个")
     return out
 
 

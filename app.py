@@ -121,6 +121,21 @@ def main():
     # 侧边栏
     selected_module = render_sidebar()
 
+    # ── 培养方案模块：主区渲染三合一页面（不走聊天流程） ──
+    if selected_module == "培养方案":
+        from ui.program_page import render_program_page
+        render_program_page(container)
+        maybe_show_activity_recommendation()
+        user = st.session_state.get("user")
+        faq_count = container.faq_store.count()
+        if user:
+            status_text = f"知识库: {faq_count} 篇文档 | 已登录: {user['name']} ({user['id']}) | 架构: QA LangGraph v3.0"
+        else:
+            status_text = f"知识库: {faq_count} 篇文档 | 未登录 | 架构: QA LangGraph v3.0"
+        st.markdown("---")
+        st.caption(status_text)
+        return
+
     # 对话区域
     prompt = render_chat_area()
 

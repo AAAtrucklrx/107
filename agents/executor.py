@@ -31,6 +31,9 @@ def _build_tool_registry() -> dict:
     from tools.advisor_tools import (
         collect_preferences, recommend_courses, compare_courses, analyze_teacher,
     )
+    from tools.program_tools import (
+        get_my_program, get_program_progress, plan_semester,
+    )
     from tools.schedule_tools import (
         add_event, get_day_view, get_week_view, check_conflict, import_schedule,
     )
@@ -52,6 +55,9 @@ def _build_tool_registry() -> dict:
         "recommend_courses": recommend_courses,
         "compare_courses": compare_courses,
         "analyze_teacher": analyze_teacher,
+        "get_my_program": get_my_program,
+        "get_program_progress": get_program_progress,
+        "plan_semester": plan_semester,
         "add_event": add_event,
         "get_day_view": get_day_view,
         "get_week_view": get_week_view,
