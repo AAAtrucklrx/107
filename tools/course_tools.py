@@ -43,6 +43,17 @@ def _is_locked(student_id: str) -> bool:
 
 # ── 内部查询函数（非 tool 装饰器，供 tool 复用） ──────
 
+def _norm_course_name(name: str) -> str:
+    """规范化课程名称：去除括号/空格（含全角空格）并转成 ASCII 大写，例：计算机 (B1) -> 计算机B1"""
+    return "".join(
+        ch
+        for ch in str(name)
+            .replace("(", "").replace(")", "")
+            .replace("（", "").replace("）", "")
+        if not ch.isspace()
+    ).upper()
+
+
 def _query_grades(student_id: str, course_name: str = None, semester: str = None) -> list[dict]:
     """直接查询成绩（避免 @tool 包装带来的递归调用问题）"""
     sql = "SELECT * FROM student_grades WHERE student_id = ?"
@@ -51,8 +62,8 @@ def _query_grades(student_id: str, course_name: str = None, semester: str = None
         sql += " AND semester = ?"
         params.append(semester)
     if course_name:
-        sql += " AND course_name LIKE ?"
-        params.append(f"%{course_name}%")
+        sql += " AND REPLACE(REPLACE(REPLACE(REPLACE(course_name,'(',''),')',''),' ',''),'　','') LIKE ?"
+        params.append(f"%{_norm_course_name(course_name)}%")
     return _db().query(sql, tuple(params))
 
 
@@ -834,8 +845,8 @@ def search_courses(keyword: str, limit: int = 10) -> dict:
     # Fallback: 本地数据库
     rows = _db().query(
         "SELECT code, name, teacher, credits FROM courses "
-        "WHERE name LIKE ? OR code LIKE ? LIMIT ?",
-        (f"%{keyword}%", f"%{keyword}%", limit),
+        "WHERE REPLACE(REPLACE(REPLACE(REPLACE(name,'(',''),')',''),' ',''),'　','') LIKE ? OR code LIKE ? LIMIT ?",
+        (f"%{_norm_course_name(keyword)}%", f"%{keyword}%", limit),
     )
     courses = [{"course_code": r.get("code", ""), "course_name": r.get("name", ""),
                 "teacher": r.get("teacher", ""), "credits": r.get("credits", 0)}

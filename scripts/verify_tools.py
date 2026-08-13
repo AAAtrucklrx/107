@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""工具层单测：推荐排序 / 关键词过滤 / 低 workload 偏好 / 教师对比 / 空结果边界
+"""工具层单测：推荐排序 / 关键词过滤 / 低 workload 偏好 / 教师对比 / 空结果边界 / 课程名归一化匹配与多班型歧义
 
-用法: python scripts/tmp_verify_tools.py
+用法: python scripts/verify_tools.py
 退出码: 0=全部断言通过, 1=存在失败项
 """
 import sys
@@ -78,5 +78,31 @@ ok("教师不存在返回 error", "error" in analyze_teacher.invoke({"teacher_na
 r_emp = recommend_courses.invoke({"profile": {"max_results": 3}, "keywords": ["绝对不存在的课程词XYZ"]})
 ok("过窄关键词回退全量", r_emp.get("keyword_fallback") is True and len(r_emp["recommendations"]) > 0,
    f"fallback={r_emp.get('keyword_fallback')}, {len(r_emp['recommendations'])} 门")
+
+# 6. 课程名归一化匹配: 无括号 / 带空格输入都能命中库中 "数学分析(B1)"
+r_np = analyze_teacher.invoke({"course": "数学分析B1"})
+ok("无括号命中非空 teachers", len(r_np.get("teachers") or []) > 0,
+   f"{len(r_np.get('teachers') or [])} 位, 课程={r_np.get('course')}")
+ok("无括号命中无 error", "error" not in r_np, r_np.get("error", ""))
+
+r_sp = analyze_teacher.invoke({"course": "数学分析 (B1)"})
+ok("带空格命中非空 teachers", len(r_sp.get("teachers") or []) > 0,
+   f"{len(r_sp.get('teachers') or [])} 位, 课程={r_sp.get('course')}")
+ok("带空格命中无 error", "error" not in r_sp, r_sp.get("error", ""))
+
+# 7. 多班型歧义: "数学分析" 同时命中 B1/B2 → ambiguity + 候选确认
+r_amb = analyze_teacher.invoke({"course": "数学分析"})
+cand_names = [c["name"] for c in (r_amb.get("candidates") or [])]
+ok("多班型返回 ambiguity", r_amb.get("ambiguity") is True, r_amb.get("message", ""))
+ok("歧义候选含 B1/B2", "数学分析(B1)" in cand_names and "数学分析(B2)" in cand_names,
+   f"{cand_names}")
+
+# 8. 关键词归一化过滤: "数学分析B1" 应命中所有含「数学分析」的课程
+r_kw = recommend_courses.invoke({"profile": {"max_results": 5}, "keywords": ["数学分析B1"]})
+kw_recs = r_kw.get("recommendations") or []
+ok("关键词归一化结果非空", len(kw_recs) > 0, f"{len(kw_recs)} 门")
+ok("关键词归一化全部含「数学分析」", all("数学分析" in c["name"] for c in kw_recs),
+   [c["name"] for c in kw_recs][:5])
+
 
 print(f"\n结果: {PASS}/{PASS} 断言通过")

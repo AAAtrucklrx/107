@@ -19,10 +19,19 @@ SCENES = [
     ("e2e_v3_q3_teacher_compare", "选课顾问", "数学分析(B1)哪个老师好？"),
     ("e2e_v3_q4_clarify", "选课顾问", "推荐课"),
     ("e2e_v3_q5_faq", "智能问答", "学生证丢了怎么补办？"),
+    ("e2e_v3_q6_no_paren", "选课顾问", "数学分析B1哪个老师好？"),
+    ("e2e_v3_q7_shufen", "选课顾问", "数分哪个老师好？"),
 ]
+
+# 内容断言: 新功能场景必须出现的关键子串
+EXPECTED = {
+    "e2e_v3_q6_no_paren": "老师",   # 无括号课程名应直接命中点评
+    "e2e_v3_q7_shufen": "班型",     # 简称歧义应反问班型
+}
 
 
 def main() -> None:
+    FAILS = []
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=EDGE, headless=True)
         ctx = browser.new_context(viewport={"width": 1500, "height": 950})
@@ -72,12 +81,22 @@ def main() -> None:
             text = last.inner_text()
             print(f"     回答长度: {len(text)}")
             print(f"     回答开头: {text[:500].replace(chr(10), ' | ')}")
+            # 新功能场景内容断言
+            if name in EXPECTED:
+                hit = EXPECTED[name] in text
+                print(f"     [{'PASS' if hit else 'FAIL'}] 断言「{EXPECTED[name]}」出现在回答: {hit}")
+                if not hit:
+                    FAILS.append(name)
             # 抓 DOM 检查 smart_toy 来源
             html = last.inner_html()
             idx = html.find("smart_toy")
             print(f"     DOM 含 smart_toy: {idx >= 0}" + (f" (位置 {idx})" if idx >= 0 else ""))
 
         browser.close()
+
+        print(f"\n内容断言结果: {'全部通过' if not FAILS else '失败场景: ' + str(FAILS)}")
+        if FAILS:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

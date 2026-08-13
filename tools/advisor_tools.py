@@ -46,6 +46,39 @@ def _cdb() -> sqlite3.Connection:
     return conn
 
 
+def _norm_course_name(name: str) -> str:
+    """归一化课程名: 去全角/半角括号、空格与全角空格, ASCII 大写。
+
+    使 '数学分析 (B1)'、'数学分析（B1）'、'数学分析 B1' 等变体都收敛成
+    同一 '数学分析B1', 与数据库里 '数学分析(B1)' 的写法互相匹配。
+    """
+    s = (name or "").translate(str.maketrans("（）", "()")).replace("　", " ")
+    s = s.replace("(", "").replace(")", "").replace(" ", "")
+    return s.upper()
+
+
+# SQL 端课程名归一化表达式, 与 _norm_course_name 保持一致（去括号/空格/大写）,
+# 使搜索词与库里名称能以同一形式模糊匹配。
+_SQL_NORM_NAME = (
+    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(c.name),'(',''),')',''),"
+    "'（',''),'）',''),' ',''),'　','')"
+)
+
+
+def _match_courses(conn: sqlite3.Connection, name: str) -> list[dict]:
+    """按课程名模糊查（含评分信息）。名称端与 SQL 端都归一化括号/空格/大小写,
+    使 '数学分析B1' 能匹配到 '数学分析(B1)'。按样本量降序返回 list[dict]。"""
+    like = f"%{_norm_course_name(name)}%"
+    rows = conn.execute(
+        "SELECT c.id, c.name, c.code, c.credit, c.dept, r.rating_avg, r.rating_count "
+        "FROM courses c JOIN course_rates r ON r.course_id = c.id "
+        f"WHERE {_SQL_NORM_NAME} LIKE ? "
+        "ORDER BY r.rating_count DESC",
+        (like,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # 偏好状态（session 级模块单例）
 _current_profile: dict = {}
 
@@ -299,10 +332,15 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     keywords = profile.get("keywords") or profile.get("interests") or []
     where, params = "r.rating_count > 0", []
     if keywords:
-        like = " OR ".join("(c.name LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)" for _ in keywords)
+        # 课程名按归一化形式匹配（'数学分析B1' 也能命中 '数学分析(B1)'）;
+        # 院系/类型保持原样 LIKE
+        like = " OR ".join(
+            f"({_SQL_NORM_NAME} LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)"
+            for _ in keywords
+        )
         where += f" AND ({like})"
         for k in keywords:
-            params += [f"%{k}%", f"%{k}%", f"%{k}%"]
+            params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%"]
     rows = conn.execute(
         f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
         f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
@@ -384,14 +422,10 @@ def compare_courses(course_a: str, course_b: str) -> dict:
         return {"error": "课程数据库不可用"}
 
     def find(name: str) -> dict | None:
-        r = conn.execute(
-            "SELECT c.id, c.name, c.code, c.credit, c.dept, r.rating_avg, r.rating_count "
-            "FROM courses c JOIN course_rates r ON r.course_id = c.id "
-            "WHERE c.name LIKE ? ORDER BY r.rating_count DESC LIMIT 1",
-            (f"%{name}%",),
-        ).fetchone()
-        if not r:
+        rows = _match_courses(conn, name)
+        if not rows:
             return None
+        r = rows[0]  # 已按 rating_count 降序, 取样本量最大者
         cid = r["id"]
         return {
             "id": cid, "name": r["name"], "code": r["code"], "credit": r["credit"],
@@ -461,15 +495,29 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
 
     # 课程模式: 按课程查老师对比（支持 "XX课哪个老师好"）
     if not teacher_name:
-        c = conn.execute(
-            "SELECT c.id, c.name, c.code, c.credit, c.dept, r.rating_avg, r.rating_count "
-            "FROM courses c JOIN course_rates r ON r.course_id = c.id "
-            "WHERE c.name LIKE ? ORDER BY r.rating_count DESC LIMIT 1",
-            (f"%{course}%",),
-        ).fetchone()
-        if not c:
+        matches = _match_courses(conn, course)
+        if not matches:
             conn.close()
             return {"error": f"未找到课程：{course}"}
+        # 同名课程可能有多条记录（不同 course_id）: 按 name 去重取样本量最大者
+        best_by_name: dict[str, dict] = {}
+        for m in matches:
+            if m["name"] not in best_by_name or m["rating_count"] > best_by_name[m["name"]]["rating_count"]:
+                best_by_name[m["name"]] = m
+        uniq = list(best_by_name.values())
+        if len(uniq) > 1:
+            # 近似名课程多门（如 B1/B2 分班）, 交给用户确认, 避免误选
+            conn.close()
+            return {
+                "ambiguity": True,
+                "candidates": [
+                    {"name": m["name"], "code": m["code"], "dept": m["dept"],
+                     "rating_avg": m["rating_avg"], "rating_count": m["rating_count"]}
+                    for m in uniq
+                ],
+                "message": f"找到多门与「{course}」相关的课程, 请指定确切课程名（如区分 B1/B2 分班）",
+            }
+        c = uniq[0]
         cid = c["id"]
         teachers = _teacher_cells(conn, cid)
         # 评论样本: 按老师分组取样（每师最多 2 条, 总量 ≤6）, 带 teacher 标注供引用

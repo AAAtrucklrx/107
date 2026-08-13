@@ -108,6 +108,9 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推
 11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")
 12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
+13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
+14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
+15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
