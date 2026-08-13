@@ -8,6 +8,10 @@ data/*.db
 # 爬虫原始数据（可重建）
 scripts/data/
 
+# jw 登录态浏览器 profile（含会话 cookie, 绝不可入库）
+scripts/.jw_profile/
+scripts/.jw_profile2/
+
 # 向量库持久化目录
 knowledge/chroma_db/
 
