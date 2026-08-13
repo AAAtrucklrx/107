@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """构建选课推荐数据库 data/course_data.db。
 
-输入: scripts/data/icourse_list.json + scripts/data/raw/*.json + scripts/data/programs/*.json
+输入: scripts/data/icourse_list.json + scripts/data/raw/*.json + scripts/data/programs_jw/*.json
 输出: data/course_data.db（8 表, schema 见 database/schema_course.sql）
 
 用法: python scripts/build_course_db.py [--db data/course_data.db]
@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_FILE = PROJECT_ROOT / "database" / "schema_course.sql"
 DATA_DIR = PROJECT_ROOT / "scripts" / "data"
 RAW_DIR = DATA_DIR / "raw"
-PROG_DIR = DATA_DIR / "programs"
+PROG_DIR = DATA_DIR / "programs_jw"
 
 # 维度文字 → 映射分（1-10, 分数越高越好, 仅作参考展示）
 DIFF_MAP = {"简单": 10, "中等": 6.5, "困难": 3.0}
@@ -51,12 +51,21 @@ def load_raw() -> list[dict]:
 
 
 def load_programs() -> list[dict]:
+    """加载 jw 培养方案 JSON（scripts/data/programs_jw/*.json）。
+
+    字段对齐: jw 原始字段 department -> college，其余 name/grade/courses 与
+    下游逻辑一致（grade 已是 "2015级" 格式，courses 中 term 为 "2秋" 等）。
+    """
     out = []
     for f in sorted(PROG_DIR.glob("*.json")):
         try:
-            out.append(json.loads(f.read_text(encoding="utf-8")))
+            p = json.loads(f.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
             print(f"跳过损坏文件 {f.name}: {e}")
+            continue
+        # jw 权威字段映射: college <- department
+        p.setdefault("college", p.get("department", ""))
+        out.append(p)
     return out
 
 
