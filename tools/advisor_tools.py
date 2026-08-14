@@ -19,6 +19,8 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
+from utils import course_name as _norm
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COURSE_DB = PROJECT_ROOT / "data" / "course_data.db"
 
@@ -74,17 +76,11 @@ def _cdb() -> sqlite3.Connection:
 
 
 def _norm_course_name(name: str) -> str:
-    """归一化课程名: 去全角/半角括号、引号、空格与全角空格, ASCII 大写。
+    """归一化课程名（共享实现 utils/course_name.norm_course_name）。
 
-    使 '数学分析 (B1)'、'数学分析（B1）'、'数学分析 B1' 等变体都收敛成
-    同一 '数学分析B1', 与数据库里 '数学分析(B1)' 的写法互相匹配;
-    中文/英文引号不影响课程名匹配, 一并去掉（如 '"科学与社会"研讨课'）。
-    """
-    s = (name or "").translate(str.maketrans("（）", "()")).replace("　", " ")
-    s = s.replace("(", "").replace(")", "").replace(" ", "")
-    for ch in "\"'“”‘’":
-        s = s.replace(ch, "")
-    return s.upper()
+    去全角/半角括号、引号、空格与全角空格，ASCII 大写，使 '数学分析 (B1)'、
+    '数学分析（B1）'、'数学分析 B1' 等变体收敛成同一 '数学分析B1'。"""
+    return _norm.norm_course_name(name)
 
 
 # SQL 端课程名归一化表达式, 与 _norm_course_name 保持一致（去括号/空格/大写）,
@@ -476,7 +472,10 @@ def _split_targets(max_results: int) -> tuple[int, int]:
 
 def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str],
                     max_results: int, taken: set[str]) -> dict:
-    """无方案命中：纯评分推荐（保留关键字过滤与过窄回退全量）。"""
+    """无方案命中：纯评分推荐（保留关键字过滤与过窄回退全量）。
+
+    按需构建（Phase 2c 性能修复）：只 build 到 max_results 条，
+    避免对整个候选池（最多 200 门）逐课做 5 组 N+1 子查询。"""
     rows = _pool_rows(conn, keywords)
     keyword_fallback = False
     if not rows and keywords:
@@ -485,6 +484,8 @@ def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str]
     total = len(rows)
     items = []
     for r in rows:
+        if len(items) >= max_results:
+            break
         if _norm_course_name(r["name"]) in taken:
             continue
         items.append(_build_item(conn, r, profile))
@@ -501,7 +502,10 @@ def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str]
 def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[str],
                        max_results: int, taken: set[str], current_yi: int | None,
                        prog_id: int, prog_name: str) -> dict:
-    """分成「必修组 + 选修组」：必修组前置、按学期紧迫度 + 评分；选修组按评分降序。"""
+    """分成「必修组 + 选修组」：必修组前置、按学期紧迫度 + 评分；选修组按评分降序。
+
+    Phase 2c 性能修复：行级过滤/排序后再按需构建条目，避免全池 N+1 子查询。
+    """
     # ── 必修组候选: 方案必修且未修, 按紧迫度（已过期置顶→当前学年→未来）再按评分降序 ──
     req_rows = conn.execute(
         "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
@@ -518,13 +522,15 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
         return (urgency, -(rr["rating_avg"] or 0))
 
     req_rows.sort(key=_req_sort_key)
-    required = [_build_item(conn, rr, profile) for rr in req_rows
-                if _norm_course_name(rr["name"]) not in taken]
-    required_ids = {it["id"] for it in required}  # 必修组整体排除出选修组，保证两组不重叠
+    req_filtered = [rr for rr in req_rows if _norm_course_name(rr["name"]) not in taken]
+    required_ids = {rr["id"] for rr in req_filtered}  # 必修组整体排除出选修组，保证两组不重叠
 
-    # ── 选修组候选: 方案内选修优先（按评分降序），方案外高分池仅作条数补足 ──
+    req_target, elec_target = _split_targets(max_results)
+    required = [_build_item(conn, rr, profile) for rr in req_filtered[:max(req_target, 1)]]
+
+    # ── 选修组候选行: 方案内选修优先（按评分降序），方案外高分池仅作条数补足 ──
     # （避免方案外课程混排靠前造成“乱推”观感）
-    elective: list[dict] = []
+    elec_rows: list = []
     seen_ids: set[int] = set()
     for pr in conn.execute(
         "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
@@ -536,22 +542,22 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
         if _norm_course_name(pr["name"]) in taken or pr["id"] in required_ids or pr["id"] in seen_ids:
             continue
         seen_ids.add(pr["id"])
-        elective.append(_build_item(conn, pr, profile))
-    elective.sort(key=lambda it: (-it["rating_avg"], -it["rate_count"]))
+        elec_rows.append(pr)
+    elec_rows.sort(key=lambda r: (-(r["rating_avg"] or 0), -(r["rating_count"] or 0)))
     for r in _pool_rows(conn, keywords):
         if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
             continue
         seen_ids.add(r["id"])
-        elective.append(_build_item(conn, r, profile))
+        elec_rows.append(r)
 
     # ── 条数拆分: 60%/40%（不足互补）──
-    req_target, elec_target = _split_targets(max_results)
     req_sel = required[:req_target]
     if max_results <= 1:
         elec_sel: list[dict] = []
     else:
         short = max(req_target - len(req_sel), 0)  # 必修不足其目标时选修补足
-        elec_sel = elective[:elec_target + short]
+        need_elec = elec_target + short
+        elec_sel = [_build_item(conn, r, profile) for r in elec_rows[:need_elec]]
 
     # ── 进度摘要: 已修必修/方案必修总数/已修学分（用方案行 credit 汇总）──
     progress = None

@@ -13,6 +13,7 @@ from pathlib import Path
 from services.service_container import ServiceContainer
 from utils.logger import get_logger
 from utils.course_periods import parse_periods, periods_to_range
+from utils import course_name as _norm
 import re as _re
 
 log = get_logger("xiaowo.tools.course")
@@ -59,14 +60,9 @@ def _is_locked(student_id: str) -> bool:
 # ── 内部查询函数（非 tool 装饰器，供 tool 复用） ──────
 
 def _norm_course_name(name: str) -> str:
-    """规范化课程名称：去除括号/空格（含全角空格）并转成 ASCII 大写，例：计算机 (B1) -> 计算机B1"""
-    return "".join(
-        ch
-        for ch in str(name)
-            .replace("(", "").replace(")", "")
-            .replace("（", "").replace("）", "")
-        if not ch.isspace()
-    ).upper()
+    """规范化课程名称（共享实现 utils/course_name）：去括号/引号/空白并 ASCII 大写，
+    例：计算机 (B1) -> 计算机B1"""
+    return _norm.norm_course_name(name)
 
 
 def _query_grades(student_id: str, course_name: str = None, semester: str = None) -> list[dict]:

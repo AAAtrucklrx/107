@@ -22,6 +22,7 @@ from typing import Optional
 from langchain_core.tools import tool
 
 from tools import _program_resolve as _pr
+from utils import course_name as _norm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COURSE_DB = PROJECT_ROOT / "data" / "course_data.db"
@@ -35,18 +36,9 @@ def _cdb() -> sqlite3.Connection:
 
 
 def _norm_course_name(name: str) -> str:
-    """归一化课程名: 去括号/空格（含全角空格）并转 ASCII 大写。
-
-    使 '数学分析 (B1)'、'数学分析（B1）'、'数学分析 B1' 等变体都收敛成同一
-    '数学分析B1'，用于已修课程与方案课程名的模糊比对。
-    """
-    return "".join(
-        ch
-        for ch in str(name or "")
-            .replace("(", "").replace(")", "")
-            .replace("（", "").replace("）", "")
-        if not ch.isspace()
-    ).upper()
+    """归一化课程名（共享实现 utils/course_name）：去括号/引号/空白并 ASCII 大写，
+    用于已修课程与方案课程名的模糊比对。"""
+    return _norm.norm_course_name(name)
 
 
 def _norm_taken_set(names: list[str]) -> set[str]:
