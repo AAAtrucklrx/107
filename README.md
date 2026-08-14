@@ -31,7 +31,7 @@ pip install -r requirements.txt
 
 # 2. 配置环境变量（复制 .env.example 为 .env 并填写）
 #    LLM_API_KEY=你的科大 LLM 平台密钥
-#    LLM_MODEL=deepseek-chat
+#    LLM_MODEL=deepseek-v4-flash
 #    LLM_EMBEDDING_MODEL=qwen3-embedding
 
 # 3. 构建评课库（选课推荐数据源；已构建则跳过）

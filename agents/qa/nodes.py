@@ -361,7 +361,8 @@ def think(state: QaState) -> dict:
 
     try:
         llm = create_llm(temperature=0.0)
-        # 注意：deepseek-chat 对 system-only + 严格 JSON 指令会返回空，必须带 human 消息
+        # 注意：推理类模型（deepseek-v4-flash；此前 deepseek-chat 亦被平台路由至 v4-flash-ascend）
+        # 对 system-only + 严格 JSON 指令会返回空，必须带 human 消息
         prompt = ChatPromptTemplate.from_messages([
             ("system", THINK_PROMPT),
             ("human", "请做出决策"),

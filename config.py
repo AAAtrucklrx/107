@@ -20,7 +20,7 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 LLM_CONFIG = {
     "base_url": os.getenv("LLM_BASE_URL", "https://api.llm.ustc.edu.cn/v1"),
     "api_key": os.getenv("LLM_API_KEY", "your-api-key-here"),
-    "model": os.getenv("LLM_MODEL", "deepseek-chat"),
+    "model": os.getenv("LLM_MODEL", "deepseek-v4-flash"),
     "temperature": 0.3,
     "max_tokens": 2048,
     "timeout": 30,
