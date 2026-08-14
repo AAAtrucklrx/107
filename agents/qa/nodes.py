@@ -887,6 +887,8 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] 执行失败: {res.get('error', '未知错误')}")
         elif res.get("error"):
             lines.append(f"[{tool}] {res['error']}")
+        elif res.get("message"):
+            lines.append(f"[{tool}] {res['message']}")
         elif isinstance(res.get("results"), list) and res.get("found"):
             lines.append(f"[{tool}] 找到 {len(res['results'])} 条结果:")
             for item in res["results"][:3]:

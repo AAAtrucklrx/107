@@ -6,7 +6,7 @@ v3.0: 课表和成绩对接 jw 内部 API（需 CAS 登录），catalog API 对�
 """
 
 from langchain_core.tools import tool
-from datetime import date, timedelta
+from datetime import date
 import sqlite3
 from pathlib import Path
 
@@ -581,33 +581,14 @@ def find_empty_room(building: str, time_desc: str) -> dict:
     except Exception as e:
         log.warning(f"空教室 API 失败 (building={building}, time={time_desc})，降级到模拟数据: {e}")
 
-    # ── Fallback: 模拟数据 ──
-    all_rooms = _db().query(
-        "SELECT DISTINCT location FROM student_courses WHERE location LIKE ?",
-        (f"%{building}%",),
-    )
-    room_codes = {r["location"] for r in all_rooms}
-    all_room_codes = list(room_codes) + [
-        f"{building}3A103", f"{building}3A104",
-        f"{building}3B201", f"{building}3B202",
-    ]
-
-    empty_rooms = []
-    for i, room in enumerate(all_room_codes):
-        if i % 3 != 0:
-            empty_rooms.append({
-                "room": room,
-                "free_slots": f"{period_start}-17:35",
-                "capacity": 80 + (i * 20),
-            })
-
+    # ── Fallback: 如实提示无数据（不再生成模拟教室，避免误导）──
     return {
         "building": building,
         "time": f"{period}({period_start}-{period_end})",
-        "empty_rooms": empty_rooms[:5],
-        "count": min(len(empty_rooms), 5),
+        "empty_rooms": [],
+        "count": 0,
         "source": "fallback",
-        "message": "⚠️ 教务接口暂时不可用，以下为空教室模拟数据，仅供参考",
+        "message": "⚠️ 教务接口暂时不可用，暂无空教室数据，请稍后重试",
     }
 
 
@@ -812,28 +793,11 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
                     return {"exams": exams, "count": len(exams), "source": "real",
                             "semester": current_sem.get("nameZh", "")}
     except Exception as e:
-        log.warning(f"考试 API 失败 (student_id={sid}, course_name={course_name})，降级到模拟数据: {e}")
+        log.warning(f"考试 API 失败 (student_id={sid}, course_name={course_name})，如实提示无数据: {e}")
 
-    # ── Fallback: 模拟数据 ──
-    courses = _db().query(
-        "SELECT course_name, time, location FROM student_courses WHERE student_id = ?",
-        (sid,),
-    )
-    today = date.today()
-    exams = []
-    for i, c in enumerate(courses):
-        exam_date = today + timedelta(days=14 + i * 2)
-        exams.append({
-            "course": c["course_name"],
-            "date": exam_date.isoformat(),
-            "time": "14:00-16:00",
-            "location": c["location"] or "待定",
-            "type": "期末考试",
-        })
-    if course_name:
-        exams = [e for e in exams if course_name in e["course"]]
-    return {"exams": exams, "source": "fallback",
-            "message": "⚠️ 教务接口暂时不可用，以下为考试模拟数据，仅供参考"}
+    # ── Fallback: 如实提示无数据（不再生成模拟考试日期，避免误导）──
+    return {"exams": [], "source": "fallback",
+            "message": "⚠️ 教务接口暂时不可用，暂无考试安排数据，请稍后重试"}
 
 
 @tool
