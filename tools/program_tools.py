@@ -47,6 +47,17 @@ def _norm_course_name(name: str) -> str:
     ).upper()
 
 
+def _norm_taken_set(names: list[str]) -> set[str]:
+    """已修课程名归一化集合；兼容 (L) 班型后缀（成绩 '计算机程序设计(L)' 视同已修同名课）。"""
+    s: set[str] = set()
+    for n in (names or []):
+        k = _norm_course_name(n)
+        s.add(k)
+        if k.endswith("L") and len(k) > 1:
+            s.add(k[:-1])
+    return s
+
+
 def _parse_grade_key(grade: str) -> int:
     """年级 → 可排序整数（"2024级"→2024，"大二"→无法解析返回 0）。"""
     m = re.match(r"\D*(\d{4})\D*", str(grade or ""))
@@ -304,8 +315,8 @@ def get_program_progress(major: str, grade: Optional[str] = None,
 
     required = [c for c in courses if c["required"] == "必修"]
 
-    # 已修判定：taken_courses 归一化匹配方案课程名
-    taken_names = {_norm_course_name(tc) for tc in (taken_courses or [])}
+    # 已修判定：taken_courses 归一化匹配方案课程名（兼容 (L) 班型后缀）
+    taken_names = _norm_taken_set(taken_courses)
     credits_by_index: dict = {}
     if taken_courses and taken_credits:
         for idx, tc in enumerate(taken_courses):

@@ -123,6 +123,12 @@ def _init_test_mode(container: ServiceContainer) -> None:
         import tools.course_tools as _ct
         _ct._fetch_real_grades = lambda cas: None
         _ct._fetch_real_schedule = lambda cas, sem_id: None
+        # 个人数据 seed 闭环：库中无该生成绩/课表时用爬取备份写入（幂等，不覆盖已有数据）
+        _sid = _td["user"]["id"]
+        if not (container.db.query_one("SELECT COUNT(*) AS cnt FROM student_grades WHERE student_id = ?", (_sid,)) or {}).get("cnt"):
+            _ct._sync_grades_to_db(_sid, _td.get("grades") or [])
+        if not (container.db.query_one("SELECT COUNT(*) AS cnt FROM student_courses WHERE student_id = ?", (_sid,)) or {}).get("cnt"):
+            _ct._sync_courses_to_db(_sid, _td.get("courses") or [], _td.get("semester") or "")
         st.sidebar.caption(f"🧪 测试模式 | 数据: {_test_path.name}")
     except Exception as _e:
         log.warning(f"测试模式初始化失败: {_e}")

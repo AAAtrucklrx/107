@@ -376,11 +376,14 @@ def _term_urgency(term: str, current_yi: int | None) -> int:
     return 1 if (season == "秋") == next_is_autumn else 2
 
 
-def _infer_current_year_index(grade: str | None) -> int | None:
+def _infer_current_year_index(grade: str | None, selection: bool = True) -> int | None:
     """由年级推算当前学年号："大二"→2；"2024级"→面向今年 9 月开学学年 - 入学年 + 1。
 
-    选课场景以 9 月开学为新学年基准（暑假选课即面向下学期开学后的新学年）：
-    2025 级在 2026 年 8 月/9 月 → 2（大二）。无法推算时返 None（必修组全体按当前学年档处理）。"""
+    selection=True 为选课场景：以 9 月开学为新学年基准（暑假选课即面向下学期开学后的新学年），
+    ay=today.year，2025 级在 2026 年 8 月/9 月 → 2（大二）；
+    selection=False 为学籍学年（身份展示"我大几"）：1-8 月仍按上一学年（ay=today.year-1），
+    避免每年 1-8 月身份年级高一档。
+    无法推算时返 None（必修组全体按当前学年档处理）。"""
     gs = str(grade or "")
     for idx, zh in enumerate(["一", "二", "三", "四"], start=1):
         if f"大{zh}" in gs:
@@ -389,7 +392,10 @@ def _infer_current_year_index(grade: str | None) -> int | None:
     if not g:
         return None
     today = date.today()
-    ay = today.year  # 选课永远面向今年 9 月开学的新学年（1-8 月为下学期选课, 9-12 月已在新学年）
+    if selection:
+        ay = today.year  # 选课永远面向今年 9 月开学的新学年（1-8 月为下学期选课, 9-12 月已在新学年）
+    else:
+        ay = today.year - 1 if today.month < 9 else today.year  # 学籍学年：1-8 月仍属上一学年
     return max(ay - g + 1, 1)
 
 
@@ -397,6 +403,12 @@ def _infer_current_term() -> str:
     """由当前日期推断当前学期："2026秋"（9 月起）/"2025春"（2-8 月）。"""
     today = date.today()
     return f"{today.year}秋" if today.month >= 9 else f"{today.year - 1}春"
+
+
+def _infer_next_selection_term() -> str:
+    """下一选课学期：1-8 月面向当年秋、9-12 月面向次年春（与 _term_urgency 口径一致）。"""
+    today = date.today()
+    return f"{today.year}秋" if today.month <= 8 else f"{today.year + 1}春"
 
 
 def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) -> list:

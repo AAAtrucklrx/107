@@ -62,10 +62,12 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
     此处从登录用户画像与本地成绩表补齐，保证命中培养方案分组推荐。"""
     profile = dict(args.get("profile") or {})
     up = state.get("user_profile") or {}
-    if not profile.get("major") and not args.get("major"):
-        profile["major"] = up.get("major") or "计算机科学"
-    if not profile.get("grade") and not args.get("grade"):
-        profile["grade"] = up.get("grade") or "大二"
+    _v = up.get("major")
+    if _v and not profile.get("major") and not args.get("major"):
+        profile["major"] = _v
+    _g = up.get("grade")
+    if _g and not profile.get("grade") and not args.get("grade"):
+        profile["grade"] = _g
     if not profile.get("taken_courses") and not args.get("taken_courses") and sid:
         taken = _load_taken_courses(sid)
         if taken:
@@ -78,8 +80,20 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
     args["profile"] = profile
 
 
-def _load_personal_tree():
-    """从 CAS 客户端拉取个人方案树（登录态注入，测试模式已替换为备份数据）。"""
+# 个人方案树 per-student 缓存（进程内，避免 QA 循环内多次经 CAS 重复拉取阻塞数秒）
+_PERSONAL_TREE_CACHE: dict[str, dict] = {}
+
+
+def _load_personal_tree(student_id: str | None = None):
+    """从 CAS 客户端拉取个人方案树（登录态注入，测试模式已替换为备份数据）。
+
+    带 per-student 缓存：命中直接返回；拉取成功后校验归属（cas_client.student_id
+    与当前学生一致，防进程级共享 CAS 客户端在多用户下串数据），不一致返回 None 且不缓存。"""
+    if not student_id:
+        return None
+    cached = _PERSONAL_TREE_CACHE.get(student_id)
+    if cached is not None:
+        return cached
     try:
         from services.service_container import ServiceContainer
         sc = ServiceContainer()
@@ -88,28 +102,35 @@ def _load_personal_tree():
         tree = sc.cas_client.get_my_program_tree()
         if isinstance(tree, dict) and "error" in tree:
             return None
+        if sc.cas_client.student_id != student_id:
+            return None
+        _PERSONAL_TREE_CACHE[student_id] = tree
         return tree
     except Exception:
         return None
 
 
-def _enrich_program_args(args: dict, state: QaState, sid: str) -> None:
+def _enrich_program_args(args: dict, state: QaState, sid: str, include_taken: bool = False) -> None:
     """培养方案工具参数兜底：补齐专业/年级/已修课程/个人方案树。
 
     get_program_progress 缺 taken_courses 时会把已修课程误判为必修缺口（"已修0"），
     get_my_program/plan_semester 缺 personal_tree 时退化成全量库方案；
-    此处统一从登录画像、本地成绩表与 CAS 方案树补齐。"""
+    此处统一从登录画像、本地成绩表与 CAS 方案树补齐。
+
+    include_taken=True 时才注入 taken_courses：仅 get_program_progress 的工具签名
+    接受该参数，统一注入会令 get_my_program / plan_semester（extra=forbid）抛 ValidationError。"""
     up = state.get("user_profile") or {}
-    if not args.get("major"):
-        args["major"] = up.get("major") or "计算机科学"
+    _v = up.get("major")
+    if _v and not args.get("major"):
+        args["major"] = _v
     if not args.get("grade"):
         args["grade"] = up.get("grade") or ""
-    if not args.get("taken_courses") and sid:
+    if include_taken and not args.get("taken_courses") and sid:
         taken = _load_taken_courses(sid)
         if taken:
             args["taken_courses"] = taken
     if not args.get("personal_tree"):
-        tree = _load_personal_tree()
+        tree = _load_personal_tree(sid)
         if tree is not None:
             args["personal_tree"] = tree
 
@@ -247,7 +268,9 @@ def _is_personal_qa(query: str) -> str | None:
     """个人信息问答识别：返回命中的字段名；未命中返回 None。
     要求问题为第一人称问自己，避免误伤“他大几”等问别人。"""
     q = (query or "").strip()
-    if not re.search(r"我|自己", q) or "他" in q or "她" in q:
+    if "我们" in q or "我校" in q or "他" in q or "她" in q:
+        return None
+    if not re.search(r"(^|[^一-鿿])我|自己", q):
         return None
     if len(q) > 16:  # 过长的复合问题不走模板，交给 LLM
         return None
@@ -266,7 +289,7 @@ def _personal_qa_answer(field: str, state: QaState) -> str:
     grade = str(up.get("grade") or "")
     if grade and not re.search(r"大[一二三四五六]", grade):
         from tools.advisor_tools import _infer_current_year_index
-        yi = _infer_current_year_index(grade)
+        yi = _infer_current_year_index(grade, selection=False)
         if yi and 1 <= yi <= 6:
             grade = f"{grade}（大{'一二三四五六'[yi - 1]}）"
     if not (name or sid or major or grade):
@@ -445,14 +468,14 @@ def _build_student_info(state: QaState) -> str:
         # 年级换算：2025级 → 2025级（大二），避免 LLM 误读入学年份为当前年级
         if not re.search(r"大[一二三四五六]", grade):
             from tools.advisor_tools import _infer_current_year_index
-            yi = _infer_current_year_index(grade)
+            yi = _infer_current_year_index(grade, selection=False)
             if yi and 1 <= yi <= 6:
                 grade = f"{grade}（大{'一二三四五六'[yi - 1]}）"
         parts.append(f"年级: {grade}")
     return "；".join(parts) if parts else "（未登录，无个人数据）"
 
 
-def _build_chat_history(history: list[dict], max_items: int = 8) -> str:
+def _build_chat_history(history: list[dict], max_items: int = 20) -> str:
     """对话历史摘要（最近 N 条，供多轮指代理解）"""
     if not history:
         return "（无）"
@@ -639,7 +662,9 @@ def act(state: QaState) -> dict:
             if tool_name == "recommend_courses":
                 _enrich_recommend_args(args, state, sid)
             # 培养方案工具兜底：补齐已修课程/个人方案树，避免缺口误判与方案退化
-            if tool_name in ("get_my_program", "get_program_progress", "plan_semester"):
+            if tool_name == "get_program_progress":
+                _enrich_program_args(args, state, sid, include_taken=True)
+            elif tool_name in ("get_my_program", "plan_semester"):
                 _enrich_program_args(args, state, sid)
             func = registry.get(tool_name)
             if func is None:
@@ -841,12 +866,12 @@ def _build_tool_summary(results: list[dict]) -> str:
                 _dump(res["recommendations"])
             # 选课季语义提示：方案学期“2秋”指大二上学期，避免 LLM 把评课库历史开课学期当“下学期”
             try:
-                from tools.advisor_tools import _infer_current_term
-                cur = _infer_current_term()
+                from tools.advisor_tools import _infer_next_selection_term
+                term = _infer_next_selection_term()
             except Exception:
-                cur = ""
-            if cur:
-                lines.append(f"说明：当前选课季为 {cur}；方案学期「2秋」指大二上学期（以此类推），"
+                term = ""
+            if term:
+                lines.append(f"说明：下一选课学期为 {term}（面向9月开学的新学年）；方案学期「2秋」指大二上学期（以此类推），"
                              f"不要用近3次开课学期代替方案学期。")
         elif tool == "analyze_teacher" and res.get("teachers") and "course" in res:
             lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 位老师（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
