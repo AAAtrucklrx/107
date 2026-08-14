@@ -46,6 +46,14 @@ def parse_dt(s) -> Optional[datetime]:
     return None
 
 
+def _to_int(v) -> int:
+    """数字容错转换（平台偶发返回 "1.2k" 等非纯数字串，避免整次拉取失败）。"""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
 @dataclass
 class YoungActivity:
     """标准化的活动模型（与 young 平台原始字段解耦）"""
@@ -93,7 +101,12 @@ class BaseYoungProvider:
 class EncryptedHttpProvider(BaseYoungProvider):
     """加密 HTTP 协议实现（当前唯一实现，协议已实测验证）"""
 
+    MAX_PAGES = 20  # 翻页上限，防止异常数据导致无限翻页
+
     def __init__(self, token: str, timeout: int = 25):
+        if not token or len(token) < 32:
+            raise ValueError(
+                f"YOUNG_TOKEN 无效：长度需 ≥32 位（实际 {len(token or '')} 位），请检查 .env 配置")
         self.token = token
         self.timeout = timeout
         tk = token[-32:]
@@ -123,30 +136,33 @@ class EncryptedHttpProvider(BaseYoungProvider):
         return data
 
     def fetch_enrolment_activities(self, page_size: int = 50) -> list[YoungActivity]:
-        """拉取“报名中”活动列表（分页取满 page_size 条）"""
-        data = self._get("/mobile/item/enrolmentList",
-                         {"pageNo": 1, "pageSize": page_size})
-        records = (data.get("result") or {}).get("records") or []
-        activities = []
-        for r in records:
-            activities.append(YoungActivity(
-                id=r.get("id", ""),
-                name=r.get("itemName", ""),
-                start_time=r.get("st"),
-                end_time=r.get("et"),
-                apply_start=r.get("applySt"),
-                apply_end=r.get("applyEt"),
-                pic=r.get("pic", ""),
-                organizer=r.get("businessDeptName", ""),
-                sponsor=r.get("sponsor_dictText", ""),
-                category=r.get("itemCategory_dictText", ""),
-                module=r.get("module", ""),
-                fav_count=int(r.get("favCount") or 0),
-                people_num=int(r.get("peopleNum") or r.get("sumPersons") or 0),
-                service_hour=r.get("serviceHour", "") or "",
-                description=r.get("baseContent", "") or "",
-                raw=r,
-            ))
+        """拉取“报名中”活动列表（翻页取满，最多 MAX_PAGES 页；不足一页即停止）。"""
+        activities: list[YoungActivity] = []
+        for page_no in range(1, self.MAX_PAGES + 1):
+            data = self._get("/mobile/item/enrolmentList",
+                             {"pageNo": page_no, "pageSize": page_size})
+            records = (data.get("result") or {}).get("records") or []
+            for r in records:
+                activities.append(YoungActivity(
+                    id=r.get("id", ""),
+                    name=r.get("itemName", ""),
+                    start_time=r.get("st"),
+                    end_time=r.get("et"),
+                    apply_start=r.get("applySt"),
+                    apply_end=r.get("applyEt"),
+                    pic=r.get("pic", ""),
+                    organizer=r.get("businessDeptName", ""),
+                    sponsor=r.get("sponsor_dictText", ""),
+                    category=r.get("itemCategory_dictText", ""),
+                    module=r.get("module", ""),
+                    fav_count=_to_int(r.get("favCount")),
+                    people_num=_to_int(r.get("peopleNum") or r.get("sumPersons")),
+                    service_hour=r.get("serviceHour", "") or "",
+                    description=r.get("baseContent", "") or "",
+                    raw=r,
+                ))
+            if len(records) < page_size:
+                break
         return activities
 
 

@@ -113,6 +113,22 @@ def main() -> None:
     _CAS._injected_program_tree = None
     t("方案树注入-清除后不再注入", _fake_client.get_my_program_tree() != {"fake": "tree"}, "")
 
+    # ── P2: young_client token 校验与数字容错 ──
+    from services.young_client import EncryptedHttpProvider, _to_int
+    _short_ok = False
+    try:
+        EncryptedHttpProvider("short")
+    except ValueError:
+        _short_ok = True
+    t("young-短token拒绝", _short_ok, "")
+    t("young-数字容错", _to_int("1.2k") == 0 and _to_int("7") == 7 and _to_int(None) == 0, "")
+    _long_ok = True
+    try:
+        EncryptedHttpProvider("a" * 32)
+    except ValueError:
+        _long_ok = False
+    t("young-合法token通过", _long_ok, "")
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 
