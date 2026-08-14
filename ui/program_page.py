@@ -102,6 +102,33 @@ def _term_sort_key(c):
     return (0, 0) if not m else (1, int(m.group(1)))
 
 
+# ── 选课顾问联动（Phase 1b）────────────────────────
+
+def _ask_xiaowo(course_name: str) -> None:
+    """点击课程「问问小蜗」：切到选课顾问模块并自动发起该课程的问答。"""
+    st.session_state["pending_query"] = f"「{course_name}」这门课怎么样？老师评价如何？"
+    st.session_state["module_switch"] = "选课顾问"
+    st.rerun()
+
+
+def _course_ask_buttons(courses: list[dict], prefix: str) -> None:
+    """课程表下方渲染「💬 问问小蜗」按钮组（每行 4 个），点击后联动选课顾问。"""
+    named = [c for c in courses if c.get("name")]
+    if not named:
+        return
+    st.caption("💡 点击课程可让选课顾问直接点评该课程：")
+    cols = st.columns(4)
+    for i, c in enumerate(named):
+        with cols[i % 4]:
+            st.button(
+                f"💬 {c['name']}",
+                key=f"ask_{prefix}_{i}",
+                use_container_width=True,
+                on_click=_ask_xiaowo,
+                args=(c["name"],),
+            )
+
+
 # ── 各子页 ─────────────────────────────────────────
 
 def _render_my_program(program: dict):
@@ -147,6 +174,7 @@ def _render_my_program(program: dict):
             use_container_width=True,
             hide_index=True,
         )
+        _course_ask_buttons(courses, f"prog_{cat}")
 
 
 def _render_semester_plan(program: dict, major: str, grade: str, tree, year_index: int):
@@ -183,6 +211,7 @@ def _render_semester_plan(program: dict, major: str, grade: str, tree, year_inde
                 use_container_width=True,
                 hide_index=True,
             )
+            _course_ask_buttons(courses, f"plan_{tag}_{year_index}")
 
 
 def _render_progress(progress: dict, is_logged_in: bool):
@@ -223,6 +252,7 @@ def _render_progress(progress: dict, is_logged_in: bool):
                 use_container_width=True,
                 hide_index=True,
             )
+            _course_ask_buttons(remaining_sorted, "gap")
         else:
             st.success("🎉 必修课程已全部修完！")
 

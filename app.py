@@ -143,6 +143,19 @@ def main():
     # 对话区域
     prompt = render_chat_area()
 
+    # ── 培养方案页「问问小蜗」联动（Phase 1b）：pending_query 直接作为用户提问处理 ──
+    pending = st.session_state.pop("pending_query", None)
+    if pending:
+        from datetime import datetime
+        st.session_state.messages.append({
+            "role": "user", "content": pending,
+            "timestamp": datetime.now().strftime("%H:%M"),
+        })
+        with st.spinner("小蜗正在思考..."):
+            response = process_query(pending, selected_module)
+        add_assistant_message(response)
+        st.rerun()
+
     # 处理用户输入
     if prompt:
         with st.spinner("小蜗正在思考..."):
