@@ -21,6 +21,8 @@ from typing import Optional
 
 from langchain_core.tools import tool
 
+from tools import _program_resolve as _pr
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COURSE_DB = PROJECT_ROOT / "data" / "course_data.db"
 
@@ -60,44 +62,16 @@ def _norm_taken_set(names: list[str]) -> set[str]:
 
 def _parse_grade_key(grade: str) -> int:
     """年级 → 可排序整数（"2024级"→2024，"大二"→无法解析返回 0）。"""
-    m = re.match(r"\D*(\d{4})\D*", str(grade or ""))
-    return int(m.group(1)) if m else 0
+    return _pr.parse_grade_key(grade)
 
 
 def _resolve_program(conn: sqlite3.Connection, major: str, grade: str = None) -> dict | None:
-    """全量库定位方案：同年级 → 最近低年级 → 最新（与任务 2 分组推荐规则一致）。
+    """全量库定位方案（共享实现 tools/_program_resolve，与选课推荐口径一致）。
 
     Returns:
         {"id", "name", "college", "grade"} 或 None
     """
-    if not major:
-        return None
-    # name 匹配优先：college LIKE 会误伤（如 major="人工智能" 命中 人工智能与数据科学学院 的
-    # 数据科学与大数据技术方案），仅当 name 无命中时才回退 college
-    rows = conn.execute(
-        "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
-        (f"%{major}%",),
-    ).fetchall()
-    if not rows:
-        rows = conn.execute(
-            "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
-            (f"%{major}%",),
-        ).fetchall()
-    if not rows:
-        return None
-
-    # 排序键: (是否同年级优先, 年级数字)。同年级/最近低年级优先，其次最新方案。
-    target = _parse_grade_key(grade)
-    if target:
-        def sort_key(r):
-            g = _parse_grade_key(r["grade"])
-            # 同年级 0；最近低年级其次（g 越大越近）；高年级追加偏移排后
-            diff = g - target
-            bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
-            # -g 升序 => g 降序：低年级桶里最近的低年级在前，高年级桶里最新方案在前
-            return (bucket, -g)
-        rows = sorted(rows, key=sort_key)
-    return dict(rows[0])
+    return _pr.resolve_program(conn, major, grade)
 
 
 # ── 全量库 courses 结构（与 program_courses 行一致） ─────────────────

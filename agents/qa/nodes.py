@@ -13,7 +13,7 @@ import re
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from agents.executor import _build_tool_registry
+from agents.tool_registry import _build_tool_registry
 from agents.qa.intents import intent_hint
 from agents.qa.state import QaState
 from knowledge.intent_classifier import classify

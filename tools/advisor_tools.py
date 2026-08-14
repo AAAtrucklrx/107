@@ -321,64 +321,32 @@ def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict) -> l
 
 # ───────────────────────── 方案分组辅助 ─────────────────────────
 #
-# 必修组 + 选修组两段式推荐（任务 2）。方案定位规则与 tools/program_tools.py
-# 的 _resolve_program 一致（同年级 → 最近低年级 → 最新；programs 表只含 2022
-# 级及以后）。此处独立复刻，避免跨模块导入引入循环依赖。
+# 必修组 + 选修组两段式推荐（任务 2）。方案定位统一收敛到 tools/_program_resolve.py
+# （Phase 2b：与 tools/program_tools.py 共用同一实现，口径一致）。
+
+from tools import _program_resolve as _pr
+
 
 def _parse_grade_key(grade: str) -> int:
     """年级 → 可排序整数（"2024级"→2024，"大二"→无法解析返回 0）。"""
-    m = re.match(r"\D*(\d{4})\D*", str(grade or ""))
-    return int(m.group(1)) if m else 0
+    return _pr.parse_grade_key(grade)
 
 
 def _prog_priority(r) -> int:
-    """方案类型优先级：普通专业方案 0；英才班/带括号特殊方案 1；辅修 2。
-
-    同年级多方案命中（普通班 vs 英才班/少年班等）时优先普通专业方案，
-    避免给普通班学生推荐英才班专属课程（如量子物理、并行计算A 等）。"""
-    name = r["name"] or ""
-    if "辅修" in name:
-        return 2
-    if "英才班" in name or "（" in name or "(" in name:
-        return 1
-    return 0
+    """方案类型优先级：普通专业方案 0；英才班/带括号特殊方案 1；辅修 2（见 _pr.prog_priority）。"""
+    return _pr.prog_priority(r)
 
 
 def _resolve_program(conn: sqlite3.Connection, major: str | None,
                      grade: str | None = None) -> tuple[int | None, str | None]:
-    """全量库方案定位：同年级 → 最近低年级 → 最新；同年级内普通专业方案优先。
+    """全量库方案定位（共享实现）：同年级 → 最近低年级 → 最新；同年级内普通专业方案优先。
 
     Returns:
         (program_id, program_name)；无 major 或未命中时 (None, None)。
     """
-    if not major:
+    row = _pr.resolve_program(conn, major, grade)
+    if row is None:
         return None, None
-    # name 精确优先：college LIKE 会误伤（如 major="人工智能" 命中 人工智能与数据科学学院 的
-    # 数据科学与大数据技术方案，把计算机学生推向别专业课程），仅当 name 无命中时才回退 college
-    rows = conn.execute(
-        "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
-        (f"%{major}%",),
-    ).fetchall()
-    if not rows:
-        rows = conn.execute(
-            "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
-            (f"%{major}%",),
-        ).fetchall()
-    if not rows:
-        return None, None
-    target = _parse_grade_key(grade)
-
-    def _sort_key(r):
-        g = _parse_grade_key(r["grade"])
-        if target:
-            diff = g - target
-            bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
-        else:
-            bucket = 0  # 无年级信息: 不按年级分桶, 普通方案优先 + 最新在前
-        return (bucket, _prog_priority(r), -g)
-
-    rows = sorted(rows, key=_sort_key)
-    row = rows[0]
     return row["id"], row["name"]
 
 

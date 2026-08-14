@@ -293,6 +293,20 @@ def run() -> None:
     t("已修课程推断兴趣理由", hit,
       f"样本 reasons: {[c['reasons'][:2] for c in r_int['recommendations'][:3]]}")
 
+    # ── 11. Phase 2b: 方案定位双实现收敛（advisor 与 program 口径一致）──
+    conn2 = sqlite3.connect(db_path)
+    conn2.row_factory = sqlite3.Row
+    try:
+        import tools.program_tools as _pt
+        row = _pt._resolve_program(conn2, "数学与应用数学", "2025级")
+        pid2, pname2 = at._resolve_program(conn2, "数学与应用数学", "2025级")
+        t("方案定位双实现收敛", row is not None and row["id"] == pid2 and row["name"] == pname2,
+          f"program={row} advisor=({pid2},{pname2})")
+        t("方案定位无专业不命中", _pt._resolve_program(conn2, "", None) is None
+          and at._resolve_program(conn2, None, None) == (None, None), "")
+    finally:
+        conn2.close()
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 

@@ -186,9 +186,6 @@ def _logout():
 
     st.session_state.pop("user", None)
     ServiceContainer.reset()
-    # 清除 Agent 缓存（因为登录后 Agent 可能持有旧 session）
-    for key in ["faq", "course", "advisor", "schedule"]:
-        st.session_state.pop(key, None)
     # 清除 URL 中可能残留的 ticket 参数
     try:
         st.query_params.clear()

@@ -1,0 +1,52 @@
+"""
+小蜗 — Tool 注册表
+tool_name → tool 函数映射（Phase 2b 起独立成模块，原寄居在 legacy agents/executor.py）。
+延迟导入避免循环依赖。
+"""
+from __future__ import annotations
+
+
+def _build_tool_registry() -> dict:
+    from tools.faq_tools import search_faq, get_faq_categories
+    from tools.course_tools import (
+        query_schedule, query_daily_schedule, find_empty_room, query_grade, calc_gpa, query_exam,
+        search_courses, get_semester_list,
+        query_course_selection, query_program,
+    )
+    from tools.advisor_tools import (
+        collect_preferences, recommend_courses, compare_courses, analyze_teacher,
+    )
+    from tools.program_tools import (
+        get_my_program, get_program_progress, plan_semester,
+    )
+    from tools.schedule_tools import (
+        add_event, get_day_view, get_week_view, check_conflict, import_schedule,
+    )
+
+    registry = {
+        "search_faq": search_faq,
+        "get_faq_categories": get_faq_categories,
+        "query_schedule": query_schedule,
+        "query_daily_schedule": query_daily_schedule,
+        "find_empty_room": find_empty_room,
+        "query_grade": query_grade,
+        "calc_gpa": calc_gpa,
+        "query_exam": query_exam,
+        "search_courses": search_courses,
+        "get_semester_list": get_semester_list,
+        "query_course_selection": query_course_selection,
+        "query_program": query_program,
+        "collect_preferences": collect_preferences,
+        "recommend_courses": recommend_courses,
+        "compare_courses": compare_courses,
+        "analyze_teacher": analyze_teacher,
+        "get_my_program": get_my_program,
+        "get_program_progress": get_program_progress,
+        "plan_semester": plan_semester,
+        "add_event": add_event,
+        "get_day_view": get_day_view,
+        "get_week_view": get_week_view,
+        "check_conflict": check_conflict,
+        "import_schedule": import_schedule,
+    }
+    return registry
