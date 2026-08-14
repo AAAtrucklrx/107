@@ -793,7 +793,12 @@ def compose(state: QaState) -> dict:
             "candidates_summary": candidates_summary,
             "tool_summary": tool_summary,
         })
-        return {"answer": _strip_rule_prefix(response.content), "error": error}
+        answer = _strip_rule_prefix(response.content)
+        if not (answer or "").strip():
+            log.warning("compose LLM 返回空回答，降级为结果格式化")
+            return {"answer": _fallback_answer(results, candidates),
+                    "error": error or "LLM 返回空回答"}
+        return {"answer": answer, "error": error}
     except Exception as e:
         log.warning(f"QA 综合回答 LLM 失败，降级为结果格式化: {e}")
         return {"answer": _fallback_answer(results, candidates), "error": error or f"LLM 不可用: {e}"}
@@ -810,13 +815,24 @@ _RULE_KEYWORDS_STRONG = ("结尾", "为准", "不得", "禁止", "必须", "须�
 
 
 def _strip_rule_prefix(text: str) -> str:
-    """剥离开头混入的规则续写段与模型脏前缀（如 "smart_toy | " 对话痕迹）。"""
+    """剥离开头混入的规则续写段与模型脏前缀（如 "smart_toy | " 对话痕迹）。
+
+    Phase 2c 加固：模式0 容忍 BOM/零宽空格/空行前置，并按"token+分隔符"单元循环剥离
+    （模型偶发多段拼接，如 "smart_toy | smart_toy | 正文"）。
+    """
     if not text:
         return text
-    # 模式0: 模型输出残留的英文 token + 分隔符脏前缀（如 "smart_toy | 小蜗来啦…" 或 "smart_toy\n\n小蜗来啦…"，分隔符可为竖线或换行、可重复）
-    m = re.match(r"^[a-z_][a-z_]{1,19}(?:\s*(?:[|｜]|\n)\s*)+(?=[\u4e00-\u9fff\d])", text)
-    if m:
-        text = text[m.end():].strip()
+    # 模式0: 英文 token + 分隔符脏前缀（分隔符可为竖线或换行、可重复；整体可多段、可循环）
+    _pat0 = re.compile(
+        r"^[\s\u200b\ufeff]*"
+        r"(?:[a-z_][a-z_]{1,19}(?:\s*(?:[|｜]|\n)\s*)+)+"
+        r"(?=[\u4e00-\u9fff\d])")
+    prev = None
+    while prev != text:
+        prev = text
+        m = _pat0.match(text)
+        if m:
+            text = text[m.end():].strip()
     # 模式1: 编号规则行
     m = re.match(r"^(\s*\d+[.、．]\s*[^\n]{0,160}\n){1,2}\s*(?:-{3,}\s*\n*)*", text)
     if m and any(k in m.group(0) for k in _RULE_KEYWORDS):

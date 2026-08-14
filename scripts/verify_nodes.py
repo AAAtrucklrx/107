@@ -83,6 +83,22 @@ def main() -> None:
     _at.reset_profile()
     t("会话清理-上下文复位为空", current_student() == "", repr(current_student()))
 
+    # ── Phase 2c: 脏前缀/规则续写剥离加固 ──
+    from agents.qa.nodes import _strip_rule_prefix
+    _strip_cases = [
+        ("smart_toy | smart_toy\n\n小蜗来啦！", "小蜗来啦！"),   # 多段拼接
+        ("smart_toy\n\n小蜗来啦！", "小蜗来啦！"),              # 换行分隔
+        ("smart_toy | 小蜗来啦！", "小蜗来啦！"),               # 竖线分隔
+        ("\u200bsmart_toy | 小蜗来啦！", "小蜗来啦！"),         # 零宽空格前置
+        ("\n\nsmart_toy | 小蜗来啦！", "小蜗来啦！"),           # 空行前置
+        ("必须注明来源\n\n小蜗来啦！", "小蜗来啦！"),            # 规则续写单行
+        ("小蜗来啦！", "小蜗来啦！"),                           # 正常正文不动
+        ("办理流程如下：\n1. 带证件", "办理流程如下：\n1. 带证件"),  # 冒号结尾不动
+    ]
+    for _i, (_inp, _want) in enumerate(_strip_cases, 1):
+        _got = _strip_rule_prefix(_inp)
+        t(f"前缀剥离-{_i}", _got == _want, f"got={_got!r}")
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 
