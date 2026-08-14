@@ -53,6 +53,14 @@ class DatabaseManager:
             sql = f.read()
         conn = self.get_conn()
         conn.executescript(sql)
+        # 轻量迁移：为老库补充后加列（新库由 schema.sql 直接建全；重复列报错即忽略）
+        for ddl in (
+            "ALTER TABLE student_grades ADD COLUMN score_text TEXT",
+        ):
+            try:
+                conn.execute(ddl)
+            except sqlite3.OperationalError:
+                pass
         conn.commit()
 
     def execute(self, sql: str, params: tuple = ()) -> int:

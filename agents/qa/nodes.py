@@ -951,7 +951,7 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{_src(res)}）:")
             for g in grades[:60]:
                 lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
-                             f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
+                             f"{g.get('credits', '')}学分 成绩{g.get('score_display', g.get('score', ''))} 绩点{g.get('grade_point', '')}")
             if len(grades) > 60:
                 lines.append(f"  ... 其余 {len(grades) - 60} 门略")
         elif tool == "calc_gpa" and isinstance(res.get("details"), list):
@@ -961,7 +961,7 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"  明细 {len(details)} 门:")
             for g in details[:60]:
                 lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
-                             f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
+                             f"{g.get('credits', '')}学分 成绩{g.get('score_display', g.get('score', ''))} 绩点{g.get('grade_point', '')}")
         elif tool in ("query_schedule", "query_daily_schedule") and isinstance(res.get("courses"), list):
             courses = res["courses"]
             lines.append(f"[{tool}] 共 {len(courses)} 门课（{_src(res)}，{res.get('semester', '')}）:")

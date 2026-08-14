@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS student_grades (
     semester TEXT NOT NULL,
     course_name TEXT NOT NULL,
     credits REAL NOT NULL,
-    score INTEGER NOT NULL,
+    score INTEGER NOT NULL,          -- 百分制分数；等级制（优秀/通过…）存哨兵 -1
+    score_text TEXT,                 -- 等级制成绩原文（百分制为 NULL）
     grade_point REAL NOT NULL
 );
 

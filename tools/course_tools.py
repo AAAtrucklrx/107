@@ -75,7 +75,11 @@ def _query_grades(student_id: str, course_name: str = None, semester: str = None
     if course_name:
         sql += " AND REPLACE(REPLACE(REPLACE(REPLACE(course_name,'(',''),')',''),' ',''),'　','') LIKE ?"
         params.append(f"%{_norm_course_name(course_name)}%")
-    return _db().query(sql, tuple(params))
+    rows = _db().query(sql, tuple(params))
+    # 展示口径：等级制（score 哨兵 -1 且有原文）用原文
+    for r in rows:
+        r["score_display"] = r.get("score_text") if r.get("score") == -1 and r.get("score_text") else r.get("score", 0)
+    return rows
 
 
 _DAY_MAP = {"1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "7": "周日"}
@@ -259,11 +263,18 @@ def _fetch_real_grades(cas_client) -> list[dict] | None:
             score = sc.get("score")
             if score is None:
                 continue
-            # score 可能是数字或字符串
+            # score 可能是数字或字符串（百分制数字；等级制如 "优秀"/"通过"）
             try:
                 score_int = int(score)
+                score_text = None
             except (ValueError, TypeError):
-                continue
+                # 等级制：保留原文（哨兵 -1），绩点以 jw 返回的 gp 为准；
+                # 无 gp 时不做编造映射，跳过并告警
+                score_int = -1
+                score_text = str(score)
+                if sc.get("gp") is None:
+                    log.warning(f"等级制成绩无绩点字段，跳过: {sc.get('courseNameCh', '')} = {score_text}")
+                    continue
 
             credits = sc.get("credits", 0) or 0
             gp = sc.get("gp")
@@ -273,7 +284,7 @@ def _fetch_real_grades(cas_client) -> list[dict] | None:
                 try:
                     gp = float(gp)
                 except (ValueError, TypeError):
-                    gp = score_to_grade_point(score_int)
+                    gp = score_to_grade_point(score_int) if score_int >= 0 else 0.0
 
             grades.append({
                 "semester": sem_name,
@@ -281,6 +292,8 @@ def _fetch_real_grades(cas_client) -> list[dict] | None:
                 "course_code": sc.get("courseCode", ""),
                 "credits": credits,
                 "score": score_int,
+                "score_text": score_text,
+                "score_display": score_text if score_int == -1 else score_int,
                 "grade_point": gp,
                 "passed": sc.get("passed", score_int >= 60),
             })
@@ -295,10 +308,10 @@ def _sync_grades_to_db(student_id: str, grades: list[dict]) -> None:
         conn.execute("DELETE FROM student_grades WHERE student_id = ?", (student_id,))
         for g in grades:
             conn.execute(
-                "INSERT INTO student_grades (student_id, semester, course_name, credits, score, grade_point) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO student_grades (student_id, semester, course_name, credits, score, score_text, grade_point) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (student_id, g["semester"], g["course_name"],
-                 g.get("credits", 0), g.get("score", 0), g.get("grade_point", 0)),
+                 g.get("credits", 0), g.get("score", 0), g.get("score_text"), g.get("grade_point", 0)),
             )
     log.info(f"已同步 {len(grades)} 条成绩到数据库")
 

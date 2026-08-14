@@ -129,6 +129,29 @@ def main() -> None:
         _long_ok = False
     t("young-合法token通过", _long_ok, "")
 
+    # ── P2-12: 等级制成绩保留（用 jw 自带 gp，不编造映射）──
+    from tools.course_tools import _fetch_real_grades
+
+    class _StubCas:
+        def get_grade_semesters(self):
+            return [{"id": 1, "nameZh": "2025-2026-1"}]
+
+        def get_grades(self, sem_ids):
+            return {"semesters": [{"id": 1, "scores": [
+                {"courseNameCh": "数值课", "credits": 3, "score": 88},
+                {"courseNameCh": "等级课", "credits": 2, "score": "优秀", "gp": 4.0},
+                {"courseNameCh": "缺绩点课", "credits": 2, "score": "通过"},
+            ]}]}
+
+    _grades = _fetch_real_grades(_StubCas())
+    t("等级制-保留且缺绩点跳过", len(_grades) == 2, str([g["course_name"] for g in _grades]))
+    _lv = next((g for g in _grades if g["course_name"] == "等级课"), None)
+    t("等级制-哨兵与原文", _lv is not None and _lv["score"] == -1 and _lv["score_text"] == "优秀"
+      and _lv["score_display"] == "优秀" and _lv["grade_point"] == 4.0, str(_lv))
+    _nv = next((g for g in _grades if g["course_name"] == "数值课"), None)
+    t("数值-正常路径", _nv is not None and _nv["score"] == 88 and _nv["score_display"] == 88
+      and abs(_nv["grade_point"] - 3.3) < 0.01, str(_nv))
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 
