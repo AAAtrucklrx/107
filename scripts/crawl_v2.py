@@ -46,7 +46,7 @@ for date in ["2026-06-15", "2026-06-16"]:
         all_data[f"timetable_{date}"] = tt
 
 # 保存
-with open(r"f:\小蜗\scripts\crawl_real_data.json", "w", encoding="utf-8") as f:
+with open(r"f:\小蜗\scripts\data\crawl_real_data.json", "w", encoding="utf-8") as f:
     json.dump(all_data, f, ensure_ascii=False, indent=2)
 
 # 打印摘要

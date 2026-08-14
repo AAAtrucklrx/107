@@ -1,6 +1,6 @@
 import json
 
-data = json.load(open(r"f:\小蜗\scripts\crawl_semesters.json"))
+data = json.load(open(r"f:\小蜗\scripts\data\crawl_semesters.json"))
 print(f"Total semesters: {len(data)}")
 print("\n--- First 5 (head) ---")
 for s in data[:5]:
@@ -16,7 +16,7 @@ for s in data:
         print(f"  id={s['id']}, name={s['nameZh']}, code={s['code']}, start={s.get('start')}, end={s.get('end')}")
 
 # Check timetable structure
-tt = json.load(open(r"f:\小蜗\scripts\crawl_timetable.json"))
+tt = json.load(open(r"f:\小蜗\scripts\data\crawl_timetable.json"))
 if "timetable" in tt:
     items = tt["timetable"]
     print(f"\nTimetable records: {len(items)}")

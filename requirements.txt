@@ -1,10 +1,11 @@
 # LLM & Agent
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-community>=0.3.0
+langchain>=1.0
+langchain-openai>=1.0
+langchain-community>=0.3
+langgraph>=1.0
 
 # 向量数据库 & Embedding
-chromadb>=0.5.0
+chromadb>=1.0
 sentence-transformers>=2.7.0
 
 # 前端

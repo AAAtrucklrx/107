@@ -103,7 +103,7 @@ def _init_test_mode(container: ServiceContainer) -> None:
 
     _test_path = Path(_os.environ.get("TEMP", "")) / "xiaowo_personal" / "data.json"
     if not _test_path.exists():
-        st.error(f"测试数据缺失: {_test_path}\n请先运行 scripts/tmp_crawl_personal.py 生成备份后再启动测试版。")
+        st.error(f"测试数据缺失: {_test_path}\n请先运行 scripts/crawl_personal.py 生成备份后再启动测试版。")
         return
     try:
         _td = _json.loads(_test_path.read_text(encoding="utf-8"))

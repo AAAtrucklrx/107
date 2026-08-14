@@ -27,3 +27,10 @@ knowledge_backup_*/
 
 # 本地 IDE/工具配置
 .claude/
+
+# 调试脚本与截图归档（Phase 0 起，垃圾产物不入库）
+scripts/archive/
+docs/archive/
+
+# 调试日志
+*.log

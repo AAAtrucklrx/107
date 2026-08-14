@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -35,9 +36,20 @@ def t(name: str, ok: bool, detail: str = "") -> None:
 
 
 def build_mini_db() -> str:
-    """构造迷你 course_data.db（模拟 8 表 + 评分/评论/老师/方案数据）。"""
+    """构造迷你 course_data.db（模拟 8 表 + 评分/评论/老师/方案数据）。
+
+    临时目录默认 tempfile.mkdtemp；受限环境（沙箱/CI）可用环境变量
+    XIAOWO_TEST_TMP 指定一个可写的既有目录（该目录下同名库文件构建前先清除）。"""
     schema = Path(__file__).resolve().parents[1] / "database" / "schema_course.sql"
-    tmp = Path(tempfile.mkdtemp(prefix="xiaowo_test_")) / "course_data.db"
+    base = os.environ.get("XIAOWO_TEST_TMP")
+    if base:
+        tmp_dir = Path(base)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp = tmp_dir / "course_data.db"
+        if tmp.exists():
+            tmp.unlink()
+    else:
+        tmp = Path(tempfile.mkdtemp(prefix="xiaowo_test_")) / "course_data.db"
     conn = sqlite3.connect(str(tmp))
     conn.executescript(schema.read_text(encoding="utf-8"))
     cur = conn.cursor()

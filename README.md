@@ -67,6 +67,7 @@ streamlit run app.py
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
+- [docs/学习报告.md](docs/学习报告.md) — 项目学习基线（架构/模块详解/风险分级/维护路线图）
 
 ## ✅ 选课推荐全链路验收
 
@@ -89,6 +90,7 @@ E2E 覆盖场景：首页、Q1 课程推荐（含评课参考）、Q2 低 worklo
 - 评课数据为 icourse.club 抓取快照，新开课程可能暂无评论；样本量过少的课程/教师评分仅供参考（推荐画像会附"样本较少"提示）
 - 课程推荐依赖科大 LLM 平台进行意图分类与回答生成，平台不可用时无法出推荐结果
 - 教师对比中样本量差异较大（1~553 条），均分排序存在小样本偏差，建议结合评论原文判断
+- `scripts/test_fixes.py` 在受限沙箱/CI 下可设环境变量 `XIAOWO_TEST_TMP` 指向既有可写目录（默认仍用系统临时目录）
 
 ## ⚖️ 说明
 

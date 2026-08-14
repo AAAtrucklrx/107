@@ -31,8 +31,8 @@ LLM_TIMEOUT_SEC = 120
 # ---- 测试入口（按顺序探测，找到即用）----
 TEST_SCRIPTS = [
     PROJECT_ROOT / "scripts" / "test_fixes.py",
-    PROJECT_ROOT / "scripts" / "grade_match_test.py",
-    PROJECT_ROOT / "scripts" / "verify_programs.py",
+    PROJECT_ROOT / "scripts" / "verify_tools.py",
+    PROJECT_ROOT / "scripts" / "check_course_db.py",
 ]
 
 EXCLUDED_COMPILE_DIRS = {

@@ -570,12 +570,16 @@ def _extract_teacher(query: str) -> str | None:
 
 
 def _extract_profile(query: str, user_profile: dict) -> dict:
-    """从查询与用户信息中尽力提取推荐偏好"""
+    """从查询与用户信息中尽力提取推荐偏好。
+
+    无信息时留空、绝不填造假画像（历史版本硬编码"计算机科学/大二/人工智能"
+    导致降级路径乱推）：缺失部分由 act 层 _enrich_recommend_args 从登录画像补齐，
+    仍缺时由 think 规则引导 clarify / collect_preferences。"""
     major = next((v for k, v in _MAJOR_KEYWORDS.items() if k in query), None) \
-        or user_profile.get("major") or "计算机科学"
+        or user_profile.get("major")
     grade = next((g for g in _GRADE_WORDS if g in query), None) \
-        or user_profile.get("grade") or "大二"
-    interests = [kw for kw in _INTEREST_KEYWORDS if kw in query] or ["人工智能"]
+        or user_profile.get("grade")
+    interests = [kw for kw in _INTEREST_KEYWORDS if kw in query]
     if any(k in query for k in ("好拿分", "轻松", "水课", "不点名", "任务少", "省时", "摸鱼")):
         pref = "easy_grade"
     elif any(k in query for k in ("学到东西", "硬核", "挑战")):

@@ -1,6 +1,6 @@
 import json
 
-data = json.load(open(r"f:\小蜗\scripts\crawl_real_data.json"))
+data = json.load(open(r"f:\小蜗\scripts\data\crawl_real_data.json"))
 
 # Check lesson structure
 print("=== 2026春季课程样例 ===")
