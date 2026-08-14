@@ -39,6 +39,10 @@ class CASClient:
 
     TIMEOUT = 20
 
+    # 测试版注入的个人方案树（P1-2 治理：替代旧 monkey-patch 方法替换；
+    # 类级属性，app_test 启动时注入一次、进程生命周期内有效）
+    _injected_program_tree: dict | list | None = None
+
     def __init__(self) -> None:
         self._session = requests.Session()
         self._session.headers.update({
@@ -526,6 +530,8 @@ class CASClient:
         Returns:
             模块树 dict；未登录或解析失败返回 {"error": ...}
         """
+        if CASClient._injected_program_tree is not None:
+            return CASClient._injected_program_tree
         if not self._logged_in:
             return {"error": "未登录"}
         try:

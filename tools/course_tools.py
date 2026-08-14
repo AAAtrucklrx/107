@@ -21,6 +21,15 @@ log = get_logger("xiaowo.tools.course")
 # 本地种子课程表仅少量样例，课程搜索时合并两份数据避免「数学分析B1」搜不到。
 _REVIEW_DB = Path(__file__).resolve().parents[1] / "data" / "course_data.db"
 
+# 测试版离线模式开关（P1-2 治理：替代旧 monkey-patch——app_test 直接替换函数对象）
+_OFFLINE = False
+
+
+def set_offline_mode(on: bool) -> None:
+    """测试版用：强制个人数据实时拉取走 SQLite 降级（避免真发请求到 jw 造成超时）。"""
+    global _OFFLINE
+    _OFFLINE = bool(on)
+
 
 def _db():
     """获取数据库实例"""
@@ -123,6 +132,8 @@ def _fetch_real_schedule(cas_client, semester_id: int) -> list[dict] | None:
     从 jw 内部 API 获取个人课表，解析为标准格式。
     返回 None 表示失败。
     """
+    if _OFFLINE:
+        return None
     data = cas_client.get_course_table(semester_id)
     if not isinstance(data, dict) or "error" in data:
         return None
@@ -210,6 +221,8 @@ def _fetch_real_grades(cas_client) -> list[dict] | None:
     从 jw 内部 API 获取成绩，解析为标准格式。
     返回 None 表示失败。
     """
+    if _OFFLINE:
+        return None
     # 1. 获取学期列表
     sem_data = cas_client.get_grade_semesters()
     if not isinstance(sem_data, list) or not sem_data:

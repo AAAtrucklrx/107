@@ -119,13 +119,11 @@ def _init_test_mode(container: ServiceContainer) -> None:
             _c = container.cas_client
             _c._logged_in = True  # 伪登录：解锁 has_cas() 判定的个人数据查询
             _c._student_id = _sid
+            # P1-2 治理：不再 monkey-patch 函数对象，改用显式开关/注入属性
             import services.cas_client as _cc
-            _tree = _td["program_tree"]
-            _cc.CASClient.get_my_program_tree = lambda self, _t=_tree: _t  # 注入个人方案树
-            # 强制个人数据查询走 SQLite 降级（避免真发请求到 jw 造成超时等待）
+            _cc.CASClient._injected_program_tree = _td["program_tree"]
             import tools.course_tools as _ct
-            _ct._fetch_real_grades = lambda cas: None
-            _ct._fetch_real_schedule = lambda cas, sem_id: None
+            _ct.set_offline_mode(True)  # 个人数据实时拉取走 SQLite 降级（不发真实 jw 请求）
         finally:
             reset_student(_ctx_token)
         import tools.course_tools as _ct

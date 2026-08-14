@@ -870,6 +870,15 @@ def _sensitive_refusal() -> str:
 
 def _build_tool_summary(results: list[dict]) -> str:
     """将工具结果整理为供 LLM 参考的摘要文本"""
+
+    def _src(res: dict) -> str:
+        """source 值 → 中文明确标签（避免 LLM 把 'fallback' 误读成官方来源而编造出处）。"""
+        return {
+            "real": "数据来源：教务系统实时数据",
+            "fallback": "数据来源：本地缓存/模拟数据，仅供参考",
+            "locked": "需登录教务系统后获取",
+        }.get(res.get("source") or "", res.get("source") or "来源未知")
+
     lines = []
     for r in results:
         tool = r.get("tool", "")
@@ -939,14 +948,14 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
         elif tool == "query_grade" and isinstance(res.get("grades"), list):
             grades = res["grades"]
-            lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{res.get('source', '')}）:")
+            lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{_src(res)}）:")
             for g in grades[:60]:
                 lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
                              f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
             if len(grades) > 60:
                 lines.append(f"  ... 其余 {len(grades) - 60} 门略")
         elif tool == "calc_gpa" and isinstance(res.get("details"), list):
-            lines.append(f"[{tool}] 总GPA {res.get('gpa')}（{res.get('semester')}，{res.get('source', '')}），"
+            lines.append(f"[{tool}] 总GPA {res.get('gpa')}（{res.get('semester')}，{_src(res)}），"
                          f"总学分 {res.get('total_credits')}")
             details = res["details"]
             lines.append(f"  明细 {len(details)} 门:")
@@ -955,7 +964,7 @@ def _build_tool_summary(results: list[dict]) -> str:
                              f"{g.get('credits', '')}学分 成绩{g.get('score', '')} 绩点{g.get('grade_point', '')}")
         elif tool in ("query_schedule", "query_daily_schedule") and isinstance(res.get("courses"), list):
             courses = res["courses"]
-            lines.append(f"[{tool}] 共 {len(courses)} 门课（{res.get('source', '')}，{res.get('semester', '')}）:")
+            lines.append(f"[{tool}] 共 {len(courses)} 门课（{_src(res)}，{res.get('semester', '')}）:")
             for c in courses[:80]:
                 lines.append(f"- {c.get('course_name', '?')} {c.get('teacher', '')} "
                              f"{c.get('time', '')} {c.get('location', '')}")
@@ -967,7 +976,7 @@ def _build_tool_summary(results: list[dict]) -> str:
                              f"{s.get('credits', '')}学分 {s.get('status', '')}")
         elif tool == "query_exam" and isinstance(res.get("exams"), list):
             exams = res["exams"]
-            lines.append(f"[{tool}] 共 {len(exams)} 场考试（{res.get('source', '')}）:")
+            lines.append(f"[{tool}] 共 {len(exams)} 场考试（{_src(res)}）:")
             for e in exams[:60]:
                 lines.append(f"- {e.get('course', '?')} {e.get('date', '')} {e.get('time', '')} "
                              f"{e.get('location', '')} {e.get('type', '')}")

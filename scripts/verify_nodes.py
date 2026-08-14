@@ -99,6 +99,20 @@ def main() -> None:
         _got = _strip_rule_prefix(_inp)
         t(f"前缀剥离-{_i}", _got == _want, f"got={_got!r}")
 
+    # ── P1-2: 测试版离线模式与方案树注入（显式开关替代 monkey-patch）──
+    import tools.course_tools as _ct2
+    from services.cas_client import CASClient as _CAS
+
+    _ct2.set_offline_mode(True)
+    t("离线模式-课表拉取返回 None", _ct2._fetch_real_schedule(object(), 1) is None, "")
+    t("离线模式-成绩拉取返回 None", _ct2._fetch_real_grades(object()) is None, "")
+    _ct2.set_offline_mode(False)
+    _CAS._injected_program_tree = {"fake": "tree"}
+    _fake_client = _CAS()
+    t("方案树注入-返回注入数据", _fake_client.get_my_program_tree() == {"fake": "tree"}, "")
+    _CAS._injected_program_tree = None
+    t("方案树注入-清除后不再注入", _fake_client.get_my_program_tree() != {"fake": "tree"}, "")
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 
