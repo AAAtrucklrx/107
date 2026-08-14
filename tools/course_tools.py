@@ -340,7 +340,8 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
 
     Args:
         student_id: 学号（登录用户；未登录时此查询锁定）
-        week: 周次（可选），不指定则返回所有周的课表
+        week: 已废弃——数据源（本地缓存/全学期课表）无周次维度，传参会被忽略；
+            单日查询请用 query_daily_schedule
         day: 星期几（可选），如 "周一"、"周二"
 
     Returns:
@@ -377,7 +378,7 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
                     return {"student_id": sid, "courses": courses, "count": len(courses),
                             "source": "real", "semester": sem_name}
         except Exception as e:
-            log.warning(f"课表 API 失败 (student_id={sid}, week={week}, day={day})，降级到本地数据: {e}")
+            log.warning(f"课表 API 失败 (student_id={sid}, day={day})，降级到本地数据: {e}")
 
     # ── Fallback: SQLite 本地缓存或 锁定提示 ──
     if _is_locked(sid):
