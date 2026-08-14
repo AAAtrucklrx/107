@@ -58,7 +58,11 @@ def _load_taken(student_id: str):
 
 
 def _pull_personal_tree(container) -> dict | list | None:
-    """登录后经 ServiceContainer 拉取个人方案树；未登录/失败返回 None（降级全量库）。"""
+    """登录后经 ServiceContainer 拉取个人方案树；未登录/失败返回 None（降级全量库）。
+
+    Phase 2a：在"当前学生"上下文中拉取，保证多用户会话各自命中自己的 CAS 桶。"""
+    from services.session_ctx import reset_student, set_student
+    token = set_student((st.session_state.get("user") or {}).get("id"))
     try:
         if not container.has_cas():
             return None
@@ -68,6 +72,8 @@ def _pull_personal_tree(container) -> dict | list | None:
         return tree
     except Exception:
         return None
+    finally:
+        reset_student(token)
 
 
 def _major_grade_from_profile() -> tuple:

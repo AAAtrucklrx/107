@@ -929,7 +929,8 @@ def _build_tool_summary(results: list[dict]) -> str:
             if len(grades) > 60:
                 lines.append(f"  ... 其余 {len(grades) - 60} 门略")
         elif tool == "calc_gpa" and isinstance(res.get("details"), list):
-            lines.append(f"[{tool}] 总GPA {res.get('gpa')}（{res.get('semester')}），总学分 {res.get('total_credits')}")
+            lines.append(f"[{tool}] 总GPA {res.get('gpa')}（{res.get('semester')}，{res.get('source', '')}），"
+                         f"总学分 {res.get('total_credits')}")
             details = res["details"]
             lines.append(f"  明细 {len(details)} 门:")
             for g in details[:60]:

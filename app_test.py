@@ -111,20 +111,25 @@ def _init_test_mode(container: ServiceContainer) -> None:
             _u = dict(_td["user"])
             _u.setdefault("logged_in_at", _time.time())  # 避免侧边栏误判登录过期
             st.session_state["user"] = _u
-        if container._cas_client is None:
-            container.init_cas_client()
-        _c = container.cas_client
-        _c._logged_in = True  # 伪登录：解锁 has_cas() 判定的个人数据查询
-        _c._student_id = _td["user"]["id"]
-        import services.cas_client as _cc
-        _tree = _td["program_tree"]
-        _cc.CASClient.get_my_program_tree = lambda self, _t=_tree: _t  # 注入个人方案树
-        # 强制个人数据查询走 SQLite 降级（避免真发请求到 jw 造成超时等待）
-        import tools.course_tools as _ct
-        _ct._fetch_real_grades = lambda cas: None
-        _ct._fetch_real_schedule = lambda cas, sem_id: None
-        # 个人数据 seed 闭环：库中无该生成绩/课表时用爬取备份写入（幂等，不覆盖已有数据）
         _sid = _td["user"]["id"]
+        # Phase 2a：伪登录写入"该学号"的 CAS 桶（多用户会话隔离，与 run_qa 上下文一致）
+        from services.session_ctx import reset_student, set_student
+        _ctx_token = set_student(_sid)
+        try:
+            _c = container.cas_client
+            _c._logged_in = True  # 伪登录：解锁 has_cas() 判定的个人数据查询
+            _c._student_id = _sid
+            import services.cas_client as _cc
+            _tree = _td["program_tree"]
+            _cc.CASClient.get_my_program_tree = lambda self, _t=_tree: _t  # 注入个人方案树
+            # 强制个人数据查询走 SQLite 降级（避免真发请求到 jw 造成超时等待）
+            import tools.course_tools as _ct
+            _ct._fetch_real_grades = lambda cas: None
+            _ct._fetch_real_schedule = lambda cas, sem_id: None
+        finally:
+            reset_student(_ctx_token)
+        import tools.course_tools as _ct
+        # 个人数据 seed 闭环：库中无该生成绩/课表时用爬取备份写入（幂等，不覆盖已有数据）
         if not (container.db.query_one("SELECT COUNT(*) AS cnt FROM student_grades WHERE student_id = ?", (_sid,)) or {}).get("cnt"):
             _ct._sync_grades_to_db(_sid, _td.get("grades") or [])
         if not (container.db.query_one("SELECT COUNT(*) AS cnt FROM student_courses WHERE student_id = ?", (_sid,)) or {}).get("cnt"):

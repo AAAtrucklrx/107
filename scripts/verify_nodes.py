@@ -49,6 +49,40 @@ def main() -> None:
     s = _build_tool_summary(fake)
     t("工具摘要含画像说明", "画像" in s and "GPA 2.2" in s, s[:120])
 
+    # ── Phase 2a: 会话隔离（画像分桶 + CAS 客户端分桶）──
+    from services.session_ctx import current_student, reset_student, set_student
+    import tools.advisor_tools as _at
+    from services.service_container import ServiceContainer
+
+    _at.reset_profile()
+    tok_a = set_student("PB0001")
+    _at.update_profile(interest="AI")
+    reset_student(tok_a)
+    tok_b = set_student("PB0002")
+    t("会话隔离-他生画像不可见", _at.get_profile() == {}, str(_at.get_profile()))
+    reset_student(tok_b)
+    tok_a2 = set_student("PB0001")
+    t("会话隔离-本生画像仍在", _at.get_profile().get("interest") == "AI", str(_at.get_profile()))
+    reset_student(tok_a2)
+
+    _sc = ServiceContainer()
+    tok_a3 = set_student("PB0001")
+    _ca = _sc.cas_client
+    _ca._logged_in = True
+    _ca._student_id = "PB0001"
+    reset_student(tok_a3)
+    tok_b2 = set_student("PB0002")
+    t("CAS 桶隔离-他生桶未登录", _sc.has_cas() is False, str(_sc.has_cas()))
+    _cb = _sc.cas_client
+    t("CAS 桶隔离-客户端不共享", _cb is not _ca, "PB0001/PB0002 为不同实例")
+    reset_student(tok_b2)
+    tok_a4 = set_student("PB0001")
+    t("CAS 桶隔离-本生桶已登录", _sc.has_cas() is True, str(_sc.has_cas()))
+    reset_student(tok_a4)
+    _sc.reset()
+    _at.reset_profile()
+    t("会话清理-上下文复位为空", current_student() == "", repr(current_student()))
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 

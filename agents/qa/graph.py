@@ -97,32 +97,37 @@ def run_qa(query: str, module_signal: str = "自动判断",
          "tool_results": [...], "rounds": int, "thought_log": [...], "error": str}
     """
     try:
-        _ensure_services()
-        initial: QaState = {
-            "query": query,
-            "module_signal": module_signal or "自动判断",
-            "intent": "",
-            "intent_top3": [],
-            "candidates": [],
-            "candidates_found": False,
-            "student_id": student_id or "",
-            "user_profile": user_profile or {},
-            "chat_history": chat_history or [],
-            "decision": "compose",
-            "retrieve_query": "",
-            "tool_calls": [],
-            "tool_results": [],
-            "rounds": 0,
-            "thought_log": [],
-            "clarify_question": "",
-            "answer": "",
-            "error": "",
-        }
-        final = _get_graph().invoke(initial)
-        # clarify 决策时追问文本作为回答透出（计划：clarify 返回追问文本，结束）
-        if final.get("decision") == "clarify" and not (final.get("answer") or "").strip():
-            final["answer"] = final.get("clarify_question") or "请问能再具体一些吗？"
-        return final
+        from services.session_ctx import reset_student, set_student
+        _ctx_token = set_student(student_id or "")
+        try:
+            _ensure_services()
+            initial: QaState = {
+                "query": query,
+                "module_signal": module_signal or "自动判断",
+                "intent": "",
+                "intent_top3": [],
+                "candidates": [],
+                "candidates_found": False,
+                "student_id": student_id or "",
+                "user_profile": user_profile or {},
+                "chat_history": chat_history or [],
+                "decision": "compose",
+                "retrieve_query": "",
+                "tool_calls": [],
+                "tool_results": [],
+                "rounds": 0,
+                "thought_log": [],
+                "clarify_question": "",
+                "answer": "",
+                "error": "",
+            }
+            final = _get_graph().invoke(initial)
+            # clarify 决策时追问文本作为回答透出（计划：clarify 返回追问文本，结束）
+            if final.get("decision") == "clarify" and not (final.get("answer") or "").strip():
+                final["answer"] = final.get("clarify_question") or "请问能再具体一些吗？"
+            return final
+        finally:
+            reset_student(_ctx_token)
     except Exception as e:
         log.error(f"QA 流程执行失败: {e}")
         return {

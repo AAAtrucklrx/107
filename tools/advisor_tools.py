@@ -109,21 +109,25 @@ def _match_courses(conn: sqlite3.Connection, name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-# 偏好状态（session 级模块单例）
-_current_profile: dict = {}
+# 偏好状态（Phase 2a：按"当前学生"分桶，多用户会话隔离；脚本/测试未设置时用默认桶）
+_profiles: dict[str, dict] = {}
+
+
+def _profile_key() -> str:
+    from services.session_ctx import current_student
+    return current_student() or "_anon"
 
 
 def get_profile() -> dict:
-    return _current_profile
+    return _profiles.setdefault(_profile_key(), {})
 
 
 def update_profile(**kwargs):
-    _current_profile.update(kwargs)
+    _profiles.setdefault(_profile_key(), {}).update(kwargs)
 
 
 def reset_profile():
-    global _current_profile
-    _current_profile = {}
+    _profiles[_profile_key()] = {}
 
 
 # ───────────────────────── 展示辅助 ─────────────────────────
