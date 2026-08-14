@@ -55,6 +55,30 @@ def _load_taken_courses(student_id: str) -> list[str]:
         return []
 
 
+def _load_gpa(student_id: str) -> float | None:
+    """从本地成绩表计算 4.3 制 GPA（供推荐自动画像；无数据返回 None）"""
+    if not student_id:
+        return None
+    try:
+        import sqlite3
+        from config import DATABASE_PATH
+        from utils.gpa_calculator import calculate_gpa
+        conn = sqlite3.connect(str(DATABASE_PATH), timeout=10)
+        try:
+            rows = conn.execute(
+                "SELECT credits, grade_point FROM student_grades WHERE student_id = ?",
+                (student_id,)).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return None
+        grades = [{"credits": r[0], "grade_point": r[1]} for r in rows]
+        return calculate_gpa(grades)["gpa"]
+    except Exception as e:
+        log.warning(f"计算 GPA 失败，推荐将不按 GPA 画像: {e}")
+        return None
+
+
 def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
     """recommend_courses 参数兜底：补齐专业/年级/已修课程/学年号。
 
@@ -72,6 +96,11 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
         taken = _load_taken_courses(sid)
         if taken:
             profile["taken_courses"] = taken
+    # 个性化 v1：注入 GPA（由本地成绩表计算），供 recommend_courses 自动推断画像
+    if not profile.get("gpa") and not args.get("gpa") and sid:
+        gpa = _load_gpa(sid)
+        if gpa is not None:
+            profile["gpa"] = gpa
     if not profile.get("current_year_index") and not args.get("current_year_index"):
         from tools.advisor_tools import _infer_current_year_index
         yi = _infer_current_year_index(profile.get("grade"))
@@ -155,7 +184,7 @@ _TOOL_LIST = (
     "query_course_selection(选课情况), query_program(培养方案), "
     "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入), get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入), "
     "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入), "
-    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\"} 或顶层 major/grade/interests/preference/keywords), "
+    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"gpa\"} 或顶层 major/grade/interests/preference/keywords/gpa), "
     "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
     "check_conflict(日程冲突), import_schedule(导入课表)"
@@ -221,7 +250,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 7. 意图分类仅供参考，自行判断真实需求并修正
 8. 绝不编造数据：工具结果不足时继续 retrieve/call_tool/clarify，不要硬答
 9. 禁止重复调用：已有工具结果（tool_summary 中 status=done 的工具）不得再次调用同一工具，应转 compose 或 clarify
-10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推
+10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推。已登录用户即使未说偏好，系统已按其 GPA 自动采用画像（tool_summary 的 profile_note 会注明），可直接推荐并在回答中一句话说明画像依据
 11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")
 12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
@@ -868,6 +897,12 @@ def _build_tool_summary(results: list[dict]) -> str:
                 _dump(elec)
             if not req and not elec:
                 _dump(res["recommendations"])
+            note = res.get("profile_note") or {}
+            if note:
+                note_txt = f"画像: {note.get('name','')}——{note.get('desc','')}"
+                if note.get("auto") and note.get("gpa") is not None:
+                    note_txt += f"（用户未指定偏好，按 GPA {note['gpa']} 自动采用；回答时可用一句话说明）"
+                lines.append(note_txt)
             # 选课季语义提示：方案学期“2秋”指大二上学期，避免 LLM 把评课库历史开课学期当“下学期”
             try:
                 from tools.advisor_tools import _infer_next_selection_term

@@ -39,6 +39,32 @@ _PREF_CN = {
     "学东西": "learn_hard", "挑战": "learn_hard",
 }
 
+# 已修课程名 → 兴趣关键词（个性化 v1：仅作理由信号，不参与候选池过滤）
+_TAKEN_INTEREST_KW = [
+    "人工智能", "机器学习", "深度学习", "数据挖掘", "大数据", "数据科学",
+    "计算机", "程序设计", "算法", "数学分析", "线性代数", "概率论",
+    "物理", "化学", "生物", "金融", "经济", "管理", "文学", "历史", "哲学", "艺术",
+]
+
+
+def _infer_preference(profile: dict) -> str:
+    """个性化 v1：未显式指定偏好时按 GPA 自动推断画像。
+
+    4.3 制 GPA ≥3.7 → 硬核学习；≤2.7 → 冲分保绩；其余/无 GPA → 均衡。
+    显式 preference_type（用户明说或 LLM 判断）永远优先。"""
+    pref = profile.get("preference_type")
+    if pref:
+        return pref
+    try:
+        g = float(profile.get("gpa"))
+    except (TypeError, ValueError):
+        return "balanced"
+    if g >= 3.7:
+        return "learn_hard"
+    if g <= 2.7:
+        return "easy_grade"
+    return "balanced"
+
 
 def _cdb() -> sqlite3.Connection:
     """每次新建连接（本地 sqlite 开销小, 避免缓存坏连接）。"""
@@ -282,6 +308,8 @@ def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict) -> l
             reasons.append("收获评价高, 值得深入学习")
         if dims.get("难度", 0) and dims["难度"] <= 4.5:
             reasons.append("课程有挑战性")
+    if profile.get("_auto_pref") and profile.get("gpa") is not None:
+        reasons.append(f"按你的 GPA {profile['gpa']} 自动采用「{PROFILES.get(pref, {}).get('name', pref)}」画像")
     if course["rate_count"] < 10:
         reasons.append("样本较少, 评分仅供参考")
     return reasons
@@ -614,7 +642,8 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
                       keywords: list[str] | str | None = None, max_results: int = 10,
                       taken_courses: list[str] | None = None,
                       current_year_index: int | None = None,
-                      current_term: str | None = None) -> dict:
+                      current_term: str | None = None,
+                      gpa: float | None = None) -> dict:
     """
     根据用户画像推荐课程。有专业方案时按「必修组 + 选修组」两段式返回（必修组前置、
     按学期紧迫度 + 评分排序）；无专业/未命中方案时保持纯评分推荐。
@@ -637,6 +666,8 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         current_year_index: 当前学年（可选，1=大一，2=大二…）；None 时按 profile.grade
             推算（"大二"→2；"2024级"→当前日期所在学年）
         current_term: 当前学期标识（可选，如 "2026秋"）；None 时由当前日期推断
+        gpa: 4.3 制 GPA（可选，登录用户由上层从成绩单计算注入）；未显式指定
+            preference_type 时按 GPA 自动推断画像（≥3.7 硬核 / ≤2.7 冲分 / 其余均衡）
 
     Returns:
         {"recommendations": [...], "groups": {"required": [...], "elective": [...]},
@@ -668,8 +699,16 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         p.setdefault("current_year_index", current_year_index)
     if current_term:
         p.setdefault("current_term", current_term)
+    if gpa is not None:
+        p.setdefault("gpa", gpa)
     p.setdefault("max_results", max_results)
     profile = p
+
+    # 个性化 v1：未显式指定偏好时按 GPA 自动推断（显式偏好永远优先）
+    if not profile.get("preference_type"):
+        profile["preference_type"] = _infer_preference(profile)
+        if profile.get("gpa") is not None:
+            profile["_auto_pref"] = True
 
     try:
         conn = _cdb()
@@ -692,6 +731,12 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         taken.add(n)
         if n.endswith("L") and len(n) > 1:
             taken.add(n[:-1])
+    # 个性化 v1：无兴趣线索时由已修课程名推断兴趣（仅作理由信号，不参与池过滤）
+    if not profile.get("interests") and taken:
+        auto_ints = [kw for kw in _TAKEN_INTEREST_KW
+                     if any(kw in n for n in (profile.get("taken_courses") or []))]
+        if auto_ints:
+            profile["interests"] = auto_ints[:5]
 
     # 方案定位：无 major / 未命中 / 库缺方案表 → 纯评分推荐
     try:
@@ -706,8 +751,12 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
                                     current_yi, prog_id, prog_name)
 
     conn.close()
-    result.setdefault("profile_note",
-                      PROFILES.get(profile.get("preference_type", "balanced"), PROFILES["balanced"]))
+    pref = profile.get("preference_type", "balanced")
+    note = dict(PROFILES.get(pref, PROFILES["balanced"]))
+    if profile.get("_auto_pref") and profile.get("gpa") is not None:
+        note["auto"] = True
+        note["gpa"] = profile["gpa"]
+    result.setdefault("profile_note", note)
     return result
 
 

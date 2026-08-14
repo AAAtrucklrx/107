@@ -24,7 +24,7 @@ def t(name: str, ok: bool, detail: str = "") -> None:
 
 
 def main() -> None:
-    from agents.qa.nodes import _extract_profile
+    from agents.qa.nodes import _build_tool_summary, _extract_profile
 
     # 无任何线索 → 全部留空（历史版本硬编码"计算机科学/大二/人工智能"）
     p1 = _extract_profile("推荐几门课", {})
@@ -41,6 +41,13 @@ def main() -> None:
     # 偏好类型映射
     p4 = _extract_profile("有没有好拿分的课", {})
     t("easy_grade 映射", p4["preference_type"] == "easy_grade", str(p4))
+
+    # 工具摘要推荐分支须输出画像说明（供 LLM 向用户说明自动画像依据）
+    fake = [{"tool": "recommend_courses", "status": "done", "result": {
+        "recommendations": [], "groups": {}, "total_candidates": 0,
+        "profile_note": {"name": "冲分保绩", "desc": "给分好、难度低优先", "auto": True, "gpa": 2.2}}}]
+    s = _build_tool_summary(fake)
+    t("工具摘要含画像说明", "画像" in s and "GPA 2.2" in s, s[:120])
 
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 

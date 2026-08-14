@@ -271,6 +271,28 @@ def run() -> None:
       f"courses={n_bc} reviews={n_br} course_teachers={n_bt}")
     c2.close()
 
+    # ── 10. 个性化 v1: GPA 自动画像 / 显式偏好优先 / 已修课程兴趣推断 ──
+    r_hi = at.recommend_courses.invoke({"profile": {"gpa": 3.8, "max_results": 3}})
+    t("GPA≥3.7 自动硬核画像", r_hi.get("profile_note", {}).get("auto") is True
+      and r_hi["profile_note"].get("name") == "硬核学习", str(r_hi.get("profile_note")))
+
+    r_lo = at.recommend_courses.invoke({"profile": {"gpa": 2.2, "max_results": 3}})
+    t("GPA≤2.7 自动冲分画像", r_lo.get("profile_note", {}).get("auto") is True
+      and r_lo["profile_note"].get("name") == "冲分保绩", str(r_lo.get("profile_note")))
+
+    r_mid = at.recommend_courses.invoke({"profile": {"gpa": 3.2, "max_results": 3}})
+    t("GPA 中段保持均衡画像", r_mid.get("profile_note", {}).get("name") == "均衡兼顾",
+      str(r_mid.get("profile_note")))
+
+    r_exp = at.recommend_courses.invoke({"profile": {"gpa": 3.9, "preference_type": "easy_grade", "max_results": 3}})
+    t("显式偏好优先于 GPA", r_exp.get("profile_note", {}).get("name") == "冲分保绩"
+      and not r_exp["profile_note"].get("auto"), str(r_exp.get("profile_note")))
+
+    r_int = at.recommend_courses.invoke({"profile": {"taken_courses": ["计算机程序设计"], "max_results": 5}})
+    hit = any("兴趣「计算机」" in "；".join(c.get("reasons") or []) for c in r_int["recommendations"])
+    t("已修课程推断兴趣理由", hit,
+      f"样本 reasons: {[c['reasons'][:2] for c in r_int['recommendations'][:3]]}")
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 
