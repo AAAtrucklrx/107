@@ -346,7 +346,9 @@ def think(state: QaState) -> dict:
     rounds = state.get("rounds") or 0
 
     # 敏感词/闲聊快速通道（不依赖 LLM，稳定拒绝与回应）
-    if intent == "敏感拒绝" or any(w in query for w in _SENSITIVE_WORDS):
+    # 守卫：intent 命中敏感类且问题含敏感词才拒绝，避免 embedding 误分类
+    # （如"补考成绩怎么记载"被归入敏感类）把正常教务问题误拒绝
+    if intent == "敏感拒绝" and any(w in query for w in _SENSITIVE_WORDS):
         return {"decision": "compose", "tool_calls": [],
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": "敏感请求，直接礼貌拒绝"}]}
     if intent == "闲聊" and _is_chitchat(query):
@@ -775,6 +777,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
 - 先修课要求、成绩满足性、课程容量、开课院系等工具未返回的信息：必须明确说明“暂无该数据”并给出查证途径（如登录综合教务系统核对），严禁根据常识推断用户的已修状态或满足性（不得出现“已修，成绩满足”这类未经工具核实的结论）
 - 冲突检测（check_course_conflict）与压力评估（evaluate_selection_pressure）结果必须如实转述：周次不重叠不算冲突；周次未知按重叠保守判定时须注明；时间不全/无排课数据的课程明确说明无法精确检测；学分上限为参考值（默认30），以教务系统为准；不得在工具未提供排课时间的情况下臆造冲突结论
+- 绩点、学分、日期、百分比等数值性知识必须以知识库候选片段或工具结果中的官方数值为准；候选片段含对照表/数字时逐条核对后再回答，严禁凭记忆输出或推算数值（如"XX分对应多少绩点"必须按候选片段中的对照表回答）
 - 数据不足时如实说明并引导用户补充信息，不编造
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
@@ -791,7 +794,7 @@ def compose(state: QaState) -> dict:
     candidates = state.get("candidates") or []
     error = state.get("error") or ""
 
-    if intent == "敏感拒绝":
+    if intent == "敏感拒绝" and any(w in query for w in _SENSITIVE_WORDS):
         return {"answer": _sensitive_refusal(), "error": error}
     if intent == "闲聊" and not results and not candidates:
         return {"answer": _chitchat(query), "error": error}

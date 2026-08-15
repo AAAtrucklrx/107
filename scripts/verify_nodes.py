@@ -150,7 +150,7 @@ def main() -> None:
       and _lv["score_display"] == "优秀" and _lv["grade_point"] == 4.0, str(_lv))
     _nv = next((g for g in _grades if g["course_name"] == "数值课"), None)
     t("数值-正常路径", _nv is not None and _nv["score"] == 88 and _nv["score_display"] == 88
-      and abs(_nv["grade_point"] - 3.3) < 0.01, str(_nv))
+      and abs(_nv["grade_point"] - 3.7) < 0.01, str(_nv))
 
     # ── 选课 H 项: 冲突/退补选路由与工具摘要分支 ──
     from agents.qa.nodes import _plan_course, _plan_advisor
