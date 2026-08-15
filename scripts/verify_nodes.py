@@ -178,6 +178,17 @@ def main() -> None:
     t("确定性路由-意图命中但无关键词→交LLM", _r3 is None, str(_r3))
     _r4 = _direct_tool_route({"intent": "知识问答", "query": "我选的课时间冲突吗"})
     t("确定性路由-非路由意图→交LLM", _r4 is None, str(_r4))
+    _r5 = _direct_tool_route({"intent": "选课冲突", "query": "我选的课时间冲突吗",
+                              "tool_results": [{"tool": "check_course_conflict", "status": "done"}]})
+    t("确定性路由-已有结果转合成（轮1死循环回归）",
+      _r5 is not None and _r5["decision"] == "compose", str(_r5))
+    # 轮2 回归：think 直接走确定性路由 compose 分支不得崩溃（455 行日志越界）
+    from agents.qa.nodes import think as _think
+    _t = _think({"query": "我选的课时间冲突吗", "intent": "选课冲突", "rounds": 1,
+                 "tool_results": [{"tool": "check_course_conflict", "status": "done"}],
+                 "thought_log": [], "student_id": "PB1", "user_profile": {}})
+    t("think-路由已有结果转合成不崩溃（轮2回归）",
+      _t.get("decision") == "compose" and _t.get("tool_calls") == [], str(_t))
     _vt = _valid_tools()
     t("工具校验-注册表含26工具", len(_vt) == 26
       and "check_course_conflict" in _vt and "evaluate_selection_pressure" in _vt, f"{len(_vt)} 工具")

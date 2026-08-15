@@ -140,6 +140,25 @@ def _load_personal_tree(student_id: str | None = None):
         return None
 
 
+def _enrich_add_event_args(args: dict, state: QaState) -> None:
+    """add_event 参数兜底：LLM 常只传标题漏传时间，从原始问题用 time_parser 解析补齐。
+
+    轮1 实测（2026-08-15）：首调缺 start_time/end_time 报 validation error，
+    依赖规则 12 重试浪费一轮；此处直接补齐避免。"""
+    if args.get("start_time") and args.get("end_time"):
+        return
+    query = state.get("query") or ""
+    try:
+        from utils.time_parser import iso_format, parse_natural_time
+        parsed = parse_natural_time(query)
+        if not args.get("start_time"):
+            args["start_time"] = iso_format(parsed["date"], parsed["period_start"])
+        if not args.get("end_time"):
+            args["end_time"] = iso_format(parsed["date"], parsed["period_end"])
+    except Exception as e:
+        log.warning(f"add_event 时间解析兜底失败: {e}")
+
+
 def _enrich_program_args(args: dict, state: QaState, sid: str, include_taken: bool = False) -> None:
     """培养方案工具参数兜底：补齐专业/年级/已修课程/个人方案树。
 
@@ -352,7 +371,11 @@ _DIRECT_ROUTE_KEYWORDS: dict[str, tuple[str, tuple[str, ...]]] = {
 
 
 def _direct_tool_route(state: QaState) -> dict | None:
-    """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）"""
+    """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
+
+    轮1 实测修复（2026-08-15）：路由未检查工具是否已有结果，导致工具被
+    重复调用直至轮次上限（Q11/Q12 各调 4 次）。此处补 done 检查：路由工具
+    已有成功结果时转 compose，不再重复调用。"""
     intent = state.get("intent") or ""
     query = state.get("query") or ""
     rounds = state.get("rounds") or 0
@@ -362,6 +385,17 @@ def _direct_tool_route(state: QaState) -> dict | None:
     tool, keywords = entry
     if not any(k in query for k in keywords):
         return None
+    # 防重复：路由工具已有成功结果 → 直接合成（与 LLM 路径 done_tools 同口径）
+    results = state.get("tool_results") or []
+    if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
+        return {
+            "decision": "compose",
+            "tool_calls": [],
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "compose",
+                "reason": f"确定性路由工具 {tool} 已有结果，直接合成",
+            }],
+        }
     return {
         "decision": "call_tool",
         "tool_calls": [{"tool": tool, "args": {}}],
@@ -418,7 +452,10 @@ def think(state: QaState) -> dict:
     # 确定性工具路由（意图+关键词双条件，保证正确调用）
     direct = _direct_tool_route(state)
     if direct is not None:
-        log.info(f"think[{rounds + 1}] → {direct['decision']} (确定性路由 {direct['tool_calls'][0]['tool']})")
+        if direct["decision"] == "call_tool":
+            log.info(f"think[{rounds + 1}] → call_tool (确定性路由 {direct['tool_calls'][0]['tool']})")
+        else:
+            log.info(f"think[{rounds + 1}] → compose (确定性路由工具已有结果)")
         return direct
 
     candidates = state.get("candidates") or []
@@ -781,6 +818,10 @@ def act(state: QaState) -> dict:
             # 选课推荐兜底：补齐专业/年级/已修课程/学年号，避免漏传导致纯评分乱推
             if tool_name == "recommend_courses":
                 _enrich_recommend_args(args, state, sid)
+            # 添加日程兜底：LLM 常只传标题漏传时间，从问题用 time_parser 解析补齐
+            # （轮1 实测 2026-08-15：首调缺 start_time/end_time 报 validation error）
+            if tool_name == "add_event" and sid:
+                _enrich_add_event_args(args, state)
             # 培养方案工具兜底：补齐已修课程/个人方案树，避免缺口误判与方案退化
             if tool_name == "get_program_progress":
                 _enrich_program_args(args, state, sid, include_taken=True)
