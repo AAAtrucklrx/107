@@ -261,6 +261,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略
 17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
+18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -339,6 +340,60 @@ def _is_chitchat(query: str) -> bool:
     return any(w in q.lower() for w in _CHITCHAT_WORDS)
 
 
+# ── 确定性工具路由（LLM 之前，保证高置信场景工具调用正确）──────────────
+# 适用条件：意图 + 关键词双命中。这些场景工具映射唯一、参数由 act 层兜底、
+# 无澄清需求，不经 LLM 直接调用，杜绝 LLM 选错工具的概率性错误。
+_DIRECT_ROUTE_KEYWORDS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "选课冲突": ("check_course_conflict", ("冲突", "撞课", "时间重", "重了", "时间挤")),
+    "退补选评估": ("evaluate_selection_pressure",
+                   ("退选", "退课", "补选", "退补选", "学分超", "学分够", "学分压力",
+                    "选太多", "退掉", "退哪门", "压力")),
+}
+
+
+def _direct_tool_route(state: QaState) -> dict | None:
+    """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）"""
+    intent = state.get("intent") or ""
+    query = state.get("query") or ""
+    rounds = state.get("rounds") or 0
+    entry = _DIRECT_ROUTE_KEYWORDS.get(intent)
+    if not entry:
+        return None
+    tool, keywords = entry
+    if not any(k in query for k in keywords):
+        return None
+    return {
+        "decision": "call_tool",
+        "tool_calls": [{"tool": tool, "args": {}}],
+        "thought_log": (state.get("thought_log") or []) + [{
+            "round": rounds + 1, "decision": "call_tool",
+            "reason": f"确定性路由({intent})→{tool}",
+        }],
+    }
+
+
+_REGISTRY_CACHE: frozenset | None = None
+
+
+def _valid_tools() -> frozenset:
+    """注册表工具名集合（懒加载缓存）"""
+    global _REGISTRY_CACHE
+    if _REGISTRY_CACHE is None:
+        _REGISTRY_CACHE = frozenset(_build_tool_registry())
+    return _REGISTRY_CACHE
+
+
+def _check_tool_choice(tool: str, done_tools: set) -> str:
+    """校验 LLM 选择的工具：''=空 'done'=已有结果 'unknown'=不在注册表 'ok'=可用"""
+    if not tool:
+        return "empty"
+    if tool in done_tools:
+        return "done"
+    if tool not in _valid_tools():
+        return "unknown"
+    return "ok"
+
+
 def think(state: QaState) -> dict:
     """LLM 自主决策下一步动作；LLM 不可用时降级为确定性规则"""
     query = state.get("query", "")
@@ -359,6 +414,12 @@ def think(state: QaState) -> dict:
     if personal_field:
         return {"decision": "compose", "personal_qa": personal_field, "tool_calls": [],
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": f"个人信息问答({personal_field})，模板回答"}]}
+
+    # 确定性工具路由（意图+关键词双条件，保证正确调用）
+    direct = _direct_tool_route(state)
+    if direct is not None:
+        log.info(f"think[{rounds + 1}] → {direct['decision']} (确定性路由 {direct['tool_calls'][0]['tool']})")
+        return direct
 
     candidates = state.get("candidates") or []
     results = state.get("tool_results") or []
@@ -406,9 +467,10 @@ def think(state: QaState) -> dict:
 
         if decision == "call_tool":
             tool = data.get("tool", "")
-            if not tool:
+            verdict = _check_tool_choice(tool, done_tools)
+            if verdict == "empty":
                 update["decision"] = "compose"
-            elif tool in done_tools:
+            elif verdict == "done":
                 # 防重复：该工具已有成功结果，不得再调，转合成（防死循环）
                 log.info(f"think: 工具 {tool} 已有结果，禁止重复调用，转合成")
                 update["decision"] = "compose"
@@ -416,6 +478,10 @@ def think(state: QaState) -> dict:
                 update["thought_log"] = (state.get("thought_log") or []) + [{
                     "round": rounds + 1, "decision": "compose", "reason": f"已有{tool}结果，禁止重复调用",
                 }]
+            elif verdict == "unknown":
+                # LLM 选择了不存在的工具：降级到确定性计划，不让 act 报错
+                log.warning(f"think: LLM 选择了未知工具 {tool}，降级为确定性规则")
+                return _think_fallback(state)
             else:
                 update["tool_calls"] = [{"tool": tool, "args": data.get("args") or {}}]
 

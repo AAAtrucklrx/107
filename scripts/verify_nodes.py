@@ -166,6 +166,26 @@ def main() -> None:
     t("路由-选课顾问退补选→evaluate_selection_pressure",
       _pa2[0]["tool"] == "evaluate_selection_pressure", str(_pa2))
 
+    # ── AGENT 决策加固: 确定性路由 / 工具校验 ──
+    from agents.qa.nodes import _check_tool_choice, _direct_tool_route, _valid_tools
+    _r1 = _direct_tool_route({"intent": "选课冲突", "query": "我选的课时间冲突吗"})
+    t("确定性路由-选课冲突→check_course_conflict",
+      _r1 is not None and _r1["tool_calls"][0]["tool"] == "check_course_conflict", str(_r1))
+    _r2 = _direct_tool_route({"intent": "退补选评估", "query": "我学分是不是超了，帮我看看要不要退课"})
+    t("确定性路由-退补选→evaluate_selection_pressure",
+      _r2 is not None and _r2["tool_calls"][0]["tool"] == "evaluate_selection_pressure", str(_r2))
+    _r3 = _direct_tool_route({"intent": "选课冲突", "query": "我的选课情况怎么样"})
+    t("确定性路由-意图命中但无关键词→交LLM", _r3 is None, str(_r3))
+    _r4 = _direct_tool_route({"intent": "知识问答", "query": "我选的课时间冲突吗"})
+    t("确定性路由-非路由意图→交LLM", _r4 is None, str(_r4))
+    _vt = _valid_tools()
+    t("工具校验-注册表含26工具", len(_vt) == 26
+      and "check_course_conflict" in _vt and "evaluate_selection_pressure" in _vt, f"{len(_vt)} 工具")
+    t("工具校验-合法工具ok", _check_tool_choice("query_grade", set()) == "ok", "")
+    t("工具校验-未知工具unknown", _check_tool_choice("not_a_tool", set()) == "unknown", "")
+    t("工具校验-重复调用done", _check_tool_choice("query_grade", {"query_grade"}) == "done", "")
+    t("工具校验-空工具empty", _check_tool_choice("", set()) == "empty", "")
+
     _fake_cc = [{"tool": "check_course_conflict", "status": "done", "result": {
         "total": 2, "courses": [{"course_name": "A"}, {"course_name": "B"}],
         "conflicts": [{"course_a": "力学B", "course_b": "热学B", "day": "周二",

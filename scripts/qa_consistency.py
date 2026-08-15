@@ -1,5 +1,15 @@
 # -*- coding: utf-8 -*-
-"""临时验证：LLM 回答与权威指南一致性（用完即弃不入库）"""
+"""知识库-模型调用一致性回归（需 LLM 平台可用）。
+
+覆盖两类断言：
+1. 数值/规则类问题：回答必须含权威口径（want），且不含旧口径（banned）
+   ——防止 RAG 检索到旧文档或模型凭记忆输出错误数值；
+2. 工具调用类问题：预期工具必须被实际调用（expect_tool）
+   ——验证 AGENT 决策（确定性路由/LLM 决策）工具调用正确。
+
+用法: python scripts/qa_consistency.py
+退出码: 0=全部通过, 1=存在失败项
+"""
 import sys
 from pathlib import Path
 
@@ -7,26 +17,48 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agents.qa.graph import run_qa
 
-# (问题, 期望含有的权威口径子串, 不应出现的旧口径子串)
+# (问题, 期望子串, 不应出现的子串, 期望调用的工具)
 CASES = [
-    ("每学期最多能选多少学分？", "30", "25 学分"),
-    ("补考成绩怎么记载？", "补考", "60"),
-    ("大学生研究计划做完有多少学分？", "4", "2000"),
-    ("大一结束后怎么转专业？", "全校范围", "GPA >= 3"),
-    ("缓考怎么申请？", "考前", "事后补办"),
-    ("90分对应的绩点是多少？", "4.0", "3.7"),
-    ("大一要上什么体育课？", "基础体育", None),
-    ("形势与政策怎么考核？", "二等级制", None),
+    ("每学期最多能选多少学分？", "30", "25 学分", None),
+    ("补考成绩怎么记载？", "补考", None, None),
+    ("大学生研究计划做完有多少学分？", "4", None, None),
+    ("大一结束后怎么转专业？", "全校范围", None, None),
+    ("缓考怎么申请？", "考前", None, None),
+    ("90分对应的绩点是多少？", "4.0", "3.7", None),
+    ("大一要上什么体育课？", "基础体育", None, None),
+    ("形势与政策怎么考核？", "二等级制", None, None),
+    # 工具调用正确性（AGENT 决策加固）
+    ("推荐几门课会不会和我课表冲突？", None, None, "check_course_conflict"),
+    ("我要退一门课，帮我看看选课压力", None, None, "evaluate_selection_pressure"),
 ]
-for q, want, banned in CASES:
+
+FAILS = []
+TOTAL = 0
+for q, want, banned, expect_tool in CASES:
+    TOTAL += 1
     try:
         r = run_qa(q, module_signal="智能问答", student_id=None, user_profile={})
     except Exception as e:
+        FAILS.append(q)
         print(f"[FAIL] {q}: 异常 {type(e).__name__}: {e}")
         continue
     ans = (r.get("answer") or "").strip()
     tools = [t.get("tool") for t in (r.get("tool_results") or [])]
-    ok = want in ans and (banned is None or banned not in ans)
+    ok = True
+    if want is not None:
+        ok = ok and want in ans
+    if banned is not None:
+        ok = ok and banned not in ans
+    if expect_tool is not None:
+        ok = ok and expect_tool in tools
+    if not ok:
+        FAILS.append(q)
     one = ans.replace("\n", " ⏎ ").replace("|", "｜")
-    print(f"[{'PASS' if ok else 'FAIL'}] {q}")
-    print(f"    tools={tools} | answer: {one}")
+    print(f"[{'PASS' if ok else 'FAIL'}] {q}" +
+          (f" [工具={expect_tool}]" if expect_tool else ""))
+    print(f"    tools={tools} | answer: {one[:300]}")
+
+print(f"\n结果: {TOTAL - len(FAILS)}/{TOTAL} 通过")
+if FAILS:
+    print(f"失败: {FAILS}")
+    sys.exit(1)
