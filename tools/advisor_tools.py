@@ -408,7 +408,10 @@ def _infer_next_selection_term() -> str:
 
 
 def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) -> list:
-    """全量评分候选池（真实均分降序），keywords 可选过滤课程名/院系/类型。"""
+    """全量评分候选池（真实均分降序），keywords 可选过滤课程名/院系/类型。
+
+    不合并数据适配：同名多页（每师一页）按归一课名去重，保留均分最高页；
+    同课多师的完整对比由 analyze_teacher 课程模式跨页聚合提供。"""
     where, params = "r.rating_count > 0", []
     if keywords:
         like = " OR ".join(
@@ -418,12 +421,21 @@ def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) 
         where += f" AND ({like})"
         for k in keywords:
             params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%"]
-    return conn.execute(
+    rows = conn.execute(
         f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
         f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
         f"WHERE {where} ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT ?",
         params + [limit],
     ).fetchall()
+    seen_names: set[str] = set()
+    out = []
+    for r in rows:
+        nk = _norm_course_name(r["name"])
+        if nk in seen_names:
+            continue
+        seen_names.add(nk)
+        out.append(r)
+    return out
 
 
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
@@ -532,6 +544,7 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
     # （避免方案外课程混排靠前造成“乱推”观感）
     elec_rows: list = []
     seen_ids: set[int] = set()
+    seen_norm: set[str] = set()  # 不合并适配：选修组按归一课名去重（跨页/跨池同课只出现一次）
     for pr in conn.execute(
         "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
         "r.rating_avg, r.rating_count FROM program_courses pc "
@@ -541,12 +554,20 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
     ).fetchall():
         if _norm_course_name(pr["name"]) in taken or pr["id"] in required_ids or pr["id"] in seen_ids:
             continue
+        nk = _norm_course_name(pr["name"])
+        if nk in seen_norm:
+            continue
+        seen_norm.add(nk)
         seen_ids.add(pr["id"])
         elec_rows.append(pr)
     elec_rows.sort(key=lambda r: (-(r["rating_avg"] or 0), -(r["rating_count"] or 0)))
     for r in _pool_rows(conn, keywords):
         if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
             continue
+        nk = _norm_course_name(r["name"])
+        if nk in seen_norm:
+            continue
+        seen_norm.add(nk)
         seen_ids.add(r["id"])
         elec_rows.append(r)
 
@@ -852,14 +873,35 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
                 "message": f"找到多门与「{course}」相关的课程, 请指定确切课程名（如区分 B1/B2 分班）",
             }
         c = uniq[0]
-        cid = c["id"]
-        teachers = _teacher_cells(conn, cid)
-        # 评论样本: 按老师分组取样（每师最多 2 条, 总量 ≤6）, 带 teacher 标注供引用
+        # 不合并数据适配：同名多页聚合（每页即一位老师），跨页汇总教师/均分/样本/评论
+        pages = conn.execute(
+            "SELECT id FROM courses WHERE name = ? ORDER BY rate_count DESC",
+            (c["name"],),
+        ).fetchall()
+        page_ids = [p["id"] for p in pages]
+        teachers: list[dict] = []
+        seen_teacher: set[str] = set()
+        for pid in page_ids:
+            for t in _teacher_cells(conn, pid):
+                if t["name"] and t["name"] not in seen_teacher:
+                    seen_teacher.add(t["name"])
+                    teachers.append(t)
+        teachers.sort(key=lambda t: (-(t["rating_avg"] or 0), -(t["rate_count"] or 0)))
         reviews: list[dict] = []
         for t in teachers:
-            reviews.extend(_top_reviews(conn, cid, t["name"], limit=2))
+            for pid in page_ids:
+                reviews.extend(_top_reviews(conn, pid, t["name"], limit=2))
+                if len(reviews) >= 6:
+                    break
             if len(reviews) >= 6:
                 break
+        agg = conn.execute(
+            "SELECT COALESCE(SUM(rate_count),0), COALESCE(SUM(rating_avg*rate_count),0) "
+            "FROM courses WHERE name = ?",
+            (c["name"],),
+        ).fetchone()
+        rate_count = agg[0] or 0
+        rating_avg = round(agg[1] / rate_count, 1) if rate_count else 0.0
         conn.close()
         return {
             "course": c["name"],
@@ -867,8 +909,8 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             "credit": c["credit"],
             "dept": c["dept"],
             "teachers": teachers,
-            "rating_avg": round(c["rating_avg"], 1),
-            "rate_count": c["rating_count"],
+            "rating_avg": rating_avg,
+            "rate_count": rate_count,
             "reviews_sample": reviews[:6],
         }
 

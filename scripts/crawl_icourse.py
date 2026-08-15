@@ -94,15 +94,17 @@ def parse_list_page(html: str) -> list[dict]:
     return out
 
 
-def cmd_list() -> None:
+def cmd_list(force: bool = False) -> None:
     collected: list[dict] = []
     seen_ids: set[int] = set()
     page = 1
-    if LIST_FILE.exists():
+    if LIST_FILE.exists() and not force:
         collected = json.loads(LIST_FILE.read_text(encoding="utf-8"))
         seen_ids = {c["id"] for c in collected}
         page = len(collected) // 10 + 1
         log(f"列表缓存 {len(collected)} 门, 从 page={page} 续爬")
+    elif force:
+        log("--force: 列表全量重爬（刷新课程与评论数快照）")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     empty_streak = 0
     while True:
@@ -244,7 +246,8 @@ def parse_course_detail(html: str) -> dict:
     }
 
 
-def cmd_detail(limit: int = 0, cids: list[int] | None = None, shard: int = 0, shards: int = 1) -> None:
+def cmd_detail(limit: int = 0, cids: list[int] | None = None, shard: int = 0, shards: int = 1,
+               force: bool = False) -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     if cids:
         targets = [{"id": c, "title": str(c), "review_count": 1, "rating": 0.0} for c in cids]
@@ -264,7 +267,7 @@ def cmd_detail(limit: int = 0, cids: list[int] | None = None, shard: int = 0, sh
     for i, c in enumerate(targets, 1):
         cid = c["id"]
         out_file = RAW_DIR / f"{cid}.json"
-        if out_file.exists():
+        if out_file.exists() and not force:
             done += 1
             continue
         r = http_get(f"{BASE}/course/{cid}/")
@@ -456,11 +459,13 @@ def main() -> None:
     ap.add_argument("--cids", type=int, nargs="*", help="detail 阶段仅爬指定课程 id")
     ap.add_argument("--shard", type=int, default=0, help="detail 分片序号 (1..shards)")
     ap.add_argument("--shards", type=int, default=1, help="detail 分片总数")
+    ap.add_argument("--force", action="store_true", help="强制重爬（不跳过已有缓存，刷新旧数据）")
     args = ap.parse_args()
     if args.stage in ("list", "all"):
-        cmd_list()
+        cmd_list(force=args.force)
     if args.stage in ("detail", "all"):
-        cmd_detail(limit=args.limit, cids=args.cids, shard=args.shard, shards=args.shards)
+        cmd_detail(limit=args.limit, cids=args.cids, shard=args.shard, shards=args.shards,
+                   force=args.force)
     if args.stage == "refill_stars":
         cmd_refill_stars()
     if args.stage in ("programs", "all"):

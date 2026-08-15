@@ -89,42 +89,29 @@ def build(db_path: Path) -> None:
     raw = load_raw()
     print(f"加载课程详情: {len(raw)} 门")
 
-    # ── 1. courses: 按 (name, dept) 合并 ──
-    groups: dict[tuple[str, str], dict] = defaultdict(lambda: {
-        "icourse_ids": [], "code": "", "credit": None, "type": "", "level": "",
-        "raws": [],
-    })
+    # ── 1. courses: 每 icourse 课程页一行（不合并同课多师，完整镜像）──
+    course_id_map: dict[int, int] = {}   # icourse_id → course_id（本页自身行）
+    n_courses = 0
     for d in raw:
-        key = (d.get("course_name", "").strip(), d.get("dept", "").strip())
-        if not key[0]:
+        name = d.get("course_name", "").strip()
+        if not name:
             continue
-        g = groups[key]
-        g["icourse_ids"].append(d["id"])
-        g["raws"].append(d)
-        if not g["code"] and d.get("code"):
-            g["code"] = d["code"]
-        if g["credit"] is None and d.get("credit"):
+        credit = None
+        if d.get("credit"):
             try:
-                g["credit"] = float(d["credit"])
+                credit = float(d["credit"])
             except ValueError:
                 pass
-        if not g["type"] and d.get("course_type"):
-            g["type"] = d["course_type"]
-        if not g["level"] and d.get("course_level"):
-            g["level"] = d["course_level"]
-
-    course_id_map: dict[int, int] = {}   # icourse_id → course_id
-    for (name, dept), g in sorted(groups.items()):
         cur.execute(
             "INSERT INTO courses(name, dept, code, credit, course_type, course_level, icourse_ids) "
             "VALUES(?,?,?,?,?,?,?)",
-            (name, dept, g["code"], g["credit"], g["type"], g["level"],
-             json.dumps(g["icourse_ids"], ensure_ascii=False)),
+            (name, d.get("dept", "").strip(), d.get("code", ""), credit,
+             d.get("course_type", ""), d.get("course_level", ""),
+             json.dumps([d["id"]], ensure_ascii=False)),
         )
-        cid = cur.lastrowid
-        for iid in g["icourse_ids"]:
-            course_id_map[iid] = cid
-    print(f"courses: {len(groups)}")
+        course_id_map[d["id"]] = cur.lastrowid
+        n_courses += 1
+    print(f"courses: {n_courses}")
 
     # ── 2. reviews ──
     review_rows = 0

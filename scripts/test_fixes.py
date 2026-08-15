@@ -267,7 +267,7 @@ def run() -> None:
     n_bc = c2.execute("SELECT COUNT(*) FROM courses").fetchone()[0]
     n_br = c2.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
     n_bt = c2.execute("SELECT COUNT(*) FROM course_teachers").fetchone()[0]
-    t("构建合并同课多师不丢评论", n_bc == 1 and n_br == 5 and n_bt == 2,
+    t("构建不合并-同课多师各自成行不丢评论", n_bc == 2 and n_br == 5 and n_bt == 2,
       f"courses={n_bc} reviews={n_br} course_teachers={n_bt}")
     c2.close()
 

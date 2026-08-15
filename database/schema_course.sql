@@ -4,7 +4,7 @@
 
 PRAGMA journal_mode = WAL;
 
--- 课程（按 课名+开课单位 合并 icourse 多门同课）
+-- 课程（每 icourse 课程页一行，不合并同课多师；同课名不同老师的页为多行）
 CREATE TABLE IF NOT EXISTS courses (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,               -- 课程名（不含老师）
@@ -13,10 +13,9 @@ CREATE TABLE IF NOT EXISTS courses (
     credit        REAL,                        -- 学分（取首个非空）
     course_type   TEXT NOT NULL DEFAULT '',    -- 本科/研究生等
     course_level  TEXT NOT NULL DEFAULT '',    -- 通修/专业核心等
-    icourse_ids   TEXT NOT NULL DEFAULT '[]',  -- 合并的 icourse 课程 id 列表 JSON
+    icourse_ids   TEXT NOT NULL DEFAULT '[]',  -- 本行对应的 icourse 课程 id 列表 JSON（通常单元素）
     rating_avg    REAL NOT NULL DEFAULT 0,     -- 星级均分（0-10）
-    rate_count    INTEGER NOT NULL DEFAULT 0,  -- 评论人数
-    UNIQUE (name, dept)
+    rate_count    INTEGER NOT NULL DEFAULT 0   -- 评论人数
 );
 CREATE INDEX IF NOT EXISTS idx_courses_name  ON courses(name);
 CREATE INDEX IF NOT EXISTS idx_courses_code  ON courses(code);
