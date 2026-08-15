@@ -776,6 +776,93 @@ student_id: str  # 学号
 
 ---
 
+## 模块五：选课冲突与退补选评估（selection_tools.py）— 2 个 Tool ★ 新增（2026-08-15 H 项）
+
+> 背景：此前选课时间冲突靠 LLM 目测时间字符串，会把周次不重叠的课误判为冲突。
+> 本模块提供精确到周次/节次/时钟的冲突检测与学分压力评估。时间解析与冲突判定
+> 逻辑在 `utils/schedule_parse.py`（纯函数，可独立单测）。
+
+### 19. check_course_conflict
+
+| 项目 | 内容 |
+|------|------|
+| **所属模块** | `tools/selection_tools.py` |
+| **当前状态** | ✅ 可用（H 项新增） |
+| **升级计划** | 候选课排课数据接入后支持推荐课程与已选课表间的冲突检测 |
+
+**功能**：检测已选课程之间的节次级时间冲突（精确到周次/节次；周次不重叠不算冲突）。
+
+**参数**：
+```python
+student_id: str          # 学号（个人数据工具，未登录返回 locked 提示）
+course_names: list[str]  # 可选，只检测这些课程；不在已选数据中的列入 missing 如实标注
+```
+
+**返回值**：
+```python
+{
+    "student_id": "PB25111691",
+    "total": 14,
+    "courses": [...],            # 参与检测的课程（含 time/location/credits）
+    "conflicts": [               # 冲突对（同对多时段只报一次）
+        {"course_a": "课程A", "course_b": "课程B", "day": "周二",
+         "a_time": "...", "b_time": "...", "reason": "节次重叠",
+         "weeks_unknown": True}  # True=周次未知按重叠保守判定
+    ],
+    "conflict_count": 0,
+    "time_incomplete": ["社会主义发展史"],   # 无排课时间，无法精确判定
+    "missing": [],               # course_names 中未匹配到的课程
+    "source": "fallback",        # 本地缓存/模拟数据
+    "note": "..."
+}
+```
+
+**判定口径**：星期不同→不冲突；周次双方已知且不交叠→不冲突（周次未知→保守按重叠并标注）；双方有节次号→按节次交集；否则按时钟区间（节次可换算为时钟）；两者皆无→unknown 如实说明。
+
+### 20. evaluate_selection_pressure
+
+| 项目 | 内容 |
+|------|------|
+| **所属模块** | `tools/selection_tools.py` |
+| **当前状态** | ✅ 可用（H 项新增） |
+| **升级计划** | 加课模拟接入 catalog 排课后可计入真实学分/冲突 |
+
+**功能**：评估当前选课学分压力与时间负荷，支持模拟退课/加课。
+
+**参数**：
+```python
+student_id: str            # 学号
+add_courses: list[str]     # 可选，模拟加课（无排课/学分数据 → adds_pending 如实标注）
+drop_courses: list[str]    # 可选，模拟退课（按归一化课程名匹配）
+credit_cap: float          # 可选，学分上限参考值，默认 30（以教务系统为准）
+```
+
+**返回值**：
+```python
+{
+    "student_id": "...", "credit_cap": 30.0, "source": "fallback",
+    "current": {
+        "course_count": 14, "total_credits": 31.0, "margin": 1.0, "over_cap": True,
+        "conflict_count": 0, "conflicts": [...],
+        "time_incomplete": [...],
+        "daily": {"周一": {"course_count": 2, "slot_count": 2, "period_count": 4}, ...},
+        "busiest_day": "周二"
+    },
+    "after_add_drop": {...},   # 模拟后统计（无加退时 None）
+    "drops_applied": ["力学B"], "drops_missing": [], "adds_pending": ["量子力学"],
+    "suggestions": ["当前总学分 31.0 已超过 30.0 学分参考上限..."],
+    "note": "学分上限为参考值（默认 30），最终以教务系统为准..."
+}
+```
+
+### 共享基础设施补充：utils/schedule_parse.py ★ 新增
+
+- `parse_course_time(time_str)` → 时间段列表（day/day_num/weeks/weeks_raw/periods/clock/raw），兼容 jw 格式、爬取备份格式、实验课时钟变体（`第19:00~19:30节`）、分号多段
+- `slots_overlap(a, b)` → `("conflict"|"no_conflict"|"unknown", {reason, weeks_unknown})`
+- 节次→时钟换算复用 `utils/course_periods.PERIOD_TIMES`
+
+---
+
 ## 共享基础设施
 
 ### tools/api_client.py ★ 新增

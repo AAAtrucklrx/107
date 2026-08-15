@@ -1,6 +1,6 @@
 """
 小蜗 — QA 流程意图定义
-12 类意图（与工具集对齐），每类 3-5 条示例句，供意图分类（embedding/keyword）参考。
+14 类意图（与工具集对齐），每类 3-5 条示例句，供意图分类（embedding/keyword）参考。
 注意：意图分类结果仅为 think 节点的参考信号，think 可自行修正，不作硬约束。
 """
 
@@ -46,6 +46,19 @@ INTENTS: dict[str, list[str]] = {
         "通识课推荐",
         "适合大二的选修课",
     ],
+    "选课冲突": [
+        "我选的课时间冲突吗",
+        "这两门课是不是撞课了",
+        "我课表有没有时间冲突",
+        "选的课上课时间重了",
+    ],
+    "退补选评估": [
+        "退补选建议",
+        "我学分是不是超了",
+        "选课压力大不大",
+        "要退哪门课",
+        "再选一门会不会太满",
+    ],
     "教师点评": [
         "这个老师怎么样",
         "老师评价",
@@ -85,6 +98,8 @@ _TOOL_HINTS: dict[str, str] = {
     "查考试": "考试安排查询，使用 query_exam",
     "课程搜索": "课程信息搜索，使用 search_courses / get_semester_list",
     "选课推荐": "课程推荐，使用 recommend_courses（可先 collect_preferences）",
+    "选课冲突": "已选课程时间冲突检测，使用 check_course_conflict（节次/周次级精确判定）",
+    "退补选评估": "退补选压力评估（学分上限/冲突/每日负荷/模拟加退课），使用 evaluate_selection_pressure",
     "教师点评": "教师评价，使用 analyze_teacher",
     "日程查询": "日程查看，使用 get_day_view / get_week_view",
     "日程管理": "日程添加/冲突检测，使用 add_event / check_conflict / import_schedule",

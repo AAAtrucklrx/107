@@ -307,6 +307,39 @@ def run() -> None:
     finally:
         conn2.close()
 
+    # ── 12. 选课 H 项: 课程时间解析与节次级冲突判定（纯函数，无 DB）──
+    from utils.schedule_parse import parse_course_time as _pct, slots_overlap as _ov
+
+    _s1 = _pct("周一 2~11周 第3,4节 09:45-11:20")
+    t("解析-标准jw格式", len(_s1) == 1 and _s1[0]["day"] == "周一" and _s1[0]["weeks"] == (2, 11)
+      and _s1[0]["periods"] == [3, 4] and _s1[0]["clock"] == (585, 680), str(_s1))
+    _s2 = _pct("周二 11~12周 第3,4节")
+    t("解析-备份格式", _s2[0]["weeks"] == (11, 12) and _s2[0]["periods"] == [3, 4]
+      and _s2[0]["clock"] is None, str(_s2))
+    _s3 = _pct("周四 3~16周 第19:00~19:30节")
+    t("解析-实验课时钟变体", _s3[0]["day"] == "周四" and _s3[0]["periods"] == []
+      and _s3[0]["clock"] == (1140, 1170), str(_s3))
+    _s4 = _pct("周一第1-2节;周三第3-4节")
+    t("解析-分号多段", len(_s4) == 2 and _s4[0]["periods"] == [1, 2] and _s4[1]["day"] == "周三", str(_s4))
+    t("解析-空输入", _pct("") == [] and _pct(None) == [], "")
+
+    _v, _i = _ov(_pct("周二 11~12周 第3,4节")[0], _pct("周二 13~18周 第3,4,5节")[0])
+    t("判定-周次不重叠不算冲突", _v == "no_conflict" and _i["reason"] == "周次不重叠", str((_v, _i)))
+    _v, _i = _ov(_pct("周二 第3,4节")[0], _pct("周二 第3,4节")[0])
+    t("判定-周次未知保守按重叠", _v == "conflict" and _i["weeks_unknown"] is True, str((_v, _i)))
+    _v, _i = _ov(_pct("周二 11~16周 第8,9节")[0], _pct("周二 12~15周 第6,7节")[0])
+    t("判定-节次不重叠", _v == "no_conflict" and _i["reason"] == "节次不重叠", str((_v, _i)))
+    _v, _i = _ov(_pct("周三 1~15周 第6,7节")[0], _pct("周三 1~15周 第7,8节")[0])
+    t("判定-节次重叠", _v == "conflict" and _i["reason"] == "节次重叠", str((_v, _i)))
+    _v, _i = _ov(_pct("周四 1~16周 第8,9,10节")[0], _pct("周四 3~16周 第19:00~19:30节")[0])
+    t("判定-节次vs时钟不重叠", _v == "no_conflict" and _i["reason"] == "时间段不重叠", str((_v, _i)))
+    _v, _i = _ov(_pct("周五 1~16周 第19:00~20:30节")[0], _pct("周五 1~16周 第20:00~21:00节")[0])
+    t("判定-时钟重叠", _v == "conflict" and _i["reason"] == "时间段重叠", str((_v, _i)))
+    _v, _i = _ov(_pct("周一 1~16周 第3,4节")[0], _pct("周三 1~16周 第3,4节")[0])
+    t("判定-不同星期", _v == "no_conflict" and _i["reason"] == "不同星期", str((_v, _i)))
+    _v, _i = _ov(_pct("第3,4节")[0], _pct("周三 第3,4节")[0])
+    t("判定-缺星期信息unknown", _v == "unknown" and _i["reason"] == "缺少星期信息", str((_v, _i)))
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 

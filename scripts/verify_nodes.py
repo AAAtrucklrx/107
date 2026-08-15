@@ -152,6 +152,42 @@ def main() -> None:
     t("数值-正常路径", _nv is not None and _nv["score"] == 88 and _nv["score_display"] == 88
       and abs(_nv["grade_point"] - 3.3) < 0.01, str(_nv))
 
+    # ── 选课 H 项: 冲突/退补选路由与工具摘要分支 ──
+    from agents.qa.nodes import _plan_course, _plan_advisor
+    _pc1 = _plan_course("我选的课时间冲突吗", "PB1")
+    t("路由-冲突→check_course_conflict", _pc1[0]["tool"] == "check_course_conflict", str(_pc1))
+    _pc2 = _plan_course("我学分是不是超了，要退哪门", "PB1")
+    t("路由-退补选→evaluate_selection_pressure",
+      _pc2[0]["tool"] == "evaluate_selection_pressure", str(_pc2))
+    _pa1 = _plan_advisor("推荐课会不会和我课表撞课", {})
+    t("路由-选课顾问冲突→check_course_conflict",
+      _pa1[0]["tool"] == "check_course_conflict", str(_pa1))
+    _pa2 = _plan_advisor("退补选建议", {})
+    t("路由-选课顾问退补选→evaluate_selection_pressure",
+      _pa2[0]["tool"] == "evaluate_selection_pressure", str(_pa2))
+
+    _fake_cc = [{"tool": "check_course_conflict", "status": "done", "result": {
+        "total": 2, "courses": [{"course_name": "A"}, {"course_name": "B"}],
+        "conflicts": [{"course_a": "力学B", "course_b": "热学B", "day": "周二",
+                       "reason": "节次重叠", "weeks_unknown": True}],
+        "conflict_count": 1, "time_incomplete": ["X课"], "missing": ["量子力学"]}}]
+    _s_cc = _build_tool_summary(_fake_cc)
+    t("工具摘要-冲突分支", "check_course_conflict" in _s_cc and "力学B × 热学B" in _s_cc
+      and "保守判定" in _s_cc and "量子力学" in _s_cc, _s_cc[:150])
+
+    _fake_p = [{"tool": "evaluate_selection_pressure", "status": "done", "result": {
+        "credit_cap": 30.0, "source": "fallback",
+        "current": {"course_count": 14, "total_credits": 31.0, "credit_cap": 30.0,
+                    "conflict_count": 0, "time_incomplete": [],
+                    "daily": {"周二": {"course_count": 4, "slot_count": 4}},
+                    "busiest_day": "周二"},
+        "after_add_drop": {"course_count": 13, "total_credits": 28.5, "conflict_count": 0},
+        "drops_applied": ["力学B"], "adds_pending": ["量子力学"],
+        "suggestions": ["当前总学分 31.0 已超过 30.0 学分参考上限"]}}]
+    _s_p = _build_tool_summary(_fake_p)
+    t("工具摘要-压力分支", "evaluate_selection_pressure" in _s_p and "31.0" in _s_p
+      and "模拟后" in _s_p and "建议" in _s_p, _s_p[:150])
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 

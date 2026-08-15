@@ -173,5 +173,41 @@ ok("课程搜索无重复课程名",
    len({_norm_course_name(n) for n in sc2_names}) == len(sc2_names),
    sc2_names)
 
+# 10. 选课 H 项: 冲突检测与退补选压力评估（伪登录测试账号 PB25111691）
+from services.session_ctx import set_student, reset_student
+from tools.selection_tools import check_course_conflict, evaluate_selection_pressure
+
+_tok = set_student("PB25111691")
+_ca = ServiceContainer().cas_client
+_ca._logged_in = True
+_ca._student_id = "PB25111691"
+try:
+    r_cc = check_course_conflict.invoke({"student_id": "PB25111691"})
+    ok("冲突检测读取已选课程", r_cc.get("total", 0) >= 10, f"{r_cc.get('total')} 门")
+    ok("冲突检测结果结构",
+       all(c.get("course_a") and c.get("course_b") and c.get("day") and c.get("reason")
+           for c in r_cc.get("conflicts") or []),
+       f"{r_cc.get('conflict_count')} 处")
+    pair_key = {tuple(sorted([c["course_a"], c["course_b"]])) for c in r_cc.get("conflicts", [])}
+    ok("周次不重叠不算冲突(力学B×热学B)", ("力学B", "热学B") not in pair_key,
+       f"冲突对: {pair_key or '无'}")
+
+    r_p = evaluate_selection_pressure.invoke({"student_id": "PB25111691"})
+    cur = r_p.get("current") or {}
+    ok("压力评估含学分统计", cur.get("total_credits", 0) > 0 and cur.get("credit_cap") == 30.0,
+       f"学分 {cur.get('total_credits')}/{cur.get('credit_cap')} 超={cur.get('over_cap')}")
+    ok("压力评估含每日分布", bool(cur.get("daily")) and bool(cur.get("busiest_day")),
+       f"最忙 {cur.get('busiest_day')}")
+
+    r_sim = evaluate_selection_pressure.invoke(
+        {"student_id": "PB25111691", "drop_courses": ["力学B"], "add_courses": ["量子力学"]})
+    after = r_sim.get("after_add_drop") or {}
+    ok("模拟退课学分下降",
+       cur.get("total_credits") - after.get("total_credits", cur.get("total_credits")) > 0,
+       f"{cur.get('total_credits')} → {after.get('total_credits')}")
+    ok("加课无排课数据如实标注", "量子力学" in (r_sim.get("adds_pending") or []),
+       str(r_sim.get("adds_pending")))
+finally:
+    reset_student(_tok)
 
 print(f"\n结果: {PASS}/{PASS} 断言通过")

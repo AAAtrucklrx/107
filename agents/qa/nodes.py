@@ -29,6 +29,7 @@ _PERSONAL_TOOLS = frozenset({
     "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa",
     "query_exam", "query_course_selection", "query_program",
     "add_event", "get_day_view", "get_week_view", "check_conflict", "import_schedule",
+    "check_course_conflict", "evaluate_selection_pressure",
 })
 
 
@@ -187,7 +188,9 @@ _TOOL_LIST = (
     "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"gpa\"} 或顶层 major/grade/interests/preference/keywords/gpa), "
     "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
-    "check_conflict(日程冲突), import_schedule(导入课表)"
+    "check_conflict(日程冲突), import_schedule(导入课表), "
+    "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突), "
+    "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估)"
 )
 
 
@@ -257,6 +260,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略
+17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -517,7 +521,14 @@ def _build_chat_history(history: list[dict], max_items: int = 20) -> str:
 
 
 def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
-    """选课推荐：对比 > 教师分析 > 课程推荐"""
+    """选课推荐：冲突/退补选 > 对比 > 教师分析 > 课程推荐"""
+    # 选课 H 项：冲突检测 / 退补选压力评估（与 _plan_course 同口径）
+    if any(k in query for k in ("冲突", "撞课", "时间重", "重了", "时间挤")):
+        return [{"tool": "check_course_conflict", "args": {}}]
+    if any(k in query for k in ("退选", "退课", "补选", "退补选", "学分超", "学分够",
+                                "学分压力", "选太多", "退掉", "退哪门")):
+        return [{"tool": "evaluate_selection_pressure", "args": {}}]
+
     pair = _extract_course_pair(query) if any(k in query for k in ("对比", "比较")) else None
     if pair:
         return [{"tool": "compare_courses", "args": {"course_a": pair[0], "course_b": pair[1]}}]
@@ -541,6 +552,13 @@ def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
 def _plan_course(query: str, student_id: str) -> list[dict]:
     """课业助手：按关键词优先级匹配单一工具"""
     sid_args = {"student_id": student_id}
+
+    # 选课 H 项：冲突检测 / 退补选压力评估（节次级精确判断，替代 LLM 目测）
+    if any(k in query for k in ("冲突", "撞课", "时间重", "重了", "时间挤")):
+        return [{"tool": "check_course_conflict", "args": sid_args}]
+    if any(k in query for k in ("退选", "退课", "补选", "退补选", "学分超", "学分够",
+                                "学分压力", "选太多", "退掉", "退哪门")):
+        return [{"tool": "evaluate_selection_pressure", "args": sid_args}]
 
     if "空教室" in query or "教室" in query:
         return [{"tool": "find_empty_room",
@@ -756,6 +774,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
 - 先修课要求、成绩满足性、课程容量、开课院系等工具未返回的信息：必须明确说明“暂无该数据”并给出查证途径（如登录综合教务系统核对），严禁根据常识推断用户的已修状态或满足性（不得出现“已修，成绩满足”这类未经工具核实的结论）
+- 冲突检测（check_course_conflict）与压力评估（evaluate_selection_pressure）结果必须如实转述：周次不重叠不算冲突；周次未知按重叠保守判定时须注明；时间不全/无排课数据的课程明确说明无法精确检测；学分上限为参考值（默认30），以教务系统为准；不得在工具未提供排课时间的情况下臆造冲突结论
 - 数据不足时如实说明并引导用户补充信息，不编造
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
@@ -991,6 +1010,43 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"- {s.get('course_name', '?')} {s.get('teacher', '')} "
                              f"{s.get('credits', '')}学分 {s.get('time', '')} {s.get('location', '')} "
                              f"{s.get('status', '')}")
+        elif tool == "check_course_conflict" and isinstance(res.get("courses"), list):
+            lines.append(f"[{tool}] 共检查 {res.get('total', 0)} 门课（{_src(res)}）: "
+                         f"冲突 {res.get('conflict_count', 0)} 处")
+            for c in res.get("conflicts") or []:
+                wu = "（周次未知，按重叠保守判定）" if c.get("weeks_unknown") else ""
+                lines.append(f"- ⚠ {c.get('course_a', '?')} × {c.get('course_b', '?')}："
+                             f"{c.get('day', '?')} {c.get('reason', '')}{wu}")
+            if res.get("time_incomplete"):
+                lines.append(f"- 时间不全（无法精确判定）: {', '.join(res['time_incomplete'])}")
+            if res.get("missing"):
+                lines.append(f"- 未找到排课数据（评课库/缓存无排课时间，不得臆造）: {', '.join(res['missing'])}")
+            if not (res.get("conflicts") or res.get("time_incomplete") or res.get("missing")):
+                lines.append("- 已检查课程两两之间无节次/周次冲突")
+        elif tool == "evaluate_selection_pressure" and isinstance(res.get("current"), dict):
+            cur = res["current"]
+            lines.append(f"[{tool}] 当前选课 {cur.get('course_count', 0)} 门 / "
+                         f"{cur.get('total_credits', 0)} 学分（上限参考 {cur.get('credit_cap', 30)}，以教务系统为准，{_src(res)}）: "
+                         f"冲突 {cur.get('conflict_count', 0)} 处")
+            for c in cur.get("conflicts") or []:
+                wu = "（周次未知，按重叠保守判定）" if c.get("weeks_unknown") else ""
+                lines.append(f"- ⚠ {c.get('course_a', '?')} × {c.get('course_b', '?')}："
+                             f"{c.get('day', '?')} {c.get('reason', '')}{wu}")
+            daily = cur.get("daily") or {}
+            if daily:
+                lines.append("- 每日负荷: " + "、".join(
+                    f"{d} {v.get('course_count', 0)}门/{v.get('slot_count', 0)}段" for d, v in daily.items()))
+            if cur.get("busiest_day"):
+                lines.append(f"- 最忙 {cur.get('busiest_day')}")
+            if cur.get("time_incomplete"):
+                lines.append(f"- 时间不全: {', '.join(cur['time_incomplete'])}")
+            after = res.get("after_add_drop")
+            if after is not None:
+                lines.append(f"- 模拟后（退 {res.get('drops_applied') or '无'}，加 {res.get('adds_pending') or '无'}）: "
+                             f"{after.get('course_count', 0)} 门 / {after.get('total_credits', 0)} 学分，"
+                             f"冲突 {after.get('conflict_count', 0)} 处")
+            for s in res.get("suggestions") or []:
+                lines.append(f"- 建议: {s}")
         elif tool == "query_exam" and isinstance(res.get("exams"), list):
             exams = res["exams"]
             lines.append(f"[{tool}] 共 {len(exams)} 场考试（{_src(res)}）:")

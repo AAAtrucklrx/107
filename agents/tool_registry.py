@@ -22,6 +22,9 @@ def _build_tool_registry() -> dict:
     from tools.schedule_tools import (
         add_event, get_day_view, get_week_view, check_conflict, import_schedule,
     )
+    from tools.selection_tools import (
+        check_course_conflict, evaluate_selection_pressure,
+    )
 
     registry = {
         "search_faq": search_faq,
@@ -48,5 +51,7 @@ def _build_tool_registry() -> dict:
         "get_week_view": get_week_view,
         "check_conflict": check_conflict,
         "import_schedule": import_schedule,
+        "check_course_conflict": check_course_conflict,
+        "evaluate_selection_pressure": evaluate_selection_pressure,
     }
     return registry
