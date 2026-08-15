@@ -253,6 +253,7 @@ def get_my_program(major: str, grade: Optional[str] = None,
         "totalCredits": total,
         "modules": modules,
         "courses": [dict(c) for c in courses_public],
+        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
     }
 
 
@@ -334,6 +335,7 @@ def get_program_progress(major: str, grade: Optional[str] = None,
         "credits_required": credits_required,
         "percent": percent,
         "modules_progress": modules_progress,
+        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
     }
 
 
@@ -390,4 +392,5 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
         "year_index": year_index,
         "terms": ordered,
         "total_credits": round(total, 1),
+        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
     }

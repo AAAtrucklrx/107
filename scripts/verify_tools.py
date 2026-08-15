@@ -60,8 +60,20 @@ while i < len(req_recs):
     i = j + 1
 ok("必修组同档评分降序", seg_ok,
    [f"{c['name']}:{c['rating_avg']}({_term_year(c)})" for c in req_recs][:6])
-ele_avgs = [c["rating_avg"] for c in ele_recs]
-ok("选修组评分降序", ele_avgs == sorted(ele_avgs, reverse=True), f"{ele_avgs}")
+ele_urg = [_urgency(c) for c in ele_recs]
+ok("选修组紧迫度非降(当前学年优先)", ele_urg == sorted(ele_urg), f"{ele_urg}")
+seg_ok_e = True
+i = 0
+while i < len(ele_recs):
+    j = i
+    while j + 1 < len(ele_recs) and ele_urg[j + 1] == ele_urg[i]:
+        j += 1
+    seg = [c["rating_avg"] for c in ele_recs[i:j + 1]]
+    if seg != sorted(seg, reverse=True):
+        seg_ok_e = False
+    i = j + 1
+ok("选修组同档评分降序", seg_ok_e,
+   [f"{c['name']}:{c['rating_avg']}({_term_year(c)})" for c in ele_recs][:6])
 ok("必修组前置", recs[:len(req_recs)] == req_recs,
    f"必修 {len(req_recs)} 门 + 选修 {len(ele_recs)} 门")
 ok("推荐含关键字段", all(c.get("name") and c.get("teachers") is not None

@@ -99,6 +99,17 @@ class FAQVectorStore:
         self._embed_method = "fallback"
         return _KeywordEmbedder()
 
+    def _collection_dim(self) -> int | None:
+        """现有集合的 embedding 维度（无数据返回 None）。"""
+        try:
+            got = self.collection.get(limit=1, include=["embeddings"])
+            embs = got.get("embeddings") or []
+            if embs and embs[0] is not None:
+                return len(embs[0])
+        except Exception:
+            pass
+        return None
+
     def add_documents(self, documents: list[dict]):
         if not documents:
             return
@@ -112,6 +123,13 @@ class FAQVectorStore:
         contents = [d["content"] for d in documents]
         metadatas = [d["metadata"] for d in documents]
         embeddings = self.embedding_model.encode(contents).tolist()
+        # 维度冲突守卫：集合已存在且维度与当前 embedder 不一致时拒绝写入（避免混合维度集合）
+        cdim = self._collection_dim()
+        qdim = len(embeddings[0])
+        if cdim is not None and cdim != qdim:
+            raise RuntimeError(
+                f"Embedding 维度冲突（集合 {cdim}D vs 当前 {qdim}D），"
+                f"请运行 rebuild_kb.py --yes 全量重建后重试")
         self.collection.add(
             ids=ids, embeddings=embeddings,
             documents=contents, metadatas=metadatas,
@@ -127,10 +145,27 @@ class FAQVectorStore:
 
         # 1) 向量候选
         query_embedding = self.embedding_model.encode([query]).tolist()
-        raw = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=pool,
-        )
+        qdim = len(query_embedding[0])
+        cdim = self._collection_dim()
+        if cdim is not None and cdim != qdim:
+            # 维度不匹配（如 API embedding 建的 4096D 集合遇本地 768D 降级）：
+            # 优雅返回空结果而非崩溃，提示全量重建
+            log.warning(
+                f"Embedding 维度不匹配（集合 {cdim}D vs 当前 {qdim}D），"
+                f"知识库检索暂不可用，请运行 rebuild_kb.py --yes 重建")
+            return {"found": False, "results": [], "top_score": 0.0, "mismatch": True}
+        try:
+            raw = self.collection.query(
+                query_embeddings=query_embedding,
+                n_results=pool,
+            )
+        except Exception as e:
+            if "dimension" in str(e).lower():
+                log.warning(
+                    f"Embedding 维度不匹配（查询失败），知识库检索暂不可用，"
+                    f"请运行 rebuild_kb.py --yes 重建: {e}")
+                return {"found": False, "results": [], "top_score": 0.0, "mismatch": True}
+            raise
         vec_ids: list[str] = []
         vec_scores: dict[str, float] = {}
         if raw["ids"] and raw["ids"][0]:

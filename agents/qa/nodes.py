@@ -749,9 +749,13 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 中文，语气亲切自然，以"小蜗"口吻
 - 引用知识库信息时标注来源（如「来源：《学生证补办流程》」）；非官方信息注明仅供参考
 - 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
+- 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
 - 数据表格用 Markdown 展示，回答简洁有条理
-- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有「必修组/选修组」分组时必须先完整展示必修组、再展示选修组
+- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有「必修组/选修组」分组时必须先完整展示必修组、再展示选修组；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
+- 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
+- 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
+- 先修课要求、成绩满足性、课程容量、开课院系等工具未返回的信息：必须明确说明“暂无该数据”并给出查证途径（如登录综合教务系统核对），严禁根据常识推断用户的已修状态或满足性（不得出现“已修，成绩满足”这类未经工具核实的结论）
 - 数据不足时如实说明并引导用户补充信息，不编造
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
@@ -868,6 +872,17 @@ def _sensitive_refusal() -> str:
             "如有学业困难可以咨询辅导员或任课老师，学校也提供学业辅导与心理咨询等支持渠道。")
 
 
+def _term_zh(term) -> str:
+    """方案学期中文名（组 A 修复）：'2秋'→'大二上'、'3春'→'大三下'、'1夏'→'大一暑期'；无法解析返回原文。"""
+    t = str(term or "").strip()
+    m = re.match(r"^([1-6])([春秋夏])$", t)
+    if not m:
+        return t or "?"
+    zh_n = "一二三四五六"[int(m.group(1)) - 1]
+    zh_s = {"秋": "上", "春": "下", "夏": "暑期"}[m.group(2)]
+    return f"大{zh_n}{zh_s}"
+
+
 def _build_tool_summary(results: list[dict]) -> str:
     """将工具结果整理为供 LLM 参考的摘要文本"""
 
@@ -876,6 +891,7 @@ def _build_tool_summary(results: list[dict]) -> str:
         return {
             "real": "数据来源：教务系统实时数据",
             "fallback": "数据来源：本地缓存/模拟数据，仅供参考",
+            "local": "数据来源：本地培养方案数据（非教务实时），以综合教务系统为准",
             "locked": "需登录教务系统后获取",
         }.get(res.get("source") or "", res.get("source") or "来源未知")
 
@@ -887,8 +903,6 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] 执行失败: {res.get('error', '未知错误')}")
         elif res.get("error"):
             lines.append(f"[{tool}] {res['error']}")
-        elif res.get("message"):
-            lines.append(f"[{tool}] {res['message']}")
         elif isinstance(res.get("results"), list) and res.get("found"):
             lines.append(f"[{tool}] 找到 {len(res['results'])} 条结果:")
             for item in res["results"][:3]:
@@ -905,7 +919,7 @@ def _build_tool_summary(results: list[dict]) -> str:
                     hint = item.get("program_hint") or {}
                     if hint:
                         hint_txt = (f"｜方案:{hint.get('program', '')[:20]}/"
-                                    f"方案学期{hint.get('term', '?')}/{hint.get('required', '')}")
+                                    f"方案学期{hint.get('term', '?')}（{_term_zh(hint.get('term'))}）/{hint.get('required', '')}")
                     else:
                         hint_txt = ""
                     # terms 是评课库历史开课学期（供参考），方案学期以 program_hint.term 为准
@@ -972,10 +986,11 @@ def _build_tool_summary(results: list[dict]) -> str:
                              f"{c.get('time', '')} {c.get('location', '')}")
         elif tool == "query_course_selection" and isinstance(res.get("selections"), list):
             sels = res["selections"]
-            lines.append(f"[{tool}] 共 {len(sels)} 门已选课程:")
+            lines.append(f"[{tool}] 共 {len(sels)} 门已选课程（含上课时间与地点，供冲突/压力判断）:")
             for s in sels[:80]:
                 lines.append(f"- {s.get('course_name', '?')} {s.get('teacher', '')} "
-                             f"{s.get('credits', '')}学分 {s.get('status', '')}")
+                             f"{s.get('credits', '')}学分 {s.get('time', '')} {s.get('location', '')} "
+                             f"{s.get('status', '')}")
         elif tool == "query_exam" and isinstance(res.get("exams"), list):
             exams = res["exams"]
             lines.append(f"[{tool}] 共 {len(exams)} 场考试（{_src(res)}）:")
@@ -985,7 +1000,7 @@ def _build_tool_summary(results: list[dict]) -> str:
         elif tool == "get_program_progress":
             lines.append(f"[{tool}] {res.get('name', '')} 必修已修 {res.get('required_taken')}/"
                          f"{res.get('required_total')} 门，学分 {res.get('credits_taken')}/"
-                         f"{res.get('credits_required')}（{res.get('percent')}%）")
+                         f"{res.get('credits_required')}（{res.get('percent')}%，{_src(res)}）")
             rem = res.get("required_remaining") or []
             lines.append(f"  必修缺口 {len(rem)} 门:")
             for c in rem[:80]:
@@ -997,18 +1012,20 @@ def _build_tool_summary(results: list[dict]) -> str:
                     f"{m['category']} {m['taken']}/{m['total']}" for m in mp))
         elif tool == "get_my_program" and isinstance(res.get("courses"), list):
             courses = res["courses"]
-            lines.append(f"[{tool}] {res.get('name', '')}（{res.get('grade', '')}）共 {len(courses)} 门课程:")
+            lines.append(f"[{tool}] {res.get('name', '')}（{res.get('grade', '')}）共 {len(courses)} 门课程（{_src(res)}）:")
             for c in courses[:80]:
                 lines.append(f"- {c.get('name', '?')} {c.get('code', '')} {c.get('credit', '')}学分 "
                              f"{c.get('required', '')} {c.get('term', '')} [{c.get('category', '')}]")
         elif tool == "plan_semester" and isinstance(res.get("terms"), list):
             terms = res["terms"]
-            lines.append(f"[{tool}] 第 {res.get('year_index')} 学年规划，总学分 {res.get('total_credits')}:")
+            lines.append(f"[{tool}] 第 {res.get('year_index')} 学年规划，总学分 {res.get('total_credits')}（{_src(res)}）:")
             for t in terms:
                 lines.append(f"- {t['term']} 学期 {len(t['courses'])} 门:")
                 for c in t["courses"][:60]:
                     lines.append(f"  * {c.get('name', '?')} {c.get('credit', '')}学分 "
                                  f"{c.get('required', '')} [{c.get('category', '')}]")
+        elif res.get("message"):
+            lines.append(f"[{tool}] {res['message']}")
         else:
             lines.append(f"[{tool}] {json.dumps(res, ensure_ascii=False)[:800]}")
     return "\n".join(lines) if lines else "（无工具结果）"

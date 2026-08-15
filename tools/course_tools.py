@@ -980,6 +980,9 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
         "course_name": c.get("course_name", ""),
         "teacher": c.get("teacher", ""),
         "credits": c.get("credits", 0),
+        "time": c.get("time", ""),          # 组 B 修复：上课时间（冲突判断关键字段）
+        "location": c.get("location", ""),
+        "semester": c.get("semester", ""),
         "status": "已选",
     } for c in courses]
     return {"student_id": sid, "selections": selections, "count": len(selections),

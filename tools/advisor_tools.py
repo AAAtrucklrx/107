@@ -547,7 +547,7 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
     seen_norm: set[str] = set()  # 不合并适配：选修组按归一课名去重（跨页/跨池同课只出现一次）
     for pr in conn.execute(
         "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-        "r.rating_avg, r.rating_count FROM program_courses pc "
+        "r.rating_avg, r.rating_count, pc.term FROM program_courses pc "
         "JOIN courses c ON c.id = pc.course_id JOIN course_rates r ON r.course_id = c.id "
         "WHERE pc.program_id=? AND pc.required='选修' AND pc.course_id IS NOT NULL",
         (prog_id,),
@@ -560,7 +560,10 @@ def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[s
         seen_norm.add(nk)
         seen_ids.add(pr["id"])
         elec_rows.append(pr)
-    elec_rows.sort(key=lambda r: (-(r["rating_avg"] or 0), -(r["rating_count"] or 0)))
+    # 选修组排序（组 A 修复）：方案学期紧迫度优先（当前学年该修 → 未来学年），同档按评分降序；
+    # 避免把大三/大四学期的选修课排在大一/大二用户的前面
+    elec_rows.sort(key=lambda r: (_term_urgency(r["term"] or "", current_yi),
+                                  -(r["rating_avg"] or 0), -(r["rating_count"] or 0)))
     for r in _pool_rows(conn, keywords):
         if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
             continue
