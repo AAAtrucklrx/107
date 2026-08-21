@@ -101,9 +101,16 @@ def _init_test_mode(container: ServiceContainer) -> None:
     import json as _json
     import time as _time
 
-    _test_path = Path(_os.environ.get("TEMP", "")) / "xiaowo_personal" / "data.json"
+    # 测试数据定位：优先工作区固定备份（scripts/data/xiaowo_personal/data.json，
+    # 由 scripts/rebuild_testdata.py / crawl_personal.py 维护），回退 %TEMP%。
+    # 不依赖沙箱随机 TEMP（沙箱每次启动分配新目录，复制到 %TEMP% 不可靠）。
+    _test_path = Path(__file__).resolve().parent / "scripts" / "data" / "xiaowo_personal" / "data.json"
     if not _test_path.exists():
-        st.error(f"测试数据缺失: {_test_path}\n请先运行 scripts/crawl_personal.py 生成备份后再启动测试版。")
+        _fallback = Path(_os.environ.get("TEMP", "")) / "xiaowo_personal" / "data.json"
+        if _fallback.exists():
+            _test_path = _fallback
+    if not _test_path.exists():
+        st.error(f"测试数据缺失: {_test_path}\n请先运行 scripts/rebuild_testdata.py（或 crawl_personal.py）生成备份后再启动测试版。")
         return
     try:
         _td = _json.loads(_test_path.read_text(encoding="utf-8"))
