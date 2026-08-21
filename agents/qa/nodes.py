@@ -275,7 +275,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 8. 绝不编造数据：工具结果不足时继续 retrieve/call_tool/clarify，不要硬答
 9. 禁止重复调用：已有工具结果（tool_summary 中 status=done 的工具）不得再次调用同一工具，应转 compose 或 clarify
 10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推。已登录用户即使未说偏好，系统已按其 GPA 自动采用画像（tool_summary 的 profile_note 会注明），可直接推荐并在回答中一句话说明画像依据
-11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")
+11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")；"XX老师在XX课怎么样/XX老师的XX课评价"（同时含老师与课程）用 analyze_teacher(teacher_name="教师名", course="课程名") 双参数，聚焦该老师在该课程的评价，不要只用 teacher_name 全量返回
 12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
@@ -655,6 +655,17 @@ def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
         return [{"tool": "compare_courses", "args": {"course_a": pair[0], "course_b": pair[1]}}]
 
     teacher = _extract_teacher(query)
+    # 双参数问法："XX老师在XX课怎么样/XX老师的XX课评价" → teacher_name + course 同时提供，
+    # 聚焦该老师在该课程的评价（避免教师模式全量返回后摘要截断丢失目标课程）
+    m2 = re.search(r"(.{1,12}?(?:老师|老师))\s*(?:的|在|教)?\s*[^，。！？]{0,20}?([^，。！？]{1,24}?)", query)
+    if teacher and re.search(r"B[0-9]|班|课|数学分析|线性代数|概率论|物理|化学|英语|微积分|计算", query):
+        cm = re.search(r"([\u4e00-\u9fffA-Za-z0-9（）()]{2,24}?)(?:怎么样|评价|如何|好不好|怎么上|教得好|的评价|的表现)", query)
+        if cm and "老师" not in cm.group(1):
+            return [{"tool": "analyze_teacher", "args": {"teacher_name": teacher, "course": cm.group(1)}}]
+        if teacher and re.search(r"的\s*([\u4e00-\u9fffA-Za-z0-9（）()]{2,16}?)", query):
+            cm2 = re.search(r"的\s*([\u4e00-\u9fffA-Za-z0-9（）()]{2,16}?)(?:课|班|评价|怎么样|如何)", query)
+            if cm2:
+                return [{"tool": "analyze_teacher", "args": {"teacher_name": teacher, "course": cm2.group(1)}}]
     if teacher:
         return [{"tool": "analyze_teacher", "args": {"teacher_name": teacher}}]
 
@@ -1109,6 +1120,20 @@ def _build_tool_summary(results: list[dict]) -> str:
             for rv in (res.get("reviews_sample") or [])[:6]:
                 tname = rv.get("teacher") or "未知老师"
                 lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+        elif tool == "analyze_teacher" and res.get("teacher"):
+            # 教师模式（teacher_name 或 teacher_name+course）：完整呈现各课程评分，防止
+            # 通用兜底 json.dumps[:800] 截断导致 B1/B2 等课程数据丢失（2026-08 修复）
+            courses = res.get("courses") or []
+            lines.append(f"[{tool}] 教师「{res.get('teacher')}」共 {len(courses)} 门课"
+                         f"（综合均分 {res.get('avg_rating')}·{res.get('review_count')}条，评课数据仅供参考）:")
+            for c in courses:
+                lines.append(f"- {c['name']} | {c['rating_avg']}分·{c['rate_count']}条")
+            sample = res.get("reviews_sample") or []
+            if sample:
+                lines.append(f"  评论样本（{len(sample)} 条, 每条已标注课程与老师, 引用时必须对应）:")
+                for rv in sample[:6]:
+                    tname = rv.get("teacher") or res.get("teacher") or "未知老师"
+                    lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
         elif tool == "query_grade" and isinstance(res.get("grades"), list):
             grades = res["grades"]
             lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{_src(res)}）:")

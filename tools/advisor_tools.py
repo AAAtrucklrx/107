@@ -928,6 +928,25 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
     if not rows:
         conn.close()
         return {"error": f"未找到教师：{teacher_name}"}
+    # 双参数模式：同时提供 course 时，仅保留该课程下的记录（"某老师在XX课怎么样"）
+    # 简称映射 + 归一化后互相包含匹配（"数分B2"→"数学分析(B2)"，不依赖 LLM 规范化）
+    if course:
+        _alias = {
+            "数分": "数学分析", "线代": "线性代数", "概统": "概率论与数理统计",
+            "高数": "高等数学", "大物": "大学物理", "大英": "大学英语",
+        }
+        c_key = _norm_course_name(course)
+        for k, v in _alias.items():
+            c_key = c_key.replace(k, v)
+        matched = []
+        for r in rows:
+            n_key = _norm_course_name(r["name"] or "")
+            if c_key and (c_key in n_key or n_key in c_key):
+                matched.append(r)
+        rows = matched
+        if not rows:
+            conn.close()
+            return {"error": f"未找到教师 {teacher_name} 在课程「{course}」的评价记录"}
     seen: dict[int, dict] = {}
     for r in rows:
         if r["id"] not in seen or r["rating_count"] > seen[r["id"]]["rate_count"]:
