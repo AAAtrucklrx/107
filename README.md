@@ -8,7 +8,7 @@
 
 | 模块 | 能力 |
 |------|------|
-| 📚 智能问答 | 基于 50 篇校园知识库文档（220 条向量分块）的 RAG 问答（办事指南、教务、生活、就业、科研与升学） |
+| 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址 |
 | 📊 课业助手 | 成绩查询、课表查询、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
 | 🔍 选课顾问 | 基于 icourse.club 真实评课数据推荐（5667 个课程页 / 4.4 万条评论，不合并同课多师）：真实均分降序、同课多师并列对比、5-6 条真实评论引用，支持画像软过滤与教师分析 |
 | 📅 日程管理 | 日程记录与查询、空闲时间匹配、校团委活动推荐 |
@@ -79,8 +79,11 @@ streamlit run app.py
 | 工具层冒烟测试 | `python scripts/verify_tools.py` | 17/17 断言通过（推荐排序 / 低 workload 筛选 / 教师对比，结果含来源标识） |
 | 智能体链路冒烟测试 | `python scripts/advisor_smoke.py` | 5/5 通过（推荐 / 低 workload / 教师对比 / 澄清 / FAQ 均正确路由） |
 | 浏览器端到端测试 | `python scripts/browser_e2e.py` | 6 场景全部通过（首页 + 5 类提问），截图见 `docs/e2e_v3_*.png` |
-| 初始化回归 | `python init_check.py` | 数据库 + 知识库（50 篇文档 / 220 条向量）初始化正常 |
+| 初始化回归 | `python init_check.py` | 数据库 + 知识库（80 篇文档 / 769 条向量）初始化正常 |
 | 历史修复回归 | `python scripts/test_fixes.py` | 23/23 通过（排序 / 多师并列 / 评论去重 / 画像理由 / 数据对账） |
+| 节点与决策回归 | `python scripts/verify_nodes.py` | 46/46 通过（画像/会话隔离/确定性路由/工具校验/前缀剥离） |
+| 知识库一致性回归 | `python scripts/qa_consistency.py` | 12/12 通过（数值口径/官方链接透出/工具调用断言，需 LLM） |
+| 新文档综合回归 | `python scripts/qa_new_docs.py` | 10/10 通过（8 篇补录文档问答 + URL 透出，需 LLM） |
 | 流水线验收 | `python -m scripts.dev_pipeline run "选课推荐全链路验收" --executor qoder` | PASS（1 轮），Canvas 报告见 `.qoder/canvases/` |
 
 E2E 覆盖场景：首页、Q1 课程推荐（含评课参考）、Q2 低 workload 筛选、Q3 教师对比、Q4 澄清追问（信息不足时进入 clarify 分支）、Q5 FAQ 兜底（回答带《来源》标注）。评课数据来自 icourse.club 真实评论（`data/course_data.db`），教务模块降级数据均带"实时 / 本地缓存 / 模拟数据"来源标识。
