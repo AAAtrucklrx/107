@@ -34,3 +34,6 @@ docs/archive/
 
 # 调试日志
 *.log
+
+# 子代理抓取临时产物（可重建，不入库）
+_ustc_scrape/

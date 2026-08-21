@@ -229,10 +229,12 @@ def embedding_parse(state: QaState) -> dict:
         intent = hint
 
     # 候选召回（向量+BM25 混合检索）
+    # top_k=8：词面在多篇文档出现的高频泛问（如"住宿费/学费/贷款"），
+    # 提升召回规模以覆盖含金额的文档，避免含数值片段掉出候选（2026-08-16 补录）
     candidates, found = [], False
     try:
         from knowledge.vector_store import FAQVectorStore
-        res = FAQVectorStore().search(query, top_k=5)
+        res = FAQVectorStore().search(query, top_k=8)
         candidates = res.get("results") or []
         found = res.get("found", False)
     except Exception as e:
@@ -375,11 +377,23 @@ def _direct_tool_route(state: QaState) -> dict | None:
 
     轮1 实测修复（2026-08-15）：路由未检查工具是否已有结果，导致工具被
     重复调用直至轮次上限（Q11/Q12 各调 4 次）。此处补 done 检查：路由工具
-    已有成功结果时转 compose，不再重复调用。"""
+    已有成功结果时转 compose，不再重复调用。
+    2026-08-16 加固：允许「选课推荐」意图在命中强冲突/退补选关键词时同样
+    直连对应工具，避免 embedding 对"冲突"类问句分类在「选课冲突/选课推荐」
+    之间漂移时路由失效（如"推荐几门课会不会和我课表冲突"）。"""
     intent = state.get("intent") or ""
     query = state.get("query") or ""
     rounds = state.get("rounds") or 0
-    entry = _DIRECT_ROUTE_KEYWORDS.get(intent)
+    # 意图归并：选课域父类意图统一可为路由触发上下文
+    intent_set = {intent}
+    if intent == "选课推荐":
+        intent_set = {"选课冲突", "退补选评估"}
+    entry = None
+    if intent_set & {"选课冲突", "退补选评估"}:
+        for k, (t, kws) in _DIRECT_ROUTE_KEYWORDS.items():
+            if k in intent_set and any(kw in query for kw in kws):
+                entry = (t, kws)
+                break
     if not entry:
         return None
     tool, keywords = entry
@@ -582,14 +596,16 @@ def _think_fallback(state: QaState) -> dict:
 
 
 def _build_candidates_summary(candidates: list[dict]) -> str:
-    """候选召回片段摘要"""
+    """候选召回片段摘要（含官方来源，供 system 提示中引用官方网址）"""
     if not candidates:
         return "（无候选片段）"
     lines = []
-    for i, c in enumerate(candidates[:5], 1):
+    for i, c in enumerate(candidates[:8], 1):
         title = c.get("title") or c.get("source") or "未命名"
         content = str(c.get("content", ""))[:220]
-        lines.append(f"[{i}] 《{title}》 score={c.get('score')} is_official={c.get('is_official', True)}: {content}")
+        src = c.get("source")
+        src_part = f" 来源:{src}" if src else ""
+        lines.append(f"[{i}] 《{title}》 score={c.get('score')} is_official={c.get('is_official', True)}{src_part}: {content}")
     return "\n".join(lines)
 
 
@@ -875,6 +891,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 回答风格与内容：
 - 中文，语气亲切自然，以"小蜗"口吻
 - 引用知识库信息时标注来源（如「来源：《学生证补办流程》」）；非官方信息注明仅供参考
+- 候选片段携带官方来源（candidates_summary 中 "来源:..." 字段，通常是「官方文档标题：https://...」的行）时，在回答末尾附上一行「相关：」并给出可点击的官方网址（把 URL 用 Markdown 链接或原文展示，便于用户跳转核实）。若片段来源列为非官方，则不附链接并注明仅供参考
 - 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
 - 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
 - 数据表格用 Markdown 展示，回答简洁有条理
@@ -885,6 +902,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 先修课要求、成绩满足性、课程容量、开课院系等工具未返回的信息：必须明确说明“暂无该数据”并给出查证途径（如登录综合教务系统核对），严禁根据常识推断用户的已修状态或满足性（不得出现“已修，成绩满足”这类未经工具核实的结论）
 - 冲突检测（check_course_conflict）与压力评估（evaluate_selection_pressure）结果必须如实转述：周次不重叠不算冲突；周次未知按重叠保守判定时须注明；时间不全/无排课数据的课程明确说明无法精确检测；学分上限为参考值（默认30），以教务系统为准；不得在工具未提供排课时间的情况下臆造冲突结论
 - 绩点、学分、日期、百分比等数值性知识必须以知识库候选片段或工具结果中的官方数值为准；候选片段含对照表/数字时逐条核对后再回答，严禁凭记忆输出或推算数值（如"XX分对应多少绩点"必须按候选片段中的对照表回答）
+- 当官方信息含"因专业/因年份/因人群而有差异的多个数值"时（如不同专业学费不同、不同年份缴费标准不同），必须区分适用对象作答，**不得用其中某一个特例数值代表整体**（例如学费应区分"普通本科4800/传播学4500"，不得笼统答"4500"），并在必要时提示不同对象数值以官方为准
 - 数据不足时如实说明并引导用户补充信息，不编造
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
