@@ -229,12 +229,12 @@ def embedding_parse(state: QaState) -> dict:
         intent = hint
 
     # 候选召回（向量+BM25 混合检索）
-    # top_k=8：词面在多篇文档出现的高频泛问（如"住宿费/学费/贷款"），
-    # 提升召回规模以覆盖含金额的文档，避免含数值片段掉出候选（2026-08-16 补录）
+    # top_k=12：多义字段/组合问法（如"退学联系谁"需学籍文档+教秘名单组合，
+    # "住宿费/学费/贷款"等多篇争夺）时保证含答案文档进入候选（2026-08-16 补录）
     candidates, found = [], False
     try:
         from knowledge.vector_store import FAQVectorStore
-        res = FAQVectorStore().search(query, top_k=8)
+        res = FAQVectorStore().search(query, top_k=12)
         candidates = res.get("results") or []
         found = res.get("found", False)
     except Exception as e:
@@ -283,6 +283,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略
 17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
+19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -370,6 +371,43 @@ _DIRECT_ROUTE_KEYWORDS: dict[str, tuple[str, tuple[str, ...]]] = {
                    ("退选", "退课", "补选", "退补选", "学分超", "学分够", "学分压力",
                     "选太多", "退掉", "退哪门", "压力")),
 }
+
+
+def _teacher_course_route(state: QaState) -> dict | None:
+    """教师开课查询确定性路由："XX老师有哪些课/教什么课/开过哪些课/上什么课"。
+
+    2026-08-16 新增：embedding 意图分类常把这类问句归入「课程搜索」（因"有哪些课"
+    是课程搜索示例句），导致 think 调用 search_courses(教师名) 查不到数据。
+    此处直接映射 analyze_teacher(teacher_name=...)，不依赖意图分类。"""
+    query = state.get("query") or ""
+    rounds = state.get("rounds") or 0
+    intent = state.get("intent") or ""
+    if intent == "课程搜索" and not re.search(r"老师|教授|导师", query):
+        return None
+    if not re.search(r"(有哪些课|教什么课|开过哪些课|上什么课|上哪些课|教哪些课|开什么课|主讲什么|带什么课|授什么课)", query):
+        return None
+    teacher = _extract_teacher(query)
+    if not teacher:
+        return None
+    tool = "analyze_teacher"
+    results = state.get("tool_results") or []
+    if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
+        return {
+            "decision": "compose",
+            "tool_calls": [],
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "compose",
+                "reason": f"教师开课查询工具 {tool} 已有结果，直接合成",
+            }],
+        }
+    return {
+        "decision": "call_tool",
+        "tool_calls": [{"tool": tool, "args": {"teacher_name": teacher}}],
+        "thought_log": (state.get("thought_log") or []) + [{
+            "round": rounds + 1, "decision": "call_tool",
+            "reason": f"教师开课查询({intent})→{tool}(teacher_name={teacher})",
+        }],
+    }
 
 
 def _direct_tool_route(state: QaState) -> dict | None:
@@ -464,6 +502,12 @@ def think(state: QaState) -> dict:
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": f"个人信息问答({personal_field})，模板回答"}]}
 
     # 确定性工具路由（意图+关键词双条件，保证正确调用）
+    # 教师开课查询确定性路由（"XX老师有哪些课"→analyze_teacher，先于冲突路由）
+    tcr = _teacher_course_route(state)
+    if tcr is not None:
+        log.info(f"think[{tcr['decision']}] → 教师开课查询路由")
+        return tcr
+
     direct = _direct_tool_route(state)
     if direct is not None:
         if direct["decision"] == "call_tool":
@@ -586,7 +630,13 @@ def _think_fallback(state: QaState) -> dict:
     elif intent == "日程管理":
         plan, decision = _plan_schedule(query, student_id), "call_tool"
     else:
-        plan, decision = [{"tool": "search_faq", "args": {"query": query}}], "call_tool"
+        # 联系人类事务问法：检索词拼接用户画像学院名，确保命中学院教秘名单块
+        faq_query = query
+        if re.search(r"(联系谁|找谁|联系方式|联系|找谁办)", query):
+            major = (state.get("user_profile") or {}).get("major") or ""
+            if major:
+                faq_query = f"{major} 学院 教学秘书 联系方式"
+        plan, decision = [{"tool": "search_faq", "args": {"query": faq_query}}], "call_tool"
 
     log.info(f"think 降级规则[{intent}]: {[p['tool'] for p in plan]}")
     return {"decision": decision, "tool_calls": plan,
@@ -596,11 +646,14 @@ def _think_fallback(state: QaState) -> dict:
 
 
 def _build_candidates_summary(candidates: list[dict]) -> str:
-    """候选召回片段摘要（含官方来源，供 system 提示中引用官方网址）"""
+    """候选召回片段摘要（含官方来源，供 system 提示中引用官方网址）。
+    按 score 降序排列后取前 12 条展示——候选池可能混合首轮检索与 retrieve 追加
+    结果（追加顺序不等于相关度），排序保证高相关片段（如学院名单块）不被挤出。"""
     if not candidates:
         return "（无候选片段）"
+    ordered = sorted(candidates, key=lambda c: -(c.get("score") or 0))
     lines = []
-    for i, c in enumerate(candidates[:8], 1):
+    for i, c in enumerate(ordered[:12], 1):
         title = c.get("title") or c.get("source") or "未命名"
         content = str(c.get("content", ""))[:220]
         src = c.get("source")
@@ -814,7 +867,7 @@ def act(state: QaState) -> dict:
         candidates = list(state.get("candidates") or [])
         try:
             from knowledge.vector_store import FAQVectorStore
-            res = FAQVectorStore().search(query, top_k=5)
+            res = FAQVectorStore().search(query, top_k=12)
             seen = {(c.get("id") or c.get("chunk_id")) for c in candidates}
             added = 0
             for c in res.get("results") or []:

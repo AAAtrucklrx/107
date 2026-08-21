@@ -182,7 +182,11 @@ class FAQVectorStore:
             if bm25 is not None and query_tokens:
                 scored = list(zip(self._bm25_ids, bm25.get_scores(query_tokens)))
                 scored.sort(key=lambda kv: -kv[1])
+                # 过滤：保留正分块；负分块仅当池内正分块不足时兜底补入（负分多为命中
+                # 高频虚词所致，如名单类块，绝对值无意义；直接剔除会让名单块永远检索不到）
                 bm_ranking = [doc_id for doc_id, s in scored[:pool] if s > 0]
+                if len(bm_ranking) < pool:
+                    bm_ranking += [doc_id for doc_id, s in scored[:pool] if s <= 0][: pool - len(bm_ranking)]
         except Exception as e:
             log.warning(f"BM25 检索失败，仅用向量检索: {e}")
 
@@ -202,6 +206,7 @@ class FAQVectorStore:
                 top_score = max(top_score, score)
                 meta = id_to_meta.get(doc_id) or {}
                 results.append({
+                    "id": doc_id,
                     "content": id_to_doc.get(doc_id, ""),
                     "score": round(score, 4),
                     "source": meta.get("source", "未知来源"),
