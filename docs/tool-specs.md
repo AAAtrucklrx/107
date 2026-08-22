@@ -1,7 +1,7 @@
 # 🐌 小蜗 — Tool 详细规格说明
 
 > 本文档逐一定义每个 Tool 的当前实现、升级方案和 Plan-and-Execute 兼容性。
-> 最后更新：2026年7月（2026年8月随 dev-plan 归档，内容仍为当前实现基准）
+> 最后更新：2026-08-22（增补 render_link / query_activities / 生态工具协议 / 若干重写说明；**更正 GPA 对照表旧描述**，见文末增补节）
 
 ---
 
@@ -993,3 +993,53 @@ TOOL_REGISTRY = {
 | get_week_view | 无参数 | daily有7天 |
 | check_conflict | 与已有事件重叠时间 | has_conflict=True |
 | import_schedule | student_id=PB20240001 | imported_count=5 |
+
+---
+
+## 2026-08-22 增补（v2.2：工具生态 + 活动数据线）
+
+> 注册表现状：**29 个内置工具 + 生态工具**（`agents/tool_registry.py` 合并 `tools/ecosystem/`）。本文上半部分为历史规格存档，以下增补为当前基准。
+
+### 更正与重写说明（覆盖上文对应条目）
+
+| 条目 | 变更 |
+|---|---|
+| §6 calc_gpa 绩点表 | 上文"科大4.3制对照表：100→4.3, 95→4.0, 90→3.7"**描述过时**。代码 `utils/gpa_calculator.py` 与官方一致：**94~90→4.0(A)，89~85→3.7(A－)**，90 分对应 4.0 |
+| §3 query_schedule / §4 find_empty_room | "模拟数据/种子数据"状态描述过时：主路径为 jw API/catalog API 实时数据 + SQLite 降级；假数据 fallback 已删除（P1-2 治理），不可用时如实提示 |
+| §18 import_schedule | **已重写（2026-08-22）**：开学日期读 `config.SEMESTER`；节次换算走 `utils/schedule_parse` + 官方 13 节次表（含晚课 11-13 节）；无"第"前缀写法自动补齐；解析失败不猜时间，`time_unparsed` 如实列出 |
+| query_daily_schedule（新增说明） | 降级分支已重写：统一解析器按星期取时段，输出精确时钟/节次/周次（`weeks` 字段）；同课多时段逐段返回 |
+| §10 collect_preferences | 已知问题（全局单例/不持久化）仍在；个性化主路径已由 `services/activity_profile.py`（活动域）承担 |
+
+### 28. render_link（tools/link_tools.py）
+
+| 项目 | 内容 |
+|---|---|
+| 功能 | 按场景给出校园官方系统/平台跳转入口（强操作类诉求：选退课/评教/缴费等） |
+| 参数 | `scene: str`（场景描述，如"退课""交学费""评教"） |
+| 返回 | `{"found": true, "name", "url", "description", "category", "matched_keywords", "source": "官方"}`；无匹配 `found=false` + 提示禁止编造 URL |
+| 数据源 | `config/links.yaml`（19 条已核实官方链接，六分类 + 场景关键词；与校园导航页共用） |
+| 约束 | THINK 规则 21：URL 只能来自本工具返回或知识库来源；找不到入口如实说明 |
+
+### 29. query_activities（tools/activity_tools.py）
+
+| 项目 | 内容 |
+|---|---|
+| 功能 | 查询青春科大（第二课堂）当前可报名活动（实时，10 分钟 TTL 缓存） |
+| 参数 | `keyword`（匹配名称/简介/主办方）、`category`、`time_window`（"即将截止"/"周末"/"本周"）、`limit`、`student_id`（自动注入） |
+| 返回 | `{"count", "total_enrolment", "activities": [{name/organizer/category/start/end/apply_end/people_num/service_hour/description}], "fetched_at", "source"}` |
+| 数据源 | `services/young_client.py`（报名中列表）；**token 失效自动回退快照**（source 标"本地缓存"） |
+| 副作用 | 返回项计入偏好画像 asked 流水（最多 3 条/次） |
+| 决策 | THINK 规则 22 + intents「活动推荐」意图；报名入口走规则 21 |
+
+### 生态工具协议 v1（tools/ecosystem/）
+
+- 加载器扫描 `*.spec.yaml` + 同名 `.py`（`run(params, ctx) -> dict`）；`eco:` 前缀强校验、9 必填字段（name/display_name/provider/description/version/permission/params_schema/result_schema/source_hint）、坏 Spec 拒载不炸、进程级缓存、ctx 注入学号；
+- `_TOOL_LIST` 动态纳入（含参数必填/可选提示）；摘要强制署名"第三方工具 · XX 提供，仅供参考"（THINK 规则 20 + COMPOSE 署名保留）；
+- 投稿指南见 `tools/ecosystem/README.md`；自检 `scripts/verify_ecosystem.py`。
+
+### 配套服务（非注册工具）
+
+- **`services/young_client.py`（12 方法）**：fetch_enrolment_activities / fetch_end_activities / fetch_my_profile（五维成绩+学时+社团）/ fetch_my_labels（兴趣标签）/ fetch_my_favorites / fetch_my_followed_depts / fetch_tobe_involved（type 必传）；AES-128-CBC 协议，token ~7 天。
+- **`services/activity_profile.py`**：画像（平台标签冷启动 + 模块学时 d德z智t体m美l劳 + 行为权重 90 天窗口）；`personal_score` 三路命中（行为/标签词/均衡补短板，缺口≥20% 计分封顶 0.85，最高模块不加持）。
+- **`services/activity_recommender.py`**：四因子 urgency0.30/freetime0.25/personal0.30/hotness0.15（无画像退回三因子）+ MMR；FreeTimeMatcher 已改 schedule_parse 解析。
+- **`scripts/crawl_young.py`**：个人快照（`scripts/data/young_personal/young_snapshot.json`）。

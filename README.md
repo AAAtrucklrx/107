@@ -8,20 +8,24 @@
 
 | 模块 | 能力 |
 |------|------|
-| 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址 |
-| 📊 课业助手 | 成绩查询、课表查询、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
-| 🔍 选课顾问 | 基于 icourse.club 真实评课数据推荐（5667 个课程页 / 4.4 万条评论，不合并同课多师）：真实均分降序、同课多师并列对比、5-6 条真实评论引用，支持画像软过滤与教师分析 |
-| 📅 日程管理 | 日程记录与查询、空闲时间匹配、校团委活动推荐 |
+| 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
+| 📊 课业助手 | 成绩查询、课表查询（节次精确到分钟）、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
+| 🔍 选课顾问 | 基于 icourse.club 真实评课数据推荐（5667 个课程页 / 4.4 万条评论，不合并同课多师）：真实均分降序、同课多师并列对比、5-6 条真实评论引用，支持画像软过滤与教师分析；选课冲突检测（节次/周次级）与退补选压力评估 |
+| 📅 日程管理 | 日程记录与查询（自然语言时间解析："明天下午3点到4点"精确落点）、冲突检测、课表导入 |
+| 🎪 活动推荐 | **青春科大（第二课堂）实时数据**：对话直接查报名中活动；每日弹窗四因子个性化推荐（紧迫度/课表空闲/个性化/热度），个性化=平台兴趣标签+行为学习+**德智体美劳模块学时均衡补短板**；token 失效自动回退本地快照 |
+| 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；侧边栏"校园导航"页收录 19 条官方工具与网站 |
+| 🧩 生态工具 | 学生自制工具投稿接入（Spec + 函数三步，`eco:` 前缀强制署名，见 `tools/ecosystem/README.md`） |
+| 🛡 可靠性 | LLM 平台断网/变慢三层降级：不假死、工具摘要直出、熔断不传染 |
 
-所有降级/模拟数据均带有**来源标识**（实时数据 / 本地缓存 / 模拟数据），保证结果可追溯。
+所有降级/缓存数据均带有**来源标识**（实时数据 / 本地缓存 / 第三方工具），保证结果可追溯。
 
 ## 🛠 技术栈
 
 - **前端/框架**: Streamlit（Web UI）
-- **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮 → act → compose）
-- **知识库**: ChromaDB 向量库 + SentenceTransformer / qwen3-embedding
-- **数据**: SQLite 双库——`database/xiaowo.db`（主库，含 schema 与 seed）+ `data/course_data.db`（评课库，8 表，schema 见 `database/schema_course.sql`，由 `scripts/build_course_db.py` 构建）
-- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、科大 LLM 平台
+- **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮（规则 1-22）→ act → compose；确定性路由兜底）
+- **知识库**: ChromaDB 混合检索（向量 + BM25，维度不匹配自动降级 BM25-only）
+- **数据**: SQLite 双库——`database/xiaowo.db`（主库 + 日程 + 活动偏好）+ `data/course_data.db`（评课库 8 表）；青春科大个人快照 `scripts/data/young_personal/`
+- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、**青春科大 young 平台（协议已逆向，12 个数据方法）**、科大 LLM 平台（降级路由）
 
 ## 🚀 快速开始
 
@@ -34,14 +38,18 @@ pip install -r requirements.txt
 #    LLM_MODEL=deepseek-v4-flash
 #    LLM_EMBEDDING_MODEL=qwen3-embedding
 
-# 3. 构建评课库（选课推荐数据源；已构建则跳过）
+# 3. 构建评课库（选做；一键重爬 SOP 见 scripts/refresh_course_db.py --dry-run）
 python scripts/crawl_icourse.py all   # 全量抓取 icourse.club 评课（断点续爬，可选）
 python scripts/build_course_db.py     # 构建 data/course_data.db（8 表）
 
-# 4. 初始化检查（自动建库 + 知识库校验）
+# 4. （可选）青春科大活动数据：.env 配置 YOUNG_TOKEN（登录 young.ustc.edu.cn
+#    后 F12 → localStorage → pro__Access-Token-zsxc-base 的 value，约 7 天有效）
+python scripts/crawl_young.py         # 生成个人快照（无 token 时活动功能自动降级）
+
+# 5. 初始化检查（自动建库 + 知识库校验）
 python init_check.py
 
-# 5. 启动应用
+# 6. 启动应用
 streamlit run app.py
 ```
 
@@ -52,48 +60,49 @@ streamlit run app.py
 ## 📁 项目结构
 
 ```
-├── agents/          # 智能体（qa/ 统一问答图 + 旧 router/planner/executor 等保留）
-├── tools/           # 工具层（课程/成绩/课表/教室/日程/知识库检索）
-├── services/        # 外部服务（CAS 登录、jw API、校团委 young 平台）
-├── knowledge/       # 知识库文档（data/ 50 篇 md）与向量库
+├── agents/          # 智能体（qa/ 统一问答图 + tool_registry 29 内置工具注册表）
+├── tools/           # 工具层（课程/成绩/课表/日程/选课/官方入口/活动查询 + ecosystem/ 生态工具）
+├── services/        # 外部服务（CAS、jw、青春科大 young 客户端、活动推荐与偏好画像、LLM 熔断）
+├── knowledge/       # 知识库文档（data/ 80 篇 md）与混合检索向量库
 ├── database/        # SQLite schema 与种子数据
-├── ui/              # Streamlit 界面组件
-├── docs/            # 项目文档（dev-log、工具规格、团队材料）
-└── scripts/         # 数据采集与 seed 生成脚本（含真实 catalog 抓取记录）
+├── ui/              # Streamlit 界面（对话/培养方案页/校园导航页/活动弹窗）
+├── config/          # links.yaml 官方链接清单
+├── docs/            # 项目文档（会话交接摘要/接手日志/总纲方案/工具规格/团队材料）
+└── scripts/         # 采集与验证脚本（评课重爬 SOP/青春科大快照/verify_* 回归系列）
 ```
 
 ## 📄 文档
 
-- [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
+- [docs/会话交接摘要.md](docs/会话交接摘要.md) — **会话恢复唯一起点**（事实基准）
+- [docs/接手日志.md](docs/接手日志.md) — 滚动状态与修复日志（⚡ 节为最新）
+- [docs/总纲与工具接口方案.md](docs/总纲与工具接口方案.md) — 总体开发方案（Phase 3-6）
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
+- [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
-- [docs/学习报告.md](docs/学习报告.md) — 项目学习基线（架构/模块详解/风险分级/维护路线图）
+- [docs/学习报告.md](docs/学习报告.md) — 项目学习基线
 
-## ✅ 选课推荐全链路验收
+## ✅ 回归验证（2026-08-22 基线）
 
-选课推荐链路（用户提问 → 意图识别 → 工具推荐 → 综合回答）验收命令与结果（2026-08-13 v3）：
-
-| 步骤 | 命令 | 结果 |
-|------|------|------|
-| 数据完整性校验 | `python scripts/check_course_db.py` | 9/9 通过（5667 个课程页 / 44418 条评论 / 2982 位教师，无孤儿引用、无重复学期）；干净环境重建数据库行数完全一致 |
-| 工具层冒烟测试 | `python scripts/verify_tools.py` | 17/17 断言通过（推荐排序 / 低 workload 筛选 / 教师对比，结果含来源标识） |
-| 智能体链路冒烟测试 | `python scripts/advisor_smoke.py` | 5/5 通过（推荐 / 低 workload / 教师对比 / 澄清 / FAQ 均正确路由） |
-| 浏览器端到端测试 | `python scripts/browser_e2e.py` | 6 场景全部通过（首页 + 5 类提问），截图见 `docs/e2e_v3_*.png` |
-| 初始化回归 | `python init_check.py` | 数据库 + 知识库（80 篇文档 / 769 条向量）初始化正常 |
-| 历史修复回归 | `python scripts/test_fixes.py` | 23/23 通过（排序 / 多师并列 / 评论去重 / 画像理由 / 数据对账） |
-| 节点与决策回归 | `python scripts/verify_nodes.py` | 46/46 通过（画像/会话隔离/确定性路由/工具校验/前缀剥离） |
-| 知识库一致性回归 | `python scripts/qa_consistency.py` | 12/12 通过（数值口径/官方链接透出/工具调用断言，需 LLM） |
-| 新文档综合回归 | `python scripts/qa_new_docs.py` | 10/10 通过（8 篇补录文档问答 + URL 透出，需 LLM） |
-| 流水线验收 | `python -m scripts.dev_pipeline run "选课推荐全链路验收" --executor qoder` | PASS（1 轮），Canvas 报告见 `.qoder/canvases/` |
-
-E2E 覆盖场景：首页、Q1 课程推荐（含评课参考）、Q2 低 workload 筛选、Q3 教师对比、Q4 澄清追问（信息不足时进入 clarify 分支）、Q5 FAQ 兜底（回答带《来源》标注）。评课数据来自 icourse.club 真实评论（`data/course_data.db`），教务模块降级数据均带"实时 / 本地缓存 / 模拟数据"来源标识。
+| 命令 | 结果 |
+|------|------|
+| `python scripts/check_course_db.py` | 9/9（评课库完整性） |
+| `python scripts/verify_tools.py` | 39/39（工具层断言） |
+| `python scripts/test_fixes.py` | 43/43（历史修复回归） |
+| `python scripts/verify_nodes.py` | 46/46（节点/路由/工具校验） |
+| `python scripts/verify_ecosystem.py` | 10/10（生态协议） |
+| `python scripts/verify_links.py` | 12/12（官方链接/入口跳转） |
+| `python scripts/verify_activities.py` | 8/8（活动查询，需 YOUNG_TOKEN，失效自动 SKIP） |
+| `python scripts/verify_profile.py` | 11/11（偏好画像/均衡/快照回退） |
+| `python scripts/qa_consistency.py` / `qa_new_docs.py` | 12/12 · 10/10（需 LLM） |
+| 全模块 UI 问答实测 | 19 问 18 直接通过 + 1 断言误判（答案正确），见 docs/e2e_full_module_test.png |
 
 ### 已知限制
 
-- 评课数据为 icourse.club 抓取快照，新开课程可能暂无评论；样本量过少的课程/教师评分仅供参考（推荐画像会附"样本较少"提示）
-- 课程推荐依赖科大 LLM 平台进行意图分类与回答生成，平台不可用时无法出推荐结果
-- 教师对比中样本量差异较大（1~553 条），均分排序存在小样本偏差，建议结合评论原文判断
-- `scripts/test_fixes.py` 在受限沙箱/CI 下可设环境变量 `XIAOWO_TEST_TMP` 指向既有可写目录（默认仍用系统临时目录）
+- 评课数据为 icourse.club 抓取快照（重爬 SOP：`scripts/refresh_course_db.py`）；样本量过少的课程/教师评分仅供参考
+- 真实 CAS 登录部署需 service 白名单；本地开发用 `app_test.py` 离线路径
+- YOUNG_TOKEN 约 7 天有效期，失效后活动功能自动回退本地快照（来源如实标注）
+- 教师对比样本量差异大（1~553 条），均分排序存在小样本偏差
+- `scripts/test_fixes.py` 受限沙箱下可设 `XIAOWO_TEST_TMP`
 
 ## ⚖️ 说明
 
