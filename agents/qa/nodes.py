@@ -225,7 +225,8 @@ _TOOL_LIST = (
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
     "check_conflict(日程冲突), import_schedule(导入课表), "
     "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突), "
-    "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估)"
+    "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估), "
+    "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL)"
     + _ecosystem_tool_fragment()
 )
 
@@ -302,6 +303,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
 20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
+21. 强操作类诉求（改变官方系统状态的操作：选课/退课/换班/评教提交/缴费/活动报名等，小蜗无权代办）→ 调 render_link(scene=场景) 给出官方入口 URL，并主动提供小蜗能做的辅助（如退课前 evaluate_selection_pressure 模拟、选课前 check_course_conflict 冲突检测）；**URL 只能来自 render_link 返回或知识库来源，禁止自行生成/拼造任何 URL**；render_link 返回 found=false 时如实说不知道入口
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -1417,6 +1419,15 @@ def _build_tool_summary(results: list[dict]) -> str:
                 for c in t["courses"][:60]:
                     lines.append(f"  * {c.get('name', '?')} {c.get('credit', '')}学分 "
                                  f"{c.get('required', '')} [{c.get('category', '')}]")
+        elif tool == "render_link":
+            if res.get("found"):
+                lines.append(f"[{tool}] 官方入口：{res.get('name')} {res.get('url')}"
+                             f"（{res.get('description', '')}，分类 {res.get('category', '')}）。"
+                             f"回答中给出该名称与可点击 URL，说明该操作需在官方系统完成，"
+                             f"并可主动提供小蜗辅助（冲突检测/压力评估等）")
+            else:
+                lines.append(f"[{tool}] {res.get('note', '未找到匹配入口')}——回答时如实说明不知道入口，"
+                             f"禁止编造 URL")
         elif tool.startswith("eco:"):
             # P4-1 生态工具通用分支：首行强制署名，字段逐项展开（不截断成 json 串）
             provider, display = "", ""

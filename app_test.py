@@ -194,6 +194,12 @@ def main():
         st.caption(status_text)
         return
 
+    # ── 校园导航模块：官方工具/网站跳转一览（不走聊天流程） ──
+    if selected_module == "校园导航":
+        from ui.links_page import render_links_page
+        render_links_page()
+        return
+
     # 对话区域
     prompt = render_chat_area()
 

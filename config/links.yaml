@@ -1,0 +1,120 @@
+# 校园官方工具与网站清单（render_link / 校园导航页共用数据源）
+# 约束：条目只收录已核实来源——知识库 80 篇权威文档中的 URL 与代码内实际对接的域名；
+# 禁止在回答中生成此清单之外的 URL（防幻觉）。
+# 字段：name/url/description/category/scene（场景关键词，render_link 匹配用）
+# 分类：教务学习 / 个人事务 / 生活服务 / 就业发展 / 交流升学 / 社区工具
+
+links:
+  - name: 本科生综合教务系统
+    url: https://jw.ustc.edu.cn
+    description: 选课/退课/成绩/课表/考试安排等教务操作（CAS 登录）
+    category: 教务学习
+    scene: [选课, 退课, 退选, 补选, 换班, 课表, 成绩查询, 考试报名, 教务系统, 抢课, 置课]
+
+  - name: 教学质量管理平台（评教）
+    url: https://tqm.ustc.edu.cn
+    description: 课程评教入口（统一身份认证登录后「我的任务」）
+    category: 教务学习
+    scene: [评教, 评价老师, 教学评价, 评课提交]
+
+  - name: 课程目录系统
+    url: https://catalog.ustc.edu.cn
+    description: 全校开课目录、课程检索、教室占用查询
+    category: 教务学习
+    scene: [课程目录, 开课查询, 教室查询, 课头号]
+
+  - name: 教务处官网
+    url: https://www.teach.ustc.edu.cn
+    description: 校历、选课通知、考试安排等教学通知与学习指南
+    category: 教务学习
+    scene: [校历, 选课通知, 教学通知, 学习指南, 教务处]
+
+  - name: 研究生院
+    url: https://grad.ustc.edu.cn
+    description: 研究生培养、招生与学位相关事务
+    category: 交流升学
+    scene: [研究生院, 保研, 推免, 读研]
+
+  - name: 校园缴费平台
+    url: https://revenues.ustc.edu.cn
+    description: 学费/住宿费等各项费用在线缴纳
+    category: 个人事务
+    scene: [缴费, 交学费, 学费缴纳, 住宿费, 交费, 缴纳]
+
+  - name: 财务处官网
+    url: https://finance.ustc.edu.cn
+    description: 收费标准、缴费通知、票据报销等财务信息
+    category: 个人事务
+    scene: [财务处, 报销, 发票, 票据, 收费标准]
+
+  - name: 统一身份认证（CAS）
+    url: https://id.ustc.edu.cn
+    description: 校园统一身份认证登录与密码管理
+    category: 个人事务
+    scene: [统一认证, CAS, 密码, 登录, 账号]
+
+  - name: 学生工作部处（学工部）
+    url: https://stuhome.ustc.edu.cn
+    description: 奖助学金、勤工助学、离校手续等学生事务
+    category: 个人事务
+    scene: [学工部, 学生处, 奖学金, 助学金, 勤工助学, 离校]
+
+  - name: 学生处
+    url: https://sa.ustc.edu.cn
+    description: 学生事务与服务信息
+    category: 个人事务
+    scene: [学生处]
+
+  - name: 图书馆
+    url: https://lib.ustc.edu.cn
+    description: 图书馆馆藏检索、借阅、研讨室预约与开放信息
+    category: 生活服务
+    scene: [图书馆, 借书, 还书, 馆藏, 研讨室, 自习]
+
+  - name: 校医院
+    url: https://hospital.ustc.edu.cn
+    description: 校医院医疗服务与医保相关
+    category: 生活服务
+    scene: [校医院, 看病, 医保, 体检]
+
+  - name: 校团委活动平台（young）
+    url: https://young.ustc.edu.cn
+    description: 校园活动发布与报名、第二课堂
+    category: 生活服务
+    scene: [活动, 第二课堂, 报名活动, 讲座报名]
+
+  - name: 就业指导中心
+    url: https://career.ustc.edu.cn
+    description: 招聘信息、实习岗位、就业指导服务
+    category: 就业发展
+    scene: [就业, 招聘, 实习, 简历, 双选会, 宣讲会]
+
+  - name: 本科招生办公室
+    url: https://zsb.ustc.edu.cn
+    description: 本科招生政策与咨询
+    category: 交流升学
+    scene: [招生, 招办]
+
+  - name: 国际合作与交流部
+    url: https://oic.ustc.edu.cn
+    description: 境内外交流项目（学期交换/暑期研究/联合培养等）
+    category: 交流升学
+    scene: [交流, 交换, 出国, 暑期科研, 联合培养]
+
+  - name: 全国大学英语四六级考试报名（NEEA）
+    url: https://cet-bm.neea.edu.cn
+    description: 四六级考试官方报名入口
+    category: 交流升学
+    scene: [四六级, 英语考试报名, CET]
+
+  - name: 学生学业指导中心
+    url: https://xyzd.ustc.edu.cn
+    description: 学业咨询与学习指导服务
+    category: 教务学习
+    scene: [学业指导, 学业咨询]
+
+  - name: 评课社区 icourse.club
+    url: https://icourse.club
+    description: 学生自办课程评价社区（小蜗评课数据快照来源）
+    category: 社区工具
+    scene: [评课社区, icourse, 课程评价网站]
