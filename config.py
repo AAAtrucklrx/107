@@ -55,3 +55,11 @@ CAS_SERVICE_URL = os.getenv("CAS_SERVICE_URL", "http://localhost:8501")
 # 远期：学校开放官方接口后切换白名单接入（YoungService 已预留 Provider 抽象）
 YOUNG_TOKEN = os.getenv("YOUNG_TOKEN", "")
 YOUNG_PAGE_SIZE = int(os.getenv("YOUNG_PAGE_SIZE", "50"))
+
+# ── 学期常量（每学期开学前只更新这一处；来源：教务处校历 teach.ustc.edu.cn/calendar）──
+# start_date 必须为该学期第一个周一；schedule_tools.import_schedule 等据此对齐课表星期
+SEMESTER = {
+    "name": "2025-2026-2",
+    "start_date": os.getenv("XIAOWO_SEMESTER_START", "2026-02-23"),
+    "total_weeks": 18,
+}

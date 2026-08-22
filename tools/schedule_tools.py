@@ -39,13 +39,18 @@ def _check_conflicts(student_id: str, start_time: str, end_time: str) -> list:
 
 
 def _query_day_events(student_id: str, date_str: str) -> list[dict]:
-    """直接查询某天的日程（供 get_week_view 批量调用，避免通过 tool 循环调用）"""
+    """直接查询某天的日程（供 get_day_view/get_week_view 批量调用）。
+
+    is_recurring=1 语义为"每周 start_time 的星期重复"（课表导入），
+    按星期过滤，避免任意日期混入全部循环事件。
+    """
     events = _db().query(
         """SELECT * FROM events
            WHERE student_id = ?
-           AND (date(start_time) = date(?) OR is_recurring = 1)
+           AND (date(start_time) = date(?) OR
+                (is_recurring = 1 AND strftime('%w', start_time) = strftime('%w', ?)))
            ORDER BY start_time""",
-        (student_id, date_str),
+        (student_id, date_str, date_str),
     )
     return [
         {
@@ -212,67 +217,95 @@ def import_schedule(student_id: str) -> dict:
     """
     从课业助手导入课表数据为重复日程。
 
+    开学日期与学期周数读 config.SEMESTER（每学期只更新一处）；
+    节次→时钟换算复用 utils/course_periods.PERIOD_TIMES（含晚课 11-13 节）；
+    无法解析时间的课程不猜时间、不导入，在 time_unparsed 中如实列出。
+
     Args:
         student_id: 学号
 
     Returns:
-        {"imported_count": N, "courses": [...], "note": "..."}
+        {"imported_count": N, "courses": [...], "time_unparsed": [...], "note": "..."}
     """
+    import re as _re
+    from config import SEMESTER
     from tools.course_tools import query_schedule
+    from utils.schedule_parse import parse_course_time, slot_clock_range
 
-    schedule = query_schedule(student_id=student_id)
+    try:
+        base_date = date.fromisoformat(str(SEMESTER.get("start_date", "")))
+    except ValueError:
+        return {
+            "imported_count": 0,
+            "courses": [],
+            "time_unparsed": [],
+            "error": f"学期配置无效（SEMESTER={SEMESTER}），请检查 config.py",
+        }
+    total_weeks = int(SEMESTER.get("total_weeks", 18))
+
+    schedule = query_schedule.invoke({"student_id": student_id})
     courses = schedule["courses"]
 
-    base_date = date(2026, 2, 23)  # 假设开学日期
-    day_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
-    sections_map = {
-        "1-2": ("08:00", "09:35"),
-        "3-4": ("10:00", "11:35"),
-        "5-6": ("14:00", "15:35"),
-        "7-8": ("16:00", "17:35"),
-    }
+    # 兼容无"第"前缀的节次写法（如"周一3-4节"）后统一交给 parse_course_time；
+    # 排除已带"第"、时钟（含冒号）与列表中段的数字，避免误改"第19:00~19:30节"等变体
+    _add_di = _re.compile(r"(?<![第:\d,，])(\d+(?:[-,，]\d+)*节)")
 
     imported = []
+    time_unparsed = []
     for c in courses:
-        time_str = c.get("time", "")
-        if not time_str:
+        time_str = (c.get("time") or "").strip()
+
+        existing = _db().query(
+            """SELECT id FROM events
+               WHERE student_id=? AND title=? AND source='schedule_import'""",
+            (student_id, c["course_name"]),
+        )
+        if existing:
             continue
 
-        for part in time_str.split(";"):
-            part = part.strip()
-            if not part:
+        slots = parse_course_time(_add_di.sub(r"第\1", time_str)) if time_str else []
+        placed = False
+        for slot in slots:
+            if slot.get("day_num") is None:
                 continue
+            clock = slot_clock_range(slot)
+            if not clock:
+                continue
+            start_hhmm = f"{clock[0] // 60:02d}:{clock[0] % 60:02d}"
+            end_hhmm = f"{clock[1] // 60:02d}:{clock[1] % 60:02d}"
+            # 开学首周内按星期对齐（day_num：周一=1 … 周日=7）
+            event_date = base_date + timedelta(days=slot["day_num"] - 1)
+            _db().execute(
+                """INSERT INTO events
+                   (student_id, title, event_type, start_time, end_time,
+                    location, is_recurring, source)
+                   VALUES (?, ?, 'course', ?, ?, ?, 1, 'schedule_import')""",
+                (
+                    student_id,
+                    c["course_name"],
+                    f"{event_date.isoformat()}T{start_hhmm}:00",
+                    f"{event_date.isoformat()}T{end_hhmm}:00",
+                    c.get("location", ""),
+                ),
+            )
+            placed = True
+        if placed:
+            imported.append(c["course_name"])
+        else:
+            time_unparsed.append(f"{c['course_name']}({time_str or '无时间'})")
 
-            day_name = part[:2]
-            section = part[2:].strip().replace("节", "")
-
-            if day_name in day_map:
-                times = sections_map.get(section, ("08:00", "09:35"))
-                event_date = base_date + timedelta(days=day_map[day_name])
-
-                existing = _db().query(
-                    """SELECT id FROM events
-                       WHERE student_id=? AND title=? AND source='schedule_import'""",
-                    (student_id, c["course_name"]),
-                )
-                if not existing:
-                    _db().execute(
-                        """INSERT INTO events
-                           (student_id, title, event_type, start_time, end_time,
-                            location, is_recurring, source)
-                           VALUES (?, ?, 'course', ?, ?, ?, 1, 'schedule_import')""",
-                        (
-                            student_id,
-                            c["course_name"],
-                            f"{event_date.isoformat()}T{times[0]}:00",
-                            f"{event_date.isoformat()}T{times[1]}:00",
-                            c.get("location", ""),
-                        ),
-                    )
-                    imported.append(c["course_name"])
+    if imported:
+        note = f"已导入 {len(imported)} 门课程，时间范围为第1-{total_weeks}周，每周重复"
+    elif time_unparsed:
+        note = "没有新增可导入的课程"
+    else:
+        note = "课程已全部导入"
+    if time_unparsed:
+        note += "；以下课程时间无法解析，未导入：" + "、".join(time_unparsed)
 
     return {
         "imported_count": len(imported),
         "courses": imported,
-        "note": f"已导入 {len(imported)} 门课程，时间范围为第1-18周，每周重复" if imported else "课程已全部导入",
+        "time_unparsed": time_unparsed,
+        "note": note,
     }
