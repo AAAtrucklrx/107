@@ -196,6 +196,22 @@ _MODULE_HINT_MIN_SCORE = 0.5  # embedding 分类置信度低于此值才参考�
 
 # ── 可用工具清单（think 决策参考） ────────────────────
 
+def _ecosystem_tool_fragment() -> str:
+    """生态工具清单片段（动态，加载失败返回空串不影响静态清单）。"""
+    try:
+        from tools.ecosystem import ecosystem_specs
+        parts = []
+        for s in ecosystem_specs():
+            props = (s.get("params_schema") or {}).get("properties") or {}
+            req = (s.get("params_schema") or {}).get("required") or []
+            arg_hint = ", ".join(
+                f"{k}{'必填' if k in req else '可选'}" for k in props) or "无参数"
+            parts.append(f"{s['name']}({s['display_name']}·第三方工具, 参数: {arg_hint}, {s['description']})")
+        return (", " + ", ".join(parts)) if parts else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 _TOOL_LIST = (
     "search_faq(知识库检索), get_faq_categories(知识库分类), "
     "query_schedule(课表), query_daily_schedule(某天课表), find_empty_room(空教室), "
@@ -210,6 +226,7 @@ _TOOL_LIST = (
     "check_conflict(日程冲突), import_schedule(导入课表), "
     "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突), "
     "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估)"
+    + _ecosystem_tool_fragment()
 )
 
 
@@ -284,6 +301,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
+20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -1027,6 +1045,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 引用知识库信息时标注来源（如「来源：《学生证补办流程》」）；非官方信息注明仅供参考
 - 候选片段携带官方来源（candidates_summary 中 "来源:..." 字段，通常是「官方文档标题：https://...」的行）时，在回答末尾附上一行「相关：」并给出可点击的官方网址（把 URL 用 Markdown 链接或原文展示，便于用户跳转核实）。若片段来源列为非官方，则不附链接并注明仅供参考
 - 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
+- 工具结果含"第三方工具 · XX 提供"（eco: 前缀生态工具）时：回答必须保留该提供者署名并注明"仅供参考"，不得表述为小蜗或官方数据
 - 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
 - 数据表格用 Markdown 展示，回答简洁有条理
 - 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有「必修组/选修组」分组时必须先完整展示必修组、再展示选修组；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
@@ -1398,6 +1417,29 @@ def _build_tool_summary(results: list[dict]) -> str:
                 for c in t["courses"][:60]:
                     lines.append(f"  * {c.get('name', '?')} {c.get('credit', '')}学分 "
                                  f"{c.get('required', '')} [{c.get('category', '')}]")
+        elif tool.startswith("eco:"):
+            # P4-1 生态工具通用分支：首行强制署名，字段逐项展开（不截断成 json 串）
+            provider, display = "", ""
+            try:
+                from tools.ecosystem import ecosystem_specs
+                for s in ecosystem_specs():
+                    if s.get("name") == tool:
+                        provider, display = str(s.get("provider", "")), str(s.get("display_name", ""))
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+            head = f"[{tool}] {display}（第三方工具 · {provider or '未知提供者'} 提供，仅供参考）:"
+            if res.get("error"):
+                lines.append(head + f" 执行失败——{res['error']}")
+            else:
+                lines.append(head)
+                for k, v in res.items():
+                    if k == "source":
+                        continue
+                    if isinstance(v, (str, int, float, bool)):
+                        lines.append(f"- {k}: {v}")
+                    elif isinstance(v, (list, dict)):
+                        lines.append(f"- {k}: {json.dumps(v, ensure_ascii=False)[:400]}")
         elif res.get("message"):
             lines.append(f"[{tool}] {res['message']}")
         else:

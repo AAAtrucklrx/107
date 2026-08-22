@@ -54,4 +54,13 @@ def _build_tool_registry() -> dict:
         "check_course_conflict": check_course_conflict,
         "evaluate_selection_pressure": evaluate_selection_pressure,
     }
+
+    # P4-1 生态工具：Spec 驱动自动注册（tools/ecosystem/，eco: 前缀）；
+    # 加载失败只拒载单个工具，不影响内置注册表
+    try:
+        from tools.ecosystem import load_ecosystem_tools
+        registry.update(load_ecosystem_tools())
+    except Exception as e:  # noqa: BLE001
+        print(f"[tool_registry] 生态工具加载失败（忽略）: {e}")
+
     return registry

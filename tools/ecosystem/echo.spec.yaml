@@ -1,0 +1,18 @@
+name: eco:echo
+display_name: "回显示例工具"
+provider: "小蜗开发组（协议自检用例）"
+description: "回显输入内容的示例生态工具，用于验证注册协议全链路（注册→think 决策调用→摘要署名）。仅在用户明确要求测试生态工具时调用。"
+version: "1.0.0"
+permission: read_only
+auth_required: false
+params_schema:
+  type: object
+  properties:
+    message:
+      type: string
+      description: "要回显的内容"
+  required: [message]
+result_schema:
+  type: object
+  required: [echo, source]
+source_hint: "第三方工具（协议自检）·小蜗开发组"
