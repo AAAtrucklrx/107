@@ -49,6 +49,26 @@ def ensure_tables(db=None) -> None:
         ts TEXT DEFAULT CURRENT_TIMESTAMP)""")
 
 
+# 模块字母 → 五育名（平台 item_module 字典：d德 z智 t体 m美 l劳，实测 2026-08-22）
+_MODULE_MAP = {"d": "德", "z": "智", "t": "体", "m": "美", "l": "劳"}
+_PERIOD_FIELDS = {"德": "periodVirtue", "智": "periodWisdom", "体": "periodBody",
+                  "美": "periodPretty", "劳": "periodWork"}
+
+
+def load_module_hours(student_id: str) -> dict[str, float]:
+    """从 young 快照读本学年各模块学时（德智体美劳；myInformation 页同源数据）。"""
+    try:
+        if SNAPSHOT_FILE.exists():
+            snap = json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))
+            prof = snap.get("profile") or {}
+            if student_id and str(prof.get("username", "")) == student_id:
+                return {name: float(prof.get(f) or 0.0)
+                        for name, f in _PERIOD_FIELDS.items()}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"读取模块学时失败: {e}")
+    return {}
+
+
 def load_platform_labels(student_id: str) -> tuple[list[dict], str]:
     """从 young 快照读平台兴趣标签（无快照/token 失效时返回空）。"""
     try:
@@ -82,14 +102,16 @@ def get_profile(db, student_id: str) -> dict:
                 "INSERT OR REPLACE INTO activity_preferences (student_id, labels, snapshot_at) VALUES (?, ?, ?)",
                 (student_id, json.dumps(snap_labels, ensure_ascii=False), fetched_at))
             log.info(f"活动画像（重）冷启动 {student_id}：平台标签 {len(snap_labels)} 个")
-            return {"student_id": student_id, "labels": snap_labels, "snapshot_at": fetched_at}
-        if not row:
+            labels = snap_labels
+        elif not row:
             db.execute(
                 "INSERT OR REPLACE INTO activity_preferences (student_id, labels, snapshot_at) VALUES (?, ?, ?)",
                 (student_id, "[]", ""))
-        return {"student_id": student_id, "labels": [], "snapshot_at": row.get("snapshot_at", "") if row else ""}
 
-    return {"student_id": student_id, "labels": labels, "snapshot_at": row.get("snapshot_at", "")}
+    hours = load_module_hours(student_id)
+    return {"student_id": student_id, "labels": labels,
+            "snapshot_at": (row.get("snapshot_at", "") if row else ""),
+            "module_hours": hours}
 
 
 def record_interaction(db, student_id: str, activity: dict | object, action: str) -> None:
@@ -137,7 +159,11 @@ def label_names(profile: dict) -> list[str]:
 def personal_score(activity, profile: dict, weights: dict[str, float]) -> tuple[float, str]:
     """个性化因子 0~1 + 理由。
 
-    组成：行为权重（类别/主办方命中取最大）；平台标签词命中活动名/简介。
+    组成（取最大者）：
+    1. 行为权重（类别/主办方命中）；
+    2. 平台标签词命中活动名/简介；
+    3. 均衡补短板（用户要求"注意均衡"）：活动所属模块学时越低加分越高，
+       推荐低学时模块（德智体美劳）活动以助平衡发展。
     """
     name = (getattr(activity, "name", "") or "")
     desc = (getattr(activity, "description", "") or "")
@@ -156,4 +182,21 @@ def personal_score(activity, profile: dict, weights: dict[str, float]) -> tuple[
         lab_score = min(1.0, 0.5 + 0.15 * len(hit_labels))
         if lab_score > best:
             best, reason = lab_score, f"匹配你的兴趣标签「{hit_labels[0]}」"
+
+    # 均衡补短板：模块学时缺口归一化（缺口/最高模块学时），封顶 0.85
+    hours = profile.get("module_hours") or {}
+    module_letter = (getattr(activity, "module", "") or "").strip().lower()
+    module_name = _MODULE_MAP.get(module_letter, "")
+    if hours and module_name and module_name in hours:
+        hmax = max(hours.values())
+        cur = hours.get(module_name, 0.0)
+        if hmax > 0:
+            gap = (hmax - cur) / hmax
+            if gap >= 0.2:  # 缺口 ≥20% 才值得提示，避免微小差距噪音
+                balance = round(min(0.85, 0.3 + gap * 0.55), 4)
+                low = min(hours, key=hours.get)
+                if balance > best:
+                    best, reason = balance, (
+                        f"补足「{module_name}」模块学时（当前 {cur:g}h，"
+                        f"最高模块「{max(hours, key=hours.get)}」{hmax:g}h，最低「{low}」{hours[low]:g}h）")
     return round(best, 4), reason

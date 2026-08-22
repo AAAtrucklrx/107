@@ -79,6 +79,21 @@ def main() -> int:
     s2, r2 = ap.personal_score(_B, {"labels": [{"name": "文学文艺"}]}, {})
     check("personal_score 标签词命中", s2 >= 0.5 and "文学文艺" in r2, f"{s2} {r2}")
 
+    # 4.5) 均衡补短板：低学时模块活动得分+理由，最高模块不加持
+    class _Act:
+        def __init__(self, module, name="测试活动"):
+            self.module, self.name = module, name
+            self.description, self.organizer, self.category = "", "", ""
+    hours = {"德": 16.0, "智": 17.5, "体": 24.0, "美": 17.5, "劳": 40.0}
+    prof_bal = {"labels": [], "module_hours": hours}
+    s_low, r_low = ap.personal_score(_Act("d"), prof_bal, {})
+    check("均衡-低模块（德）得分且理由含补足", s_low >= 0.5 and "补足「德」" in r_low, f"{s_low} {r_low}")
+    s_top, r_top = ap.personal_score(_Act("l"), prof_bal, {})
+    check("均衡-最高模块（劳）不加持", s_top == 0.0 and r_top == "", f"{s_top} {r_top}")
+    prof_load = ap.load_module_hours("PB25111691")
+    check("load_module_hours 快照读取", abs(sum(prof_load.values()) - 115.0) < 0.01 or not prof_load,
+          f"{prof_load}")
+
     # 5) 四因子推荐（真实活动 + 真课表）
     container = ServiceContainer()
     container.init_database(config.DATABASE_PATH, config.SCHEMA_PATH)
