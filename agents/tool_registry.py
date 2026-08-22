@@ -26,6 +26,7 @@ def _build_tool_registry() -> dict:
         check_course_conflict, evaluate_selection_pressure,
     )
     from tools.link_tools import render_link
+    from tools.activity_tools import query_activities
 
     registry = {
         "search_faq": search_faq,
@@ -55,6 +56,7 @@ def _build_tool_registry() -> dict:
         "check_course_conflict": check_course_conflict,
         "evaluate_selection_pressure": evaluate_selection_pressure,
         "render_link": render_link,
+        "query_activities": query_activities,
     }
 
     # P4-1 生态工具：Spec 驱动自动注册（tools/ecosystem/，eco: 前缀）；

@@ -17,7 +17,6 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-from utils.course_periods import parse_periods, periods_to_range
 
 try:
     from services.young_client import YoungActivity
@@ -26,10 +25,11 @@ except ImportError:  # 独立测试时使用
 
 # 三因子权重（紧迫度 / 空闲匹配 / 热度）
 WEIGHTS = {"urgency": 0.40, "freetime": 0.35, "hotness": 0.25}
+# P4-C 四因子权重（传入个性化画像 personal_profile 时启用，否则自动退回三因子）
+WEIGHTS_PERSONAL = {"urgency": 0.30, "freetime": 0.25, "hotness": 0.15, "personal": 0.30}
 # MMR 多样性强度（越大越看重相关度，越小越分散）
 MMR_LAMBDA = 0.7
 
-_DAY_PATTERN = re.compile(r":(\d)\(([^)]+)\)")
 
 
 # ── 课表空闲匹配 ──────────────────────────────────
@@ -43,19 +43,27 @@ class FreeTimeMatcher:
 
     @classmethod
     def from_db(cls, db, student_id: str) -> "FreeTimeMatcher":
-        """从 student_courses 表构建（time 字段如 "1~18周 5301 :3(3,4)"）"""
+        """从 student_courses 表构建（time 字段如 "周二 11~12周 第3,4节"）。
+
+        2026-08-22 修复：原正则只认旧格式（冒号+数字+括号节次，如 "1~18周 5301 :3(3,4)"），
+        与现行 jw 格式永不相配 → 空闲因子恒中性；改用统一时间解析器 schedule_parse。
+        """
+        from utils.schedule_parse import normalize_time_str, parse_course_time, slot_clock_range
+
         rows = db.query("SELECT time FROM student_courses WHERE student_id = ?",
                         (student_id,))
         by_weekday: dict[int, list[tuple[str, str]]] = {}
         for r in rows:
             time_str = r.get("time", "") or ""
-            for day_no, periods_str in _DAY_PATTERN.findall(time_str):
-                periods = parse_periods(periods_str)
-                tr = periods_to_range(periods) if periods else None
-                if not tr:
+            for slot in parse_course_time(normalize_time_str(time_str)):
+                if not slot.get("day_num"):
                     continue
-                iso_weekday = int(day_no) % 7 or 7  # 1=周一..7=周日
-                by_weekday.setdefault(iso_weekday, []).append((tr["start"], tr["end"]))
+                clock = slot_clock_range(slot)
+                if not clock:
+                    continue
+                pair = (f"{clock[0] // 60:02d}:{clock[0] % 60:02d}",
+                        f"{clock[1] // 60:02d}:{clock[1] % 60:02d}")
+                by_weekday.setdefault(slot["day_num"], []).append(pair)
         return cls(by_weekday)
 
     @staticmethod
@@ -184,7 +192,9 @@ def recommend(activities: list["YoungActivity"],
               matcher: Optional[FreeTimeMatcher] = None,
               now: Optional[datetime] = None,
               top_n: int = 3,
-              lambda_: float = MMR_LAMBDA) -> list[dict]:
+              lambda_: float = MMR_LAMBDA,
+              personal_profile: Optional[dict] = None,
+              personal_weights: Optional[dict] = None) -> list[dict]:
     """
     综合推荐：规则加权 + MMR 多样性重排。
 
@@ -205,10 +215,18 @@ def recommend(activities: list["YoungActivity"],
     if not candidates:
         return []
 
-    # 2. 三因子打分
+    # 2. 因子打分（三因子；传入画像时叠加 personal 因子）
     urgency = [score_urgency(a, now) for a in candidates]
     freetime = [score_freetime(a, matcher, now) for a in candidates]
     hot = [score_hotness(a) for a in candidates]
+    personal: list[float] = []
+    personal_reasons: list[str] = []
+    if personal_profile is not None:
+        from services.activity_profile import personal_score
+        pw = personal_weights or {}
+        scored = [personal_score(a, personal_profile, pw) for a in candidates]
+        personal = [s for s, _ in scored]
+        personal_reasons = [r for _, r in scored]
 
     # 3. 热度 min-max 归一化
     hmin, hmax = min(hot), max(hot)
@@ -216,9 +234,14 @@ def recommend(activities: list["YoungActivity"],
     if hmax > hmin:
         norm_hot = [(h - hmin) / (hmax - hmin) for h in hot]
 
-    total = [WEIGHTS["urgency"] * u + WEIGHTS["freetime"] * f
-             + WEIGHTS["hotness"] * h
-             for u, f, h in zip(urgency, freetime, norm_hot)]
+    if personal_profile is not None:
+        total = [WEIGHTS_PERSONAL["urgency"] * u + WEIGHTS_PERSONAL["freetime"] * f
+                 + WEIGHTS_PERSONAL["hotness"] * h + WEIGHTS_PERSONAL["personal"] * p
+                 for u, f, h, p in zip(urgency, freetime, norm_hot, personal)]
+    else:
+        total = [WEIGHTS["urgency"] * u + WEIGHTS["freetime"] * f
+                 + WEIGHTS["hotness"] * h
+                 for u, f, h in zip(urgency, freetime, norm_hot)]
 
     # 4. MMR 贪心重排：λ*相关度 - (1-λ)*与已选最大相似度
     selected: list[int] = []
@@ -240,10 +263,14 @@ def recommend(activities: list["YoungActivity"],
     result = []
     for i in selected:
         act = candidates[i]
+        reason = _build_reason(act, now, matcher)
+        if personal_profile is not None and personal_reasons[i]:
+            reason = (reason + f"；{personal_reasons[i]}") if reason else personal_reasons[i]
         result.append({
             "activity": act,
             "score": round(total[i], 4),
-            "reason": _build_reason(act, now, matcher),
+            "reason": reason,
+            "personal": round(personal[i], 3) if personal_profile is not None else None,
         })
     return result
 

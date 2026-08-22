@@ -29,7 +29,7 @@ _PERSONAL_TOOLS = frozenset({
     "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa",
     "query_exam", "query_course_selection", "query_program",
     "add_event", "get_day_view", "get_week_view", "check_conflict", "import_schedule",
-    "check_course_conflict", "evaluate_selection_pressure",
+    "check_course_conflict", "evaluate_selection_pressure", "query_activities",
 })
 
 
@@ -226,7 +226,8 @@ _TOOL_LIST = (
     "check_conflict(日程冲突), import_schedule(导入课表), "
     "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突), "
     "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估), "
-    "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL)"
+    "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL), "
+    "query_activities(青春科大第二课堂活动查询, 参数 keyword=关键词 category=分类 time_window=即将截止/周末/本周 limit=条数, 实时返回报名中活动)"
     + _ecosystem_tool_fragment()
 )
 
@@ -304,6 +305,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
 20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
 21. 强操作类诉求（改变官方系统状态的操作：选课/退课/换班/评教提交/缴费/活动报名等，小蜗无权代办）→ 调 render_link(scene=场景) 给出官方入口 URL，并主动提供小蜗能做的辅助（如退课前 evaluate_selection_pressure 模拟、选课前 check_course_conflict 冲突检测）；**URL 只能来自 render_link 返回或知识库来源，禁止自行生成/拼造任何 URL**；render_link 返回 found=false 时如实说不知道入口
+22. 活动/第二课堂问句（"有什么活动/讲座/志愿可以报名"、"最近有什么活动"、"周末有什么活动"、"XX月X日有什么活动"）→ 调 query_activities（可带 keyword/category/time_window 过滤），如实转述返回的活动（名称/主办方/时间/报名截止），不得编造活动或修改时间；活动报名本身是强操作，追问报名入口时按规则 21 给 render_link
 
 ## 输出格式（严格 JSON）
 {{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
@@ -1419,6 +1421,16 @@ def _build_tool_summary(results: list[dict]) -> str:
                 for c in t["courses"][:60]:
                     lines.append(f"  * {c.get('name', '?')} {c.get('credit', '')}学分 "
                                  f"{c.get('required', '')} [{c.get('category', '')}]")
+        elif tool == "query_activities" and isinstance(res.get("activities"), list):
+            acts = res["activities"]
+            lines.append(f"[{tool}] 报名中活动 {res.get('count')}/{res.get('total_enrolment')} 条"
+                         f"（{_src(res)}，拉取于 {res.get('fetched_at', '')}）:")
+            for a in acts[:12]:
+                dl = f"，报名截止 {a.get('apply_end')}" if a.get("apply_end") else ""
+                lines.append(f"- {a.get('name', '?')} | {a.get('organizer', '')} | "
+                             f"{a.get('category', '')} | {a.get('start', '')}~{a.get('end', '')}{dl} | "
+                             f"人数 {a.get('people_num', 0)} | 工时 {a.get('service_hour', '')}")
+            lines.append("  （转述要求：逐条如实呈现名称/主办方/时间/报名截止，不得增删编造；报名入口见 render_link/young.ustc.edu.cn）")
         elif tool == "render_link":
             if res.get("found"):
                 lines.append(f"[{tool}] 官方入口：{res.get('name')} {res.get('url')}"

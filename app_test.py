@@ -88,7 +88,17 @@ def maybe_show_activity_recommendation():
         if not activities:
             return
         matcher = FreeTimeMatcher.from_db(container.db, user["id"])
-        recs = recommend(activities, matcher=matcher)
+        # P4-C：四因子个性化推荐（平台标签冷启动 + 行为权重）+ shown 埋点
+        from services.activity_profile import behavior_weights, get_profile, record_interaction
+        profile = get_profile(container.db, user["id"])
+        pw = behavior_weights(container.db, user["id"])
+        recs = recommend(activities, matcher=matcher,
+                         personal_profile=profile, personal_weights=pw)
+        for r_ in recs:
+            try:
+                record_interaction(container.db, user["id"], r_["activity"], "shown")
+            except Exception:
+                pass
         mark_shown(user["id"])
         show_activity_dialog(recs, activities)
     except Exception as e:

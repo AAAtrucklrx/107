@@ -104,3 +104,21 @@ CREATE TABLE IF NOT EXISTS chat_history (
     module TEXT,
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- 活动偏好画像（P4-C：青春科大个性化推荐）
+CREATE TABLE IF NOT EXISTS activity_preferences (
+    student_id TEXT PRIMARY KEY,
+    labels TEXT DEFAULT '[]',            -- 平台兴趣标签 [{id, name}]
+    snapshot_at TEXT DEFAULT ''          -- 画像取自快照时间
+);
+
+-- 活动行为流水（shown 弹窗曝光 / clicked 查看 / asked 对话追问 / favorited 收藏）
+CREATE TABLE IF NOT EXISTS activity_interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id TEXT NOT NULL,
+    activity_id TEXT DEFAULT '',
+    activity_name TEXT DEFAULT '',
+    action TEXT NOT NULL,
+    category TEXT DEFAULT '',
+    organizer TEXT DEFAULT '',
+    ts TEXT DEFAULT CURRENT_TIMESTAMP
+);
