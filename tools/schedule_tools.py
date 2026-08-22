@@ -227,10 +227,9 @@ def import_schedule(student_id: str) -> dict:
     Returns:
         {"imported_count": N, "courses": [...], "time_unparsed": [...], "note": "..."}
     """
-    import re as _re
     from config import SEMESTER
     from tools.course_tools import query_schedule
-    from utils.schedule_parse import parse_course_time, slot_clock_range
+    from utils.schedule_parse import normalize_time_str, parse_course_time, slot_clock_range
 
     try:
         base_date = date.fromisoformat(str(SEMESTER.get("start_date", "")))
@@ -246,10 +245,6 @@ def import_schedule(student_id: str) -> dict:
     schedule = query_schedule.invoke({"student_id": student_id})
     courses = schedule["courses"]
 
-    # 兼容无"第"前缀的节次写法（如"周一3-4节"）后统一交给 parse_course_time；
-    # 排除已带"第"、时钟（含冒号）与列表中段的数字，避免误改"第19:00~19:30节"等变体
-    _add_di = _re.compile(r"(?<![第:\d,，])(\d+(?:[-,，]\d+)*节)")
-
     imported = []
     time_unparsed = []
     for c in courses:
@@ -263,7 +258,8 @@ def import_schedule(student_id: str) -> dict:
         if existing:
             continue
 
-        slots = parse_course_time(_add_di.sub(r"第\1", time_str)) if time_str else []
+        # 兼容无"第"前缀的节次写法（如"周一3-4节"）后统一交给 parse_course_time
+        slots = parse_course_time(normalize_time_str(time_str)) if time_str else []
         placed = False
         for slot in slots:
             if slot.get("day_num") is None:

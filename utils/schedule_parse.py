@@ -28,6 +28,17 @@ _WEEKS_RE = re.compile(r"(\d+(?:\s*[~\-—至,，]\s*\d+)*)\s*周")
 _PERIODS_RE = re.compile(r"第([0-9,，\-]+)\s*节")
 _CLOCK_RE = re.compile(r"(\d{1,2}:\d{2})\s*[~\-—至]\s*(\d{1,2}:\d{2})")
 
+# 无"第"前缀的节次写法（如"周一3-4节"）；lookbehind 排除已带"第"、时钟（含冒号）
+# 与列表中段的数字，避免误改"第19:00~19:30节"等时钟变体
+_ADD_DI_RE = re.compile(r"(?<![第:\d,，])(\d+(?:[-,，]\d+)*节)")
+
+
+def normalize_time_str(time_str: str) -> str:
+    """为无"第"前缀的节次写法补"第"（"周一3-4节"→"周一第3-4节"），供 parse_course_time 统一解析。"""
+    if not time_str:
+        return time_str
+    return _ADD_DI_RE.sub(r"第\1", time_str)
+
 
 def _to_minutes(hhmm: str) -> int:
     """'09:45' → 585"""

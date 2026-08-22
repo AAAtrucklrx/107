@@ -280,7 +280,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
-16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略
+16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略；调用 query_daily_schedule/get_day_view 时，问句中的"周X/明天/后天"等日期词必须解析后作为 date/date_str 传参，不得缺省为今天
 17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
@@ -410,6 +410,17 @@ def _teacher_course_route(state: QaState) -> dict | None:
     }
 
 
+def _is_dayview_query(query: str) -> bool:
+    """周X/明天 + 安排/课/日程的疑问句（如"周四晚上有什么安排"）→ 直连日课表。"""
+    has_day = any(d in query for d in (
+        "周一", "周二", "周三", "周四", "周五", "周六", "周日", "周天", "明天", "后天"))
+    if not has_day:
+        return False
+    has_topic = any(k in query for k in ("安排", "课", "日程"))
+    has_ask = any(w in query for w in ("什么", "哪些", "几门", "几节", "？", "?", "吗", "嘛"))
+    return has_topic and has_ask
+
+
 def _direct_tool_route(state: QaState) -> dict | None:
     """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
 
@@ -433,6 +444,34 @@ def _direct_tool_route(state: QaState) -> dict | None:
                 entry = (t, kws)
                 break
     if not entry:
+        # 2026-08-22 增补：周X/明天+安排/课 问句确定性直连日课表。think 偶发把
+        # 该类问句漂移到 get_day_view 且不解析日期（缺省今天），导致"周四晚上
+        # 有什么安排"答成"今天(周六)无事件"；query_daily_schedule 直接读课表
+        # 并输出精确时钟，是该类问句的主诉求。
+        if _is_dayview_query(query):
+            day_tool = "query_daily_schedule"
+            results = state.get("tool_results") or []
+            if any(r.get("tool") == day_tool and r.get("status") == "done" for r in results):
+                return {
+                    "decision": "compose",
+                    "tool_calls": [],
+                    "thought_log": (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "compose",
+                        "reason": f"确定性路由工具 {day_tool} 已有结果，直接合成",
+                    }],
+                }
+            args = {}
+            date_phrase = _extract_date_phrase(query)
+            if date_phrase:
+                args["date"] = date_phrase
+            return {
+                "decision": "call_tool",
+                "tool_calls": [{"tool": day_tool, "args": args}],
+                "thought_log": (state.get("thought_log") or []) + [{
+                    "round": rounds + 1, "decision": "call_tool",
+                    "reason": f"确定性路由(日课表)→{day_tool}(date={args.get('date', '')})",
+                }],
+            }
         return None
     tool, keywords = entry
     if not any(k in query for k in keywords):
@@ -1206,9 +1245,16 @@ def _build_tool_summary(results: list[dict]) -> str:
         elif tool in ("query_schedule", "query_daily_schedule") and isinstance(res.get("courses"), list):
             courses = res["courses"]
             lines.append(f"[{tool}] 共 {len(courses)} 门课（{_src(res)}，{res.get('semester', '')}）:")
-            for c in courses[:80]:
-                lines.append(f"- {c.get('course_name', '?')} {c.get('teacher', '')} "
-                             f"{c.get('time', '')} {c.get('location', '')}")
+            if tool == "query_daily_schedule":
+                # 某天课表：优先展示换算后的精确时钟（避免"第19:00~19:30节"原始串被误读为节次号）
+                for c in courses[:80]:
+                    clock = f"{c.get('start_time', '')}~{c.get('end_time', '')}" if c.get("start_time") else "时间未解析"
+                    lines.append(f"- {clock} {c.get('course_name', '?')} {c.get('teacher', '')} "
+                                 f"{c.get('location', '')}（{c.get('periods', '')} {c.get('weeks', '')}）")
+            else:
+                for c in courses[:80]:
+                    lines.append(f"- {c.get('course_name', '?')} {c.get('teacher', '')} "
+                                 f"{c.get('time', '')} {c.get('location', '')}")
         elif tool == "query_course_selection" and isinstance(res.get("selections"), list):
             sels = res["selections"]
             lines.append(f"[{tool}] 共 {len(sels)} 门已选课程（含上课时间与地点，供冲突/压力判断）:")

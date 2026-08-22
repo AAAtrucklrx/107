@@ -459,33 +459,31 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
         return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
                 "courses": [], "count": 0, "source": "locked", "message": _LOGIN_MSG}
 
+    from utils.schedule_parse import normalize_time_str, parse_course_time, slot_clock_range
+
     rows = _db().query(
         "SELECT * FROM student_courses WHERE student_id = ?", (sid,))
     courses = []
     for r in rows:
         time_str = r.get("time", "") or ""
-        # 解析 time 中所有 ":N(节次)" 段，判断课程是否在目标星期
-        day_matches = _re.findall(r":(\d)\(([^)]+)\)", time_str)
-        periods_this_day = []
-        for dn, ps in day_matches:
-            if _DAY_MAP.get(dn) == weekday:
-                for p in ps.split(","):
-                    p = p.strip()
-                    if p.isdigit() and 1 <= int(p) <= 13:
-                        periods_this_day.append(int(p))
-        if not periods_this_day:
-            continue
-        time_range = periods_to_range(sorted(set(periods_this_day)))
-        courses.append({
-            "course_code": r.get("course_code", ""),
-            "course_name": r.get("course_name", ""),
-            "teacher": r.get("teacher", ""),
-            "location": r.get("location", ""),
-            "time": time_str,
-            "start_time": time_range["start"] if time_range else "",
-            "end_time": time_range["end"] if time_range else "",
-            "periods": time_range["periods_text"] if time_range else "",
-        })
+        # 统一时间解析器（兼容 jw/备份/时钟变体），按目标星期取该课的排课时段
+        slots = parse_course_time(normalize_time_str(time_str))
+        for slot in slots:
+            if slot.get("day") != weekday:
+                continue
+            clock = slot_clock_range(slot)
+            periods = slot.get("periods") or []
+            courses.append({
+                "course_code": r.get("course_code", ""),
+                "course_name": r.get("course_name", ""),
+                "teacher": r.get("teacher", ""),
+                "location": r.get("location", ""),
+                "time": time_str,
+                "start_time": f"{clock[0] // 60:02d}:{clock[0] % 60:02d}" if clock else "",
+                "end_time": f"{clock[1] // 60:02d}:{clock[1] % 60:02d}" if clock else "",
+                "periods": f"第{','.join(str(p) for p in periods)}节" if periods else "",
+                "weeks": slot.get("weeks_raw", ""),
+            })
     return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
             "courses": courses, "count": len(courses), "source": "fallback",
             "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
