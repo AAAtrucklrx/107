@@ -137,10 +137,16 @@ class EncryptedHttpProvider(BaseYoungProvider):
 
     def fetch_enrolment_activities(self, page_size: int = 50) -> list[YoungActivity]:
         """拉取“报名中”活动列表（翻页取满，最多 MAX_PAGES 页；不足一页即停止）。"""
+        return self._fetch_item_list("/mobile/item/enrolmentList", page_size)
+
+    def fetch_end_activities(self, page_size: int = 50) -> list[YoungActivity]:
+        """拉取“已结束”活动列表（2026-08-22 实测打通，字段与报名中同构）。"""
+        return self._fetch_item_list("/mobile/item/endList", page_size)
+
+    def _fetch_item_list(self, path: str, page_size: int) -> list[YoungActivity]:
         activities: list[YoungActivity] = []
         for page_no in range(1, self.MAX_PAGES + 1):
-            data = self._get("/mobile/item/enrolmentList",
-                             {"pageNo": page_no, "pageSize": page_size})
+            data = self._get(path, {"pageNo": page_no, "pageSize": page_size})
             records = (data.get("result") or {}).get("records") or []
             for r in records:
                 activities.append(YoungActivity(
@@ -165,6 +171,56 @@ class EncryptedHttpProvider(BaseYoungProvider):
                 break
         return activities
 
+    # ── 个人数据接口（2026-08-22 用真实账号实打通；token 需有效） ──────────
+
+    def fetch_my_profile(self) -> dict:
+        """个人档案：五维成绩（德智体美劳）、工时、社团/组织树、班级等。"""
+        data = self._get("/paramdesign/scMyInfo/info")
+        return data.get("result") or {}
+
+    def fetch_my_labels(self) -> list[dict]:
+        """个人兴趣标签（用户在平台自选，推荐画像的官方偏好信号）。
+
+        返回 [{"id", "name", "chosen_at"}]；标签名由平台标签字典解码。
+        """
+        chosen = self._get("/paramdesign/scMyLabel/allLabel").get("result") or []
+        catalog = self._get("/paramdesign/scLabel/queryListLabel").get("result") or []
+        id2name = {c.get("id"): (c.get("labelName") or c.get("name") or "")
+                   for c in catalog if isinstance(c, dict)}
+        return [{
+            "id": m.get("labelId", ""),
+            "name": id2name.get(m.get("labelId"), ""),
+            "chosen_at": m.get("createTime", ""),
+        } for m in chosen if isinstance(m, dict)]
+
+    def fetch_my_favorites(self, page_size: int = 50) -> list[dict]:
+        """已收藏活动（id/名称等最小字段；完整信息可按 id 对齐公开列表）。"""
+        data = self._get("/item/scItemFavorite/myList", {"pageNo": 1, "pageSize": page_size})
+        records = (data.get("result") or {}).get("records") or []
+        return [{
+            "item_id": r.get("itemId", ""),
+            "name": r.get("itemName", ""),
+            "fav_at": r.get("createTime", ""),
+        } for r in records if isinstance(r, dict)]
+
+    def fetch_my_followed_depts(self, page_size: int = 50) -> list[dict]:
+        """已关注组织/社团（偏好信号）。"""
+        data = self._get("/item/scDeptFavorite/myList", {"pageNo": 1, "pageSize": page_size})
+        records = (data.get("result") or {}).get("records") or []
+        return [{
+            "dept_id": r.get("deptId", r.get("businessDeptId", "")),
+            "name": r.get("deptName", r.get("businessDeptName", "")),
+            "fav_at": r.get("createTime", ""),
+        } for r in records if isinstance(r, dict)]
+
+    def fetch_tobe_involved(self, page_size: int = 50) -> list[dict]:
+        """待参与列表（已报名、尚未开始的项目；type 参数必传，语义待积累）。"""
+        data = self._get("/personal/scExperience/tobeInvolvedList",
+                         {"type": 0, "pageNo": 1, "pageSize": page_size})
+        records = (data.get("result") or {}).get("records") or []
+        return [{k: r.get(k) for k in ("id", "itemId", "itemName", "name", "st", "et", "state")}
+                for r in records if isinstance(r, dict)]
+
 
 class YoungService:
     """入口：按配置选择数据源 Provider（测试期 token 方式，预留官方 API 切换）"""
@@ -180,3 +236,34 @@ class YoungService:
         if self.provider is None:
             raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
         return self.provider.fetch_enrolment_activities(page_size)
+
+    # 个人数据/已结束列表：委托给 Provider（协议实现见 EncryptedHttpProvider）
+    def fetch_end_activities(self, page_size: int = 50) -> list[YoungActivity]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_end_activities(page_size)
+
+    def fetch_my_profile(self) -> dict:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_my_profile()
+
+    def fetch_my_labels(self) -> list[dict]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_my_labels()
+
+    def fetch_my_favorites(self, page_size: int = 50) -> list[dict]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_my_favorites(page_size)
+
+    def fetch_my_followed_depts(self, page_size: int = 50) -> list[dict]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_my_followed_depts(page_size)
+
+    def fetch_tobe_involved(self, page_size: int = 50) -> list[dict]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_tobe_involved(page_size)
