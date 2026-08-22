@@ -24,6 +24,8 @@ LLM_CONFIG = {
     "temperature": 0.3,
     "max_tokens": 2048,
     "timeout": 30,
+    # 平台故障快速失败：0＝不重试，1＝重试一次（最多 2 次尝试）；P3-2 降级路由配套
+    "max_retries": int(os.getenv("LLM_MAX_RETRIES", "1")),
 }
 
 # ── Embedding 配置 ────────────────────────────

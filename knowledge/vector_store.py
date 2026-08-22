@@ -20,6 +20,9 @@ THRESHOLD_MAP = {"api": 0.42, "local": 0.35, "fallback": 0.25}
 
 RRF_K = 60
 
+# P3-2：进程级嵌入器缓存（FAQVectorStore 非单例，避免多实例重复探测/加载模型）
+_EMBEDDER_CACHE: dict = {}
+
 
 class FAQVectorStore:
     """FAQ 知识库向量存储"""
@@ -66,20 +69,30 @@ class FAQVectorStore:
         return self._embedding_model
 
     def _init_embedding(self):
-        # 策略1: OpenAI 兼容 API
-        try:
+        # P3-2：嵌入器模块级缓存（FAQVectorStore 非单例，历史上每个实例都重新
+        # 探测 API —— 断网时每次探测 ~21s 防火墙丢包超时，一问可撞多次）
+        cached = _EMBEDDER_CACHE.get("shared")
+        if cached is not None:
+            self._embed_method = cached[1]
+            return cached[0]
+
+        from utils.llm_client import llm_circuit_open
+
+        def _cache(model, method):
+            _EMBEDDER_CACHE["shared"] = (model, method)
+            self._embed_method = method
+            return model
+
+        # 策略1: OpenAI 兼容 API（熔断窗内直接跳过探测）
+        if not llm_circuit_open() and self._probe_embedding_api():
             from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
             ef = OpenAIEmbeddingFunction(
                 api_key=LLM_CONFIG["api_key"],
                 api_base=LLM_CONFIG["base_url"],
                 model_name=EMBEDDING_CONFIG["api_model"],
             )
-            ef(["test"])
-            self._embed_method = "api"
             log.info("Embedding: API 模式")
-            return _APIEmbedder(ef)
-        except Exception as e1:
-            log.warning(f"Embedding API 不可用: {e1}")
+            return _cache(_APIEmbedder(ef), "api")
 
         # 策略2: 本地 SentenceTransformer
         try:
@@ -88,16 +101,37 @@ class FAQVectorStore:
                 EMBEDDING_CONFIG["model_name"],
                 device=EMBEDDING_CONFIG["device"],
             )
-            self._embed_method = "local"
             log.info("Embedding: 本地模型模式")
-            return model
+            return _cache(model, "local")
         except Exception as e2:
             log.warning(f"Embedding 本地模型不可用: {e2}")
 
         # 策略3: 关键词 fallback
         log.info("Embedding: 关键词 fallback 模式")
-        self._embed_method = "fallback"
-        return _KeywordEmbedder()
+        return _cache(_KeywordEmbedder(), "fallback")
+
+    @staticmethod
+    def _probe_embedding_api(timeout: float = 5.0) -> bool:
+        """API 可用性探测（短超时、不重试），替代直接 ef(["test"]) 的长撞墙。
+
+        仅连接级失败（平台不可达）才开熔断窗；读超时等瞬时失败只降级本进程
+        的 embedding 模式选择，不殃及后续 LLM 调用。
+        """
+        try:
+            import openai
+            client = openai.OpenAI(
+                base_url=LLM_CONFIG["base_url"],
+                api_key=LLM_CONFIG["api_key"],
+                timeout=timeout,
+                max_retries=0,
+            )
+            client.embeddings.create(model=EMBEDDING_CONFIG["api_model"], input=["test"])
+            return True
+        except Exception as e:
+            from utils.llm_client import mark_llm_down_if_unreachable
+            mark_llm_down_if_unreachable(e)
+            log.warning(f"Embedding API 不可用（{timeout}s 探测失败）: {e}")
+            return False
 
     def _collection_dim(self) -> int | None:
         """现有集合的 embedding 维度（无数据返回 None）。"""
@@ -136,6 +170,48 @@ class FAQVectorStore:
         )
         self._invalidate_bm25()
 
+    def _bm25_only_search(self, query: str, top_k: int, reason: str = "") -> dict:
+        """向量检索不可用时的 BM25-only 降级检索（P3-2）。
+
+        BM25 索引建立在集合存储文档上，与向量维度无关；结果带
+        search_mode="bm25" 与 message 说明，调用方可据此标注降级来源。
+        """
+        try:
+            bm25 = self._get_bm25_index()
+            tokens = _tokenize_cjk(query)
+            if bm25 is None or not tokens:
+                return {"found": False, "results": [], "top_score": 0.0,
+                        "mismatch": True, "message": reason or "向量检索不可用且无 BM25 索引"}
+            scored = sorted(zip(self._bm25_ids, bm25.get_scores(tokens)), key=lambda kv: -kv[1])
+            positive = [doc_id for doc_id, s in scored if s > 0]
+            ranked = (positive or [doc_id for doc_id, _ in scored])[:top_k]
+            if not ranked:
+                return {"found": False, "results": [], "top_score": 0.0,
+                        "mismatch": True, "message": reason}
+            fetched = self.collection.get(ids=ranked)
+            id_to_doc = dict(zip(fetched["ids"], fetched["documents"]))
+            id_to_meta = dict(zip(fetched["ids"], fetched["metadatas"])) if fetched["metadatas"] else {}
+            score_map = dict(scored)
+            results = []
+            for doc_id in ranked:
+                meta = id_to_meta.get(doc_id) or {}
+                results.append({
+                    "id": doc_id,
+                    "content": id_to_doc.get(doc_id, ""),
+                    "score": round(float(score_map.get(doc_id, 0.0)), 4),
+                    "source": meta.get("source", "未知来源"),
+                    "category": meta.get("category", "其他"),
+                    "subcategory": meta.get("subcategory", ""),
+                    "is_official": meta.get("is_official", True),
+                    "title": meta.get("title", ""),
+                })
+            return {"found": bool(positive), "results": results,
+                    "top_score": results[0]["score"] if results else 0.0,
+                    "search_mode": "bm25", "message": reason}
+        except Exception as e:
+            log.warning(f"BM25-only 降级检索失败: {e}")
+            return {"found": False, "results": [], "top_score": 0.0, "mismatch": True}
+
     def search(self, query: str, top_k: int = FAQ_TOP_K) -> dict:
         if not query.strip() or self.collection.count() == 0:
             return {"found": False, "results": [], "top_score": 0.0}
@@ -149,11 +225,13 @@ class FAQVectorStore:
         cdim = self._collection_dim()
         if cdim is not None and cdim != qdim:
             # 维度不匹配（如 API embedding 建的 4096D 集合遇本地 768D 降级）：
-            # 优雅返回空结果而非崩溃，提示全量重建
+            # P3-2 起降级为 BM25-only 检索（索引建立在集合文档上，与向量维度无关），
+            # 不再直接返回空结果——断网/维度不匹配时知识库仍可关键词检索
             log.warning(
                 f"Embedding 维度不匹配（集合 {cdim}D vs 当前 {qdim}D），"
-                f"知识库检索暂不可用，请运行 rebuild_kb.py --yes 重建")
-            return {"found": False, "results": [], "top_score": 0.0, "mismatch": True}
+                f"降级为 BM25 关键词检索（如需恢复语义检索请运行 rebuild_kb.py --yes 重建）")
+            return self._bm25_only_search(
+                query, top_k, reason=f"向量检索不可用（维度不匹配 {cdim}D/{qdim}D），已降级为关键词检索")
         try:
             raw = self.collection.query(
                 query_embeddings=query_embedding,
@@ -162,9 +240,9 @@ class FAQVectorStore:
         except Exception as e:
             if "dimension" in str(e).lower():
                 log.warning(
-                    f"Embedding 维度不匹配（查询失败），知识库检索暂不可用，"
-                    f"请运行 rebuild_kb.py --yes 重建: {e}")
-                return {"found": False, "results": [], "top_score": 0.0, "mismatch": True}
+                    f"Embedding 维度不匹配（查询失败），降级为 BM25 关键词检索: {e}")
+                return self._bm25_only_search(
+                    query, top_k, reason="向量检索不可用（查询失败），已降级为关键词检索")
             raise
         vec_ids: list[str] = []
         vec_scores: dict[str, float] = {}

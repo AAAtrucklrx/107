@@ -525,6 +525,14 @@ def think(state: QaState) -> dict:
     intent = state.get("intent") or "知识问答"
     rounds = state.get("rounds") or 0
 
+    # P3-2 熔断：本轮问答内 LLM 已失败过 → 不再尝试 LLM，直接走确定性规则，
+    # 避免多轮每轮都等超时（断网时 think ≤4 轮叠加分钟级假死）
+    if state.get("llm_down"):
+        log.info("think: LLM 已熔断（本轮此前失败），直接确定性规则")
+        fb = _think_fallback(state)
+        fb["llm_down"] = True
+        return fb
+
     # 敏感词/闲聊快速通道（不依赖 LLM，稳定拒绝与回应）
     # 守卫：intent 命中敏感类且问题含敏感词才拒绝，避免 embedding 误分类
     # （如"补考成绩怎么记载"被归入敏感类）把正常教务问题误拒绝
@@ -623,7 +631,11 @@ def think(state: QaState) -> dict:
         return update
     except Exception as e:
         log.warning(f"think LLM 决策失败，降级为确定性规则: {e}")
-        return _think_fallback(state)
+        from utils.llm_client import mark_llm_down_if_unreachable
+        mark_llm_down_if_unreachable(e)  # 仅连接级失败开熔断窗（读超时不动窗）
+        fb = _think_fallback(state)
+        fb["llm_down"] = True  # 熔断标记：本轮后续轮次不再尝试 LLM
+        return fb
 
 
 def _parse_json_loose(text: str) -> dict | None:
@@ -644,12 +656,29 @@ def _parse_json_loose(text: str) -> dict | None:
     return None
 
 
+def _keyword_intent_fix(query: str, intent: str) -> str:
+    """P3-2：embedding 意图分类不可用（平台断/误分类）时的关键词兜底。
+
+    只在高置信词命中时覆盖，宁缺毋滥；顺序敏感（导入类先行）。
+    """
+    if "导入" in query and "课" in query:
+        return "日程管理"  # 课表导入日程（import_schedule）
+    if any(k in query for k in ("课表", "有哪些课", "什么课", "上课时间", "哪天有课")):
+        return "查课表"
+    if any(k in query for k in ("日程", "待办", "备忘")):
+        return "日程管理"
+    if any(k in query for k in ("推荐", "选课建议", "选什么课")):
+        return "选课推荐"
+    return intent
+
+
 def _think_fallback(state: QaState) -> dict:
     """确定性规则降级：已有可用结果直接合成；否则按意图选择工具计划"""
     intent = state.get("intent") or "知识问答"
     query = state.get("query", "")
     student_id = state.get("student_id") or ""
     rounds = state.get("rounds") or 0
+    intent = _keyword_intent_fix(query, intent)
 
     # 已有可用工具结果（如 search_faq 命中）则收敛直接合成，避免重复检索
     results = state.get("tool_results") or []
@@ -820,6 +849,8 @@ def _plan_schedule(query: str, student_id: str) -> list[dict]:
                 "end_time": iso_format(parsed["date"], parsed["period_end"]),
             }}]
 
+    if any(k in query for k in ("导入", "同步")) and "课" in query:
+        return [{"tool": "import_schedule", "args": args}]
     if any(k in query for k in ("这周", "本周", "忙不忙", "一周")):
         return [{"tool": "get_week_view", "args": args}]
     return [{"tool": "get_day_view", "args": args}]
@@ -1033,6 +1064,12 @@ def compose(state: QaState) -> dict:
     tool_summary = _build_tool_summary(results)
     candidates_summary = _build_candidates_summary(candidates)
 
+    # P3-2 熔断：本轮 think 阶段 LLM 已失败 → 合成层不再尝试连接（省一次超时等待）
+    if state.get("llm_down"):
+        log.info("compose: LLM 已熔断（本轮此前失败），直接输出降级摘要")
+        return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates),
+                "error": error or "LLM 不可用（熔断降级）"}
+
     try:
         llm = create_llm(temperature=0.3)
         prompt = ChatPromptTemplate.from_messages([
@@ -1050,12 +1087,41 @@ def compose(state: QaState) -> dict:
         answer = _strip_rule_prefix(response.content)
         if not (answer or "").strip():
             log.warning("compose LLM 返回空回答，降级为结果格式化")
-            return {"answer": _fallback_answer(results, candidates),
+            return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates,
+                                               note="LLM 返回空回答"),
                     "error": error or "LLM 返回空回答"}
         return {"answer": answer, "error": error}
     except Exception as e:
         log.warning(f"QA 综合回答 LLM 失败，降级为结果格式化: {e}")
-        return {"answer": _fallback_answer(results, candidates), "error": error or f"LLM 不可用: {e}"}
+        from utils.llm_client import mark_llm_down_if_unreachable
+        mark_llm_down_if_unreachable(e)  # 仅连接级失败开熔断窗（读超时不动窗）
+        return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates),
+                "error": error or f"LLM 不可用: {e}"}
+
+
+def _llm_down_answer(tool_summary: str, candidates_summary: str,
+                     results: list[dict], candidates: list[dict], note: str = "") -> str:
+    """P3-2 LLM 不可用时的合成层降级：工具摘要/候选摘要原文直出 + 顶部固定提示。
+
+    优先用 _build_tool_summary/_build_candidates_summary 的定制化摘要（按工具类型
+    完整呈现），退化路径与旧 _fallback_answer 一致（无任何结果时如实说明）。
+    """
+    body = ""
+    if tool_summary and tool_summary.strip():
+        body = tool_summary.strip()
+        if candidates_summary and candidates_summary.strip():
+            body += f"\n\n{candidates_summary.strip()}"
+    elif candidates_summary and candidates_summary.strip():
+        body = candidates_summary.strip()
+    else:
+        fallback = _fallback_answer(results, candidates)
+        if fallback == "抱歉，我暂时无法回答这个问题，请换个说法试试。":
+            return fallback
+        body = fallback
+    head = "⚠️ LLM 服务暂不可用，以下为工具/知识库原始结果（未经整理，仅供参考）："
+    if note:
+        head += f"（{note}）"
+    return f"{head}\n\n{body}"
 
 
 # 规则特征词：LLM 偶发把 system 指令续写在回答开头，用于识别并剥离

@@ -24,6 +24,7 @@ class QaState(TypedDict):
     tool_results: list[dict]  # 工具执行结果 [{tool, result, status}]
     rounds: int  # 已执行工具轮次（上限 4）
     thought_log: list[dict]  # think 决策记录 [{round, decision, reason}]
+    llm_down: bool  # P3-2 熔断标记：本轮内 LLM 已失败，后续轮次直接确定性规则
     clarify_question: str  # clarify 决策时向用户提出的追问
     answer: str  # 最终回答
     error: str  # 异常/错误信息（如 LLM API 不可用）
