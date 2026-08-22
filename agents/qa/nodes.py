@@ -141,20 +141,56 @@ def _load_personal_tree(student_id: str | None = None):
 
 
 def _enrich_add_event_args(args: dict, state: QaState) -> None:
-    """add_event 参数兜底：LLM 常只传标题漏传时间，从原始问题用 time_parser 解析补齐。
+    """add_event 参数兜底：时间缺失或非 ISO（如 LLM 原样传"明天下午3点"）时，
+    从原始问题用 time_parser 解析补齐/纠正。
 
-    轮1 实测（2026-08-15）：首调缺 start_time/end_time 报 validation error，
-    依赖规则 12 重试浪费一轮；此处直接补齐避免。"""
-    if args.get("start_time") and args.get("end_time"):
+    轮1 实测（2026-08-15）：首调缺 start_time/end_time 报 validation error；
+    2026-08-22 实测：LLM 传了非 ISO 原文，add_event 报"时间格式无效"且规则 12
+    重试仍原样——故按格式校验而非仅判缺失。"""
+    from datetime import datetime as _dt
+
+    def _valid(v) -> bool:
+        try:
+            _dt.fromisoformat(str(v))
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    if _valid(args.get("start_time")) and _valid(args.get("end_time")):
         return
     query = state.get("query") or ""
     try:
         from utils.time_parser import iso_format, parse_natural_time
+        s_bad = not _valid(args.get("start_time"))
+        e_bad = not _valid(args.get("end_time"))
+        if not (s_bad or e_bad):
+            return
         parsed = parse_natural_time(query)
-        if not args.get("start_time"):
+        if s_bad:
             args["start_time"] = iso_format(parsed["date"], parsed["period_start"])
-        if not args.get("end_time"):
+        if e_bad:
             args["end_time"] = iso_format(parsed["date"], parsed["period_end"])
+
+        # 精确时钟提取："下午3点到4点" → 15:00~16:00（优于时段整体 14:00~18:00）
+        import re as _re
+        m = _re.search(
+            r"(上午|下午|晚上)?(\d{1,2})[点时](?:.{0,8}?(上午|下午|晚上)?(\d{1,2})[点时])?", query)
+
+        def _hour(ampm, h: str) -> int:
+            n = int(h)
+            if ampm in ("下午", "晚上") and n < 12:
+                n += 12
+            return n
+
+        if m:
+            h1 = _hour(m.group(1), m.group(2))
+            h2 = _hour(m.group(3) or m.group(1), m.group(4)) if m.group(4) else h1 + 1
+            d = parsed["date"].isoformat()
+            if 0 <= h1 < 24:
+                args["start_time"] = f"{d}T{h1:02d}:00:00"
+            if 0 < h2 <= 24:
+                args["end_time"] = (f"{d}T{h2:02d}:00:00" if h2 < 24 else f"{d}T23:59:00")
+        log.info(f"add_event 时间兜底生效: {args.get('start_time')} ~ {args.get('end_time')}")
     except Exception as e:
         log.warning(f"add_event 时间解析兜底失败: {e}")
 

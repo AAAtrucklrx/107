@@ -24,7 +24,8 @@ CASES = [
     ("大学生研究计划做完有多少学分？", "4", None, None),
     ("大一结束后怎么转专业？", "全校范围", None, None),
     ("缓考怎么申请？", "考前", None, None),
-    ("90分对应的绩点是多少？", "4.0", "3.7", None),
+    # 禁词用正则：仅禁止把 90 分错误映射为 3.7（完整对照表含 85~89→3.7 属正确信息）
+    ("90分对应的绩点是多少？", "4.0", r"90.{0,6}(对应|是|→).{0,3}3\.7", None),
     ("大一要上什么体育课？", "基础体育", None, None),
     ("形势与政策怎么考核？", "二等级制", None, None),
     # 本轮补录新增（2026-08-16 知识库补录 + 官方链接注入）
@@ -51,7 +52,11 @@ for q, want, banned, expect_tool in CASES:
     if want is not None:
         ok = ok and want in ans
     if banned is not None:
-        ok = ok and banned not in ans
+        if ".*" in banned:  # 正则禁词：抓"错误映射"类模式，不误伤正确对照表
+            import re as _re
+            ok = ok and not _re.search(banned, ans)
+        else:
+            ok = ok and banned not in ans
     if expect_tool is not None:
         ok = ok and expect_tool in tools
     if not ok:
