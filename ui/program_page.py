@@ -108,31 +108,85 @@ def _term_sort_key(c):
     return (0, 0) if not m else (1, int(m.group(1)))
 
 
-# ── 选课顾问联动（Phase 1b）────────────────────────
+# ── 选课顾问联动（Phase 1b 点评 + P5-3 结构化三按钮）────────────────────────
+_ADD_COURSE_KEY = "_p53_add_course"
+
 
 def _ask_xiaowo(course_name: str) -> None:
-    """点击课程「问问小蜗」：切到选课顾问模块并自动发起该课程的问答。"""
+    """点击课程「点评」：切到选课顾问模块并自动发起该课程的问答。"""
     st.session_state["pending_query"] = f"「{course_name}」这门课怎么样？老师评价如何？"
     st.session_state["module_switch"] = "选课顾问"
     st.rerun()
 
 
-def _course_ask_buttons(courses: list[dict], prefix: str) -> None:
-    """课程表下方渲染「💬 问问小蜗」按钮组（每行 4 个），点击后联动选课顾问。"""
+def _ask_recommend(course_name: str) -> None:
+    """P5-3 推荐：结构化注入 analyze_teacher(course=课程名) → 同课多师均分对比。"""
+    st.session_state["pending_query"] = f"推荐「{course_name}」同课多师对比"
+    st.session_state["pending_force_calls"] = [
+        {"tool": "analyze_teacher", "args": {"course": course_name}}]
+    st.session_state["module_switch"] = "选课顾问"
+    st.rerun()
+
+
+def _ask_conflict(course_name: str) -> None:
+    """P5-3 查冲突：结构化注入 check_course_conflict(course_names=[课程名])。"""
+    st.session_state["pending_query"] = f"「{course_name}」与会已选课程有无冲突？"
+    st.session_state["pending_force_calls"] = [
+        {"tool": "check_course_conflict", "args": {"course_names": [course_name]}}]
+    st.session_state["module_switch"] = "选课顾问"
+    st.rerun()
+
+
+def _open_add_event(name: str) -> None:
+    st.session_state[_ADD_COURSE_KEY] = name
+
+
+@st.dialog("➕ 加入日程", width="small")
+def _add_event_dialog(course_name: str):
+    """P5-3 加日程：填 开始/结束时间（必填）+ 可选地点 → 结构化注入 add_event。"""
+    title = st.text_input("事件标题", value=course_name)
+    start = st.text_input("开始时间 (YYYY-MM-DDTHH:MM)", key="p53_start")
+    end = st.text_input("结束时间 (YYYY-MM-DDTHH:MM)", key="p53_end")
+    loc = st.text_input("地点（可选）", key="p53_loc")
+    if st.button("确认添加"):
+        if not start or not end:
+            st.warning("请同时填写开始与结束时间")
+            return
+        args = {"title": title or course_name, "start_time": start, "end_time": end}
+        if loc:
+            args["location"] = loc
+        st.session_state["pending_query"] = f"把「{title or course_name}」加入日程"
+        st.session_state["pending_force_calls"] = [{"tool": "add_event", "args": args}]
+        st.session_state["module_switch"] = "选课顾问"
+        st.session_state[_ADD_COURSE_KEY] = ""
+        st.rerun()
+
+
+def _course_action_buttons(courses: list[dict], prefix: str) -> None:
+    """课程表下方「每门课一行」动作按钮组：课程名 | 点评 | 推荐 | 查冲突 | 加日程。
+
+    按课程编号区分的课程对象；多师公共课当普通课程处理（不按老师拆分）。
+    """
     named = [c for c in courses if c.get("name")]
     if not named:
         return
-    st.caption("💡 点击课程可让选课顾问直接点评该课程：")
-    cols = st.columns(4)
+    st.caption("💡 每门课可选：点评 / 推荐（同课多师对比）/ 查冲突 / 加日程")
     for i, c in enumerate(named):
-        with cols[i % 4]:
-            st.button(
-                f"💬 {c['name']}",
-                key=f"ask_{prefix}_{i}",
-                use_container_width=True,
-                on_click=_ask_xiaowo,
-                args=(c["name"],),
-            )
+        cols = st.columns([3, 1, 1, 1, 1])
+        with cols[0]:
+            st.markdown(f"**{c['name']}**")
+        with cols[1]:
+            st.button("💬点评", key=f"ask_{prefix}_{i}",
+                      use_container_width=True, on_click=_ask_xiaowo, args=(c["name"],))
+        with cols[2]:
+            st.button("👍推荐", key=f"rec_{prefix}_{i}",
+                      use_container_width=True, on_click=_ask_recommend, args=(c["name"],))
+        with cols[3]:
+            st.button("⚠️冲突", key=f"cf_{prefix}_{i}",
+                      use_container_width=True, on_click=_ask_conflict, args=(c["name"],))
+        with cols[4]:
+            st.button("➕日程", key=f"add_{prefix}_{i}",
+                      use_container_width=True, on_click=_open_add_event, args=(c["name"],))
 
 
 # ── 各子页 ─────────────────────────────────────────
@@ -180,7 +234,7 @@ def _render_my_program(program: dict):
             use_container_width=True,
             hide_index=True,
         )
-        _course_ask_buttons(courses, f"prog_{cat}")
+        _course_action_buttons(courses, f"prog_{cat}")
 
 
 def _render_semester_plan(program: dict, major: str, grade: str, tree, year_index: int):
@@ -217,7 +271,7 @@ def _render_semester_plan(program: dict, major: str, grade: str, tree, year_inde
                 use_container_width=True,
                 hide_index=True,
             )
-            _course_ask_buttons(courses, f"plan_{tag}_{year_index}")
+            _course_action_buttons(courses, f"plan_{tag}_{year_index}")
 
 
 def _render_progress(progress: dict, is_logged_in: bool):
@@ -258,7 +312,7 @@ def _render_progress(progress: dict, is_logged_in: bool):
                 use_container_width=True,
                 hide_index=True,
             )
-            _course_ask_buttons(remaining_sorted, "gap")
+            _course_action_buttons(remaining_sorted, "gap")
         else:
             st.success("🎉 必修课程已全部修完！")
 
@@ -345,6 +399,11 @@ def render_program_page(container) -> None:
         _render_semester_plan(program, major, grade, tree, int(year_index))
     with tabs[2]:
         _render_progress(progress, is_logged_in)
+
+    # P5-3 加日程弹窗：任一课程点「➕日程」后在本 run 末打开（结构化注入 add_event）
+    add_course = st.session_state.pop(_ADD_COURSE_KEY, None)
+    if add_course:
+        _add_event_dialog(add_course)
 
 
 def _estimate_years(courses: list) -> int:

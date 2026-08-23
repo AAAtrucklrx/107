@@ -544,6 +544,19 @@ def think(state: QaState) -> dict:
     intent = state.get("intent") or "知识问答"
     rounds = state.get("rounds") or 0
 
+    # P5-3 结构化注入：方案页按钮预置的 tool_calls 直达 act（不经 LLM 覆盖），
+    # act 层 existing enrich（student_id/推荐参数/事件时间兜底）照常生效。
+    forced = state.get("tool_calls")
+    if forced:
+        return {
+            "decision": "call_tool",
+            "tool_calls": forced,
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "call_tool",
+                "reason": f"方案页按钮结构化注入（{forced[0].get('tool', '')}）",
+            }],
+        }
+
     # P3-2 熔断：本轮问答内 LLM 已失败过 → 不再尝试 LLM，直接走确定性规则，
     # 避免多轮每轮都等超时（断网时 think ≤4 轮叠加分钟级假死）
     if state.get("llm_down"):
