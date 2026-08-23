@@ -222,6 +222,10 @@ def render_chat_area():
     # 显示历史消息
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
+            for card in (msg.get("cards") or []):
+                rendered = _render_card(card)
+                if rendered:
+                    st.markdown(rendered)
             st.markdown(msg["content"])
             if "timestamp" in msg:
                 st.caption(msg["timestamp"])
@@ -240,14 +244,116 @@ def render_chat_area():
     return None
 
 
-def add_assistant_message(content: str):
-    """添加助手消息到对话历史"""
-    now = datetime.now().strftime("%H:%M")
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": content,
-        "timestamp": now,
-    })
+# ── P5-1 工具结果卡片：UI 层从 tool_results 数据通道渲染，与 LLM 摘要解耦 ──
+_CARD_TOOLS = ("recommend_courses", "compare_courses", "check_course_conflict", "get_program_progress")
+
+
+def _extract_cards(tool_results):
+    """从 tool_results（[{tool,status,result}]）取最后一张完成的卡片工具。"""
+    if not tool_results:
+        return None
+    for entry in reversed(tool_results):
+        tool = entry.get("tool")
+        if tool in _CARD_TOOLS and entry.get("status") == "done" and isinstance(entry.get("result"), dict):
+            return [{"type": tool, "data": entry["result"]}]
+    return None
+
+
+def _render_card(card):
+    """把结构化工具结果渲染为 markdown 卡片；异常/缺数据返回 None 走纯文本降级。"""
+    t = card["type"]
+    d = card["data"]
+    try:
+        if t == "compare_courses":
+            # advisor_tools.compare_courses → {course_a, course_b, comparison:{...}}
+            a, b = d.get("course_a"), d.get("course_b")
+            cmp_ = d.get("comparison") or {}
+            if not a or not b:
+                return None
+            lines = ["| 维度 | {a} | {b} |".format(a=a.get("name", ""), b=b.get("name", "")),
+                     "|---|---|---|"]
+            for label, x, y in (
+                ("评分", a.get("rating_avg", ""), b.get("rating_avg", "")),
+                ("评价数", a.get("rate_count", ""), b.get("rate_count", "")),
+                ("学分", a.get("credit", ""), b.get("credit", "")),
+                ("开课", "、".join(a.get("terms") or []), "、".join(b.get("terms") or [])),
+            ):
+                lines.append(f"| {label} | {x} | {y} |")
+            head = "### ⚖️ 课程对比\n"
+            if cmp_.get("suggestion"):
+                head += f"\n*{cmp_['suggestion']}*\n"
+            return head + "\n".join(lines)
+
+        if t == "get_program_progress":
+            # program_tools.get_program_progress →
+            #   {required_total, required_taken, percent,
+            #    required_remaining:[{code,name,credit,term,category}], modules_progress:[...]}
+            total = d.get("required_total") or 0
+            done = d.get("required_taken") or 0
+            pct = d.get("percent")
+            if pct is None:
+                pct = round(done * 100 / total) if total else 0
+            pct = int(round(pct))
+            bar = "#" * min(20, pct // 5) + "-" * (20 - min(20, pct // 5))
+            head = f"### 🎯 培养方案进度 {done}/{total}（{pct}%）\n`{bar}`"
+            gaps = d.get("required_remaining") or []
+            if gaps:
+                lines = ["\n**缺口清单：**"]
+                for g in gaps:
+                    k = f"[{g.get('category','')}]" if g.get("category") else ""
+                    lines.append(f"- {g.get('name', '')}（{g.get('credit', '')}学分·{g.get('term', '?')}{k}）")
+                return head + "\n" + "\n".join(lines[:25])
+            return head
+
+        if t == "check_course_conflict":
+            # selection_tools.check_course_conflict →
+            #   {courses, conflicts:[{course_a,course_b,day,a_time,b_time,reason,weeks_unknown}], conflict_count}
+            confs = d.get("conflicts") or []
+            head = "### ⚠️ 选课冲突检查\n"
+            if not confs:
+                return head + "无冲突，安排合理 ✅"
+            lines = []
+            for c in confs:
+                wu = "（周次未知，保守判定）" if c.get("weeks_unknown") else ""
+                lines.append(f"- **{c.get('course_a', '')}** ⚔️ **{c.get('course_b', '')}** "
+                             f"`{c.get('day', '?')}` {c.get('reason', '时间重叠')}{wu}")
+            return head + "\n".join(lines)
+
+        if t == "recommend_courses":
+            # advisor_tools.recommend_courses →
+            #   {recommendations, groups:{required,elective}, total_candidates}
+            # item 字段: name/credit/teachers/rating_avg/rate_count/program_hint（无 reason 字段）
+            body = "### 📚 选课推荐\n"
+            groups = d.get("groups") or {}
+            for label, key in (("必修", "required"), ("选修", "elective")):
+                items = groups.get(key) or []
+                if not items:
+                    continue
+                body += f"\n**{label}组（{len(items)}门）**\n"
+                for it in items:
+                    teachers = "、".join(x.get("name", "") for x in (it.get("teachers") or [])[:2]) or "未知"
+                    hint = (it.get("program_hint") or {}).get("program", "")
+                    line = (f"- **{it.get('name', '')}**（{it.get('credit', '')}学分）| {teachers} | "
+                            f"{it.get('rating_avg', '')}分·{it.get('rate_count', '')}评论")
+                    if hint:
+                        line += f" | {hint[:30]}"
+                    body += line + "\n"
+            found = d.get("total_candidates")
+            body += f"\n> 候选 {found if found is not None else 'N/A'} 门（本卡仅结构化概览，细则见正文回答）"
+            return body
+    except Exception:
+        return None
+    return None
+
+
+def add_assistant_message(content: str, tool_results=None):
+    """添加助手消息到对话历史（可选携带 tool_results 以渲染工具结果卡片）"""
+    now = datetime.now().strftime("%H:%M:%S")
+    msg = {"role": "assistant", "content": content, "timestamp": now}
+    cards = _extract_cards(tool_results)
+    if cards:
+        msg["cards"] = cards
+    st.session_state.messages.append(msg)
 
 
 def show_thinking_indicator():

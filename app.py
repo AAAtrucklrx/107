@@ -36,7 +36,7 @@ def init_services() -> ServiceContainer:
     return container
 
 
-def process_query(user_input: str, selected_module: str) -> str:
+def process_query(user_input: str, selected_module: str) -> dict:
     """
     处理用户查询的核心流程（v3.0）：
     统一 QA LangGraph — 意图识别 → 工具调用 → 综合回答
@@ -63,8 +63,10 @@ def process_query(user_input: str, selected_module: str) -> str:
                     chat_history=chat_history)
     if result.get("error"):
         log.warning(f"QA 流程提示: {result['error']}")
-    return (result.get("answer") or result.get("clarify_question")
-            or "抱歉，我暂时无法回答这个问题。")
+    answer = (result.get("answer") or result.get("clarify_question")
+              or "抱歉，我暂时无法回答这个问题。")
+    # P5-1 工具结果卡片：把原始 tool_results 透传给 UI，由 ui/chat 按工具抽卡片渲染（与 LLM 摘要解耦）
+    return {"answer": answer, "tool_results": result.get("tool_results") or []}
 
 
 def maybe_show_activity_recommendation():
@@ -168,15 +170,15 @@ def main():
             "timestamp": datetime.now().strftime("%H:%M"),
         })
         with st.spinner("小蜗正在思考..."):
-            response = process_query(pending, selected_module)
-        add_assistant_message(response)
+            _r = process_query(pending, selected_module)
+        add_assistant_message(_r["answer"], tool_results=_r["tool_results"])
         st.rerun()
 
     # 处理用户输入
     if prompt:
         with st.spinner("小蜗正在思考..."):
-            response = process_query(prompt, selected_module)
-        add_assistant_message(response)
+            _r = process_query(prompt, selected_module)
+        add_assistant_message(_r["answer"], tool_results=_r["tool_results"])
         st.rerun()
 
     # 空状态引导
