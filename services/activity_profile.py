@@ -12,15 +12,13 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
+from config import YOUNG_SNAPSHOT_PATH as SNAPSHOT_FILE  # 快照路径单一来源（crawl_young.py 写入、此处读取）
 from utils.logger import get_logger
 
 log = get_logger("xiaowo.activity_profile")
 
-SNAPSHOT_FILE = Path(__file__).resolve().parents[1] / "scripts" / "data" / "young_personal" / "young_snapshot.json"
 _INTERACTION_WINDOW_DAYS = 90
 # 行为权重：收藏/点击 > 追问 > 曝光
 _ACTION_WEIGHTS = {"favorited": 3.0, "clicked": 2.0, "asked": 1.5, "shown": 0.3}

@@ -60,7 +60,7 @@ streamlit run app.py
 ## 📁 项目结构
 
 ```
-├── agents/          # 智能体（qa/ 统一问答图 + tool_registry 29 内置工具注册表）
+├── agents/          # 智能体（qa/ 统一问答图 + tool_registry 28 内置工具注册表）
 ├── tools/           # 工具层（课程/成绩/课表/日程/选课/官方入口/活动查询 + ecosystem/ 生态工具）
 ├── services/        # 外部服务（CAS、jw、青春科大 young 客户端、活动推荐与偏好画像、LLM 熔断）
 ├── knowledge/       # 知识库文档（data/ 80 篇 md）与混合检索向量库

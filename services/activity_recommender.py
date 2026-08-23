@@ -288,11 +288,23 @@ class RuleRanker(BaseRanker):
     """规则加权 + MMR（当前默认实现）"""
 
     def __init__(self, matcher: Optional[FreeTimeMatcher] = None,
-                 now: Optional[datetime] = None):
+                 now: Optional[datetime] = None,
+                 personal_profile: Optional[dict] = None,
+                 personal_weights: Optional[dict] = None):
         self.matcher = matcher
         self.now = now
+        self.personal_profile = personal_profile
+        self.personal_weights = personal_weights
 
     def rank(self, activities: list["YoungActivity"], context: dict = None) -> list[dict]:
         matcher = context.get("matcher") if context else None
+        personal_profile = self.personal_profile
+        personal_weights = self.personal_weights
+        # 允许 context 覆盖/透传个性化因子，避免未来改走模型接口时丢个性化
+        if context is not None:
+            personal_profile = context.get("personal_profile", personal_profile)
+            personal_weights = context.get("personal_weights", personal_weights)
         return recommend(activities, matcher or self.matcher,
-                         self.now or datetime.now())
+                         self.now or datetime.now(),
+                         personal_profile=personal_profile,
+                         personal_weights=personal_weights)

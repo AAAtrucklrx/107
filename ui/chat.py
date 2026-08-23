@@ -154,32 +154,6 @@ def _render_login_panel():
         st.caption("点击后跳转到科大 CAS 认证页面 (id.ustc.edu.cn)")
 
 
-def _do_login(student_id: str, password: str):
-    """执行 CAS 登录"""
-    from services.service_container import ServiceContainer
-
-    sc = ServiceContainer()
-    with st.spinner("正在登录教务系统..."):
-        try:
-            success = sc.login(student_id, password)
-            if success:
-                # 登录成功 → 获取学生基本信息
-                info = sc.cas_client.get_student_info() or {}
-                st.session_state["user"] = {
-                    "id": student_id,
-                    "name": info.get("name", student_id),
-                    "major": info.get("major", ""),
-                    "grade": info.get("grade", ""),
-                    "logged_in_at": time.time(),
-                }
-                st.toast(f"✅ 登录成功！欢迎 {info.get('name', student_id)}")
-                st.rerun()
-            else:
-                st.error("❌ 学号或密码错误，请重试")
-        except Exception as e:
-            st.error(f"❌ 登录失败: {e}")
-
-
 def _logout():
     """退出登录"""
     from services.service_container import ServiceContainer

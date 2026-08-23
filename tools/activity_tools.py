@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from langchain_core.tools import tool
 
-from config import YOUNG_TOKEN
+from config import YOUNG_SNAPSHOT_PATH, YOUNG_TOKEN
 from utils.logger import get_logger
 
 log = get_logger("xiaowo.tools.activities")
@@ -48,10 +48,9 @@ def _fetch_enrolment_cached():
 def _load_snapshot_activities():
     """读快照「报名中」段 → YoungActivity 列表（字段同构，含 stale 标记用 description 前缀）。"""
     import json
-    from pathlib import Path
 
     from services.young_client import YoungActivity
-    snap_file = Path(__file__).resolve().parents[1] / "scripts" / "data" / "young_personal" / "young_snapshot.json"
+    snap_file = YOUNG_SNAPSHOT_PATH  # 单一来源 config.YOUNG_SNAPSHOT_PATH（crawl_young 写入、activity_profile 同读）
     try:
         snap = json.loads(snap_file.read_text(encoding="utf-8"))
         acts = [YoungActivity(

@@ -57,6 +57,8 @@ CAS_SERVICE_URL = os.getenv("CAS_SERVICE_URL", "http://localhost:8501")
 # 远期：学校开放官方接口后切换白名单接入（YoungService 已预留 Provider 抽象）
 YOUNG_TOKEN = os.getenv("YOUNG_TOKEN", "")
 YOUNG_PAGE_SIZE = int(os.getenv("YOUNG_PAGE_SIZE", "50"))
+# 青春科大个人快照路径（crawl_young.py 写入，activity_profile/activity_tools 读取，单一来源）
+YOUNG_SNAPSHOT_PATH = PROJECT_ROOT / "scripts" / "data" / "young_personal" / "young_snapshot.json"
 
 # ── 学期常量（每学期开学前只更新这一处；来源：教务处校历 teach.ustc.edu.cn/calendar）──
 # start_date 必须为该学期第一个周一；schedule_tools.import_schedule 等据此对齐课表星期

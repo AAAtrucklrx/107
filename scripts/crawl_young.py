@@ -18,10 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config import YOUNG_TOKEN, YOUNG_PAGE_SIZE  # noqa: E402
+from config import YOUNG_SNAPSHOT_PATH, YOUNG_TOKEN, YOUNG_PAGE_SIZE  # noqa: E402
 
-OUT_DIR = Path(__file__).resolve().parent / "data" / "young_personal"
-OUT_FILE = OUT_DIR / "young_snapshot.json"
+OUT_DIR = YOUNG_SNAPSHOT_PATH.parent  # 与读者单一来源（activity_profile/activity_tools 同读 config.YOUNG_SNAPSHOT_PATH）
+OUT_FILE = YOUNG_SNAPSHOT_PATH
 
 
 def _act_min(a) -> dict:
