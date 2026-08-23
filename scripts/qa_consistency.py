@@ -10,12 +10,11 @@
 用法: python scripts/qa_consistency.py
 退出码: 0=全部通过, 1=存在失败项
 """
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from agents.qa.graph import run_qa
 
 # (问题, 期望子串, 不应出现的子串, 期望调用的工具)
 CASES = [
@@ -25,7 +24,7 @@ CASES = [
     ("大一结束后怎么转专业？", "全校范围", None, None),
     ("缓考怎么申请？", "考前", None, None),
     # 禁词用正则：仅禁止把 90 分错误映射为 3.7（完整对照表含 85~89→3.7 属正确信息）
-    ("90分对应的绩点是多少？", "4.0", r"90.{0,6}(对应|是|→).{0,3}3\.7", None),
+    ("90分对应的绩点是多少？", "4.0", re.compile(r"90.{0,6}(对应|是|→).{0,3}3\.7"), None),
     ("大一要上什么体育课？", "基础体育", None, None),
     ("形势与政策怎么考核？", "二等级制", None, None),
     # 本轮补录新增（2026-08-16 知识库补录 + 官方链接注入）
@@ -36,37 +35,48 @@ CASES = [
     ("我要退一门课，帮我看看选课压力", None, None, "evaluate_selection_pressure"),
 ]
 
-FAILS = []
-TOTAL = 0
-for q, want, banned, expect_tool in CASES:
-    TOTAL += 1
-    try:
-        r = run_qa(q, module_signal="智能问答", student_id=None, user_profile={})
-    except Exception as e:
-        FAILS.append(q)
-        print(f"[FAIL] {q}: 异常 {type(e).__name__}: {e}")
-        continue
-    ans = (r.get("answer") or "").strip()
-    tools = [t.get("tool") for t in (r.get("tool_results") or [])]
+def answer_matches(ans: str, want, banned, tools: list[str], expect_tool) -> bool:
+    """检查单条回答；banned 可使用普通字符串或编译后的正则。"""
     ok = True
     if want is not None:
         ok = ok and want in ans
     if banned is not None:
-        if ".*" in banned:  # 正则禁词：抓"错误映射"类模式，不误伤正确对照表
-            import re as _re
-            ok = ok and not _re.search(banned, ans)
+        if isinstance(banned, re.Pattern):
+            ok = ok and banned.search(ans) is None
         else:
             ok = ok and banned not in ans
     if expect_tool is not None:
         ok = ok and expect_tool in tools
-    if not ok:
-        FAILS.append(q)
-    one = ans.replace("\n", " ⏎ ").replace("|", "｜")
-    print(f"[{'PASS' if ok else 'FAIL'}] {q}" +
-          (f" [工具={expect_tool}]" if expect_tool else ""))
-    print(f"    tools={tools} | answer: {one[:300]}")
+    return ok
 
-print(f"\n结果: {TOTAL - len(FAILS)}/{TOTAL} 通过")
-if FAILS:
-    print(f"失败: {FAILS}")
-    sys.exit(1)
+
+def main() -> None:
+    from agents.qa.graph import run_qa
+
+    fails = []
+    for q, want, banned, expect_tool in CASES:
+        try:
+            r = run_qa(q, module_signal="智能问答", student_id=None, user_profile={})
+        except Exception as e:
+            fails.append(q)
+            print(f"[FAIL] {q}: 异常 {type(e).__name__}: {e}")
+            continue
+        ans = (r.get("answer") or "").strip()
+        tools = [t.get("tool") for t in (r.get("tool_results") or [])]
+        ok = answer_matches(ans, want, banned, tools, expect_tool)
+        if not ok:
+            fails.append(q)
+        one = ans.replace("\n", " ⏎ ").replace("|", "｜")
+        print(f"[{'PASS' if ok else 'FAIL'}] {q}" +
+              (f" [工具={expect_tool}]" if expect_tool else ""))
+        print(f"    tools={tools} | answer: {one[:300]}")
+
+    total = len(CASES)
+    print(f"\n结果: {total - len(fails)}/{total} 通过")
+    if fails:
+        print(f"失败: {fails}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
