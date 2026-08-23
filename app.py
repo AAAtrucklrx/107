@@ -106,6 +106,30 @@ def maybe_show_activity_recommendation():
         log.warning(f"校团委活动推荐失败: {e}")
 
 
+def maybe_show_morning_brief():
+    """
+    P5-2 晨报：登录用户每日首次打开时聚合今日日程/今日考试/近期待办并弹窗一次。
+    独立于活动弹窗去重；任何异常只降级记日志，不打断主流程。
+    """
+    user = st.session_state.get("user")
+    if not user:
+        return
+    try:
+        from ui.activity_dialog import (
+            morning_brief_shown_today, mark_morning_brief_shown, show_morning_brief_dialog)
+        from services.morning_brief import build_morning_brief
+        if morning_brief_shown_today(user["id"]):
+            return
+        brief = build_morning_brief(user["id"])
+        if not (brief.get("sections") or []):
+            mark_morning_brief_shown(user["id"])
+            return
+        mark_morning_brief_shown(user["id"])
+        show_morning_brief_dialog(brief)
+    except Exception as e:
+        log.warning(f"晨报展示失败: {e}")
+
+
 # ============================================================
 # Streamlit 主页面
 # ============================================================
@@ -229,6 +253,9 @@ def main():
             "我的课表怎么样，帮我分析一下选课策略",
         ]:
             st.caption(f"  • {example}")
+
+    # ── P5-2 晨报弹窗（每天最多一次，独立于活动弹窗） ──
+    maybe_show_morning_brief()
 
     # ── 校团委活动推荐弹窗（每天最多一次） ──
     maybe_show_activity_recommendation()
