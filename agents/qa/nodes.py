@@ -24,7 +24,8 @@ log = get_logger("xiaowo.qa.nodes")
 
 MAX_ROUNDS = 4
 
-# 需要 student_id 的个人数据工具（act 层兜底注入学号，防 LLM 漏传导致查空）
+# 需要 student_id 的个人数据工具。act 层始终以认证上下文覆盖模型参数，
+# 既防止漏传查空，也防止模型传入其他学号造成越权读取。
 _PERSONAL_TOOLS = frozenset({
     "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa",
     "query_exam", "query_course_selection", "query_program",
@@ -994,8 +995,8 @@ def act(state: QaState) -> dict:
         for call in plan:
             tool_name = call.get("tool", "")
             args = dict(call.get("args") or {})
-            # 兜底注入学号：LLM 决策可能漏传 student_id，个人数据工具一律补上，避免查空
-            if tool_name in _PERSONAL_TOOLS and sid and not args.get("student_id"):
+            # 认证身份是唯一可信来源。未登录时也覆盖为空，拒绝模型伪造学号。
+            if tool_name in _PERSONAL_TOOLS:
                 args["student_id"] = sid
             # 选课推荐兜底：补齐专业/年级/已修课程/学年号，避免漏传导致纯评分乱推
             if tool_name == "recommend_courses":

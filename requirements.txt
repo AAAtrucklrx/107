@@ -9,7 +9,7 @@ chromadb>=1.0
 sentence-transformers>=2.7.0
 
 # 前端
-streamlit>=1.30.0
+streamlit>=1.57.0
 
 # 数据处理
 pandas>=2.0.0

@@ -5,6 +5,7 @@
 database/*.db
 data/*.db
 data/young_dialog_log.json
+data/morning_brief_log.json
 
 # 爬虫原始数据（可重建）
 scripts/data/

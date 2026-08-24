@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import base64
 import re
+from urllib.parse import urlparse
 
 import requests
-from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5
+from Crypto.PublicKey import RSA
 
 from utils.logger import get_logger
 
@@ -149,7 +150,13 @@ class CASClient:
                 timeout=self.TIMEOUT,
                 allow_redirects=True,
             )
-            if resp.status_code == 200:
+            expected_url = urlparse(self.JW_BASE)
+            final_url = urlparse(resp.url)
+            if (
+                resp.status_code == 200
+                and final_url.scheme == expected_url.scheme
+                and final_url.hostname == expected_url.hostname
+            ):
                 self._logged_in = True
                 self._extract_data_id(resp.text)
                 self._home_page_html = resp.text
@@ -170,6 +177,10 @@ class CASClient:
                 # 4. 获取学生信息
                 self._fetch_student_info()
                 return True
+            log.error(
+                f"jw session 未建立: status={resp.status_code}, final_url={resp.url}"
+            )
+            return False
         except Exception as e:
             log.error(f"jw session 建立失败: {e}")
             return False

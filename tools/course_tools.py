@@ -5,16 +5,16 @@
 v3.0: 课表和成绩对接 jw 内部 API（需 CAS 登录），catalog API 对接空教室/考试/课程搜索
 """
 
-from langchain_core.tools import tool
-from datetime import date
 import sqlite3
+from datetime import date as Date
 from pathlib import Path
 
+from langchain_core.tools import tool
+
 from services.service_container import ServiceContainer
-from utils.logger import get_logger
-from utils.course_periods import parse_periods, periods_to_range
 from utils import course_name as _norm
-import re as _re
+from utils.course_periods import parse_periods, periods_to_range
+from utils.logger import get_logger
 
 log = get_logger("xiaowo.tools.course")
 
@@ -49,12 +49,13 @@ def _cas():
 
 
 # ── 未登录锁定提示 ──
-_LOGIN_MSG = "🔒 此功能需要登录教务系统。请在左侧侧边栏输入学号和密码登录。"
+_LOGIN_MSG = "🔒 此功能需要登录教务系统。请在左侧通过科大统一身份认证登录。"
 
 
 def _is_locked(student_id: str) -> bool:
-    """检查是否应该锁定个人数据查询（未登录即锁定）"""
-    return _cas() is None
+    """仅允许当前认证会话读取其自身的个人数据。"""
+    cas = _cas()
+    return cas is None or not student_id or cas.student_id != student_id
 
 
 # ── 内部查询函数（非 tool 装饰器，供 tool 复用） ──────
@@ -92,14 +93,20 @@ def _parse_schedule_group_str(s: str) -> dict:
     返回 {weeks, location, day_str, periods, teacher_hint}
     """
     import re as _re
+
+    from utils.schedule_parse import parse_course_time
+
     result = {"weeks": "", "location": "", "day_str": "", "periods": "", "teacher_hint": ""}
     if not s:
         return result
 
-    # 提取周次范围
-    wm = _re.search(r'(\d+~\d+)周', s)
-    if wm:
-        result["weeks"] = wm.group(1) + "周"
+    # 周次复用统一解析器，保留不连续周与单双周表达式。
+    week_slot = next(
+        (slot for slot in parse_course_time(s) if slot.get("week_numbers") is not None),
+        None,
+    )
+    if week_slot:
+        result["weeks"] = week_slot["weeks_raw"]
 
     # 提取 :N(Periods) 部分
     dm = _re.search(r':(\d)\(([^)]+)\)', s)
@@ -112,8 +119,8 @@ def _parse_schedule_group_str(s: str) -> dict:
     loc_part = s
     if dm:
         loc_part = s[:dm.start()]
-    if wm:
-        loc_part = loc_part[wm.end():]
+    if result["weeks"]:
+        loc_part = loc_part.replace(result["weeks"], "", 1)
     loc_part = loc_part.strip()
     if loc_part:
         result["location"] = loc_part
@@ -424,21 +431,69 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
         student_id: 学号（默认当前登录学生）
 
     Returns:
-        {"student_id": "...", "date": "2026-09-14", "weekday": "周一",
-         "courses": [{"course_name": "...", "teacher": "...", "location": "...",
+         {"student_id": "...", "date": "2026-09-14", "weekday": "周一",
+          "teaching_week": 3,
+          "courses": [{"course_name": "...", "teacher": "...", "location": "...",
                       "start_time": "08:00", "end_time": "09:35",
                       "periods": "1-2节", "weeks": "2~11周"}, ...],
          "count": N, "source": "real"|"fallback"|"locked"}
     """
+    from config import SEMESTER
+    from utils.schedule_parse import (
+        normalize_time_str,
+        parse_course_time,
+        slot_clock_range,
+        slot_is_active_in_week,
+        teaching_week,
+    )
     from utils.time_parser import parse_natural_time
     sid = student_id
 
     if date:
         parsed = parse_natural_time(date)
     else:
-        parsed = {"date": date.today(), "day_of_week": ""}
+        parsed = {"date": Date.today(), "day_of_week": ""}
     target_date = parsed["date"]
     weekday = _DAY_MAP.get(str(target_date.isoweekday()), "")
+
+    if _is_locked(sid):
+        return {
+            "student_id": sid,
+            "date": target_date.isoformat(),
+            "weekday": weekday,
+            "teaching_week": None,
+            "courses": [],
+            "count": 0,
+            "source": "locked",
+            "message": _LOGIN_MSG,
+        }
+
+    try:
+        semester_start = Date.fromisoformat(str(SEMESTER.get("start_date", "")))
+        total_weeks = int(SEMESTER.get("total_weeks", 18))
+    except (TypeError, ValueError):
+        return {
+            "student_id": sid,
+            "date": target_date.isoformat(),
+            "weekday": weekday,
+            "teaching_week": None,
+            "courses": [],
+            "count": 0,
+            "source": "config_error",
+            "message": "学期配置无效，无法判断目标日期对应的教学周",
+        }
+    current_week = teaching_week(target_date, semester_start, total_weeks)
+    if current_week is None:
+        return {
+            "student_id": sid,
+            "date": target_date.isoformat(),
+            "weekday": weekday,
+            "teaching_week": None,
+            "courses": [],
+            "count": 0,
+            "source": "calendar",
+            "message": "目标日期不在当前配置学期范围内",
+        }
 
     # 优先真实 jw API（登录后）
     cas = _cas()
@@ -448,19 +503,24 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
             if sem_id:
                 real_courses = _fetch_real_schedule(cas, sem_id)
                 if real_courses:
-                    day_courses = [c for c in real_courses if c.get("day") == weekday]
+                    day_courses = []
+                    for course in real_courses:
+                        slots = parse_course_time(
+                            normalize_time_str(course.get("time") or "")
+                        )
+                        if any(
+                            slot.get("day") == weekday
+                            and slot_is_active_in_week(slot, current_week)
+                            for slot in slots
+                        ):
+                            day_courses.append(course)
                     return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
-                            "courses": day_courses, "count": len(day_courses), "source": "real"}
+                            "teaching_week": current_week, "courses": day_courses,
+                            "count": len(day_courses), "source": "real"}
         except Exception as e:
             log.warning(f"课表 API 失败 (student_id={sid}, date={date or target_date.isoformat()})，降级到本地数据: {e}")
 
-    # Fallback: SQLite / 锁定提示
-    if _is_locked(sid):
-        return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
-                "courses": [], "count": 0, "source": "locked", "message": _LOGIN_MSG}
-
-    from utils.schedule_parse import normalize_time_str, parse_course_time, slot_clock_range
-
+    # Fallback: SQLite 本地缓存
     rows = _db().query(
         "SELECT * FROM student_courses WHERE student_id = ?", (sid,))
     courses = []
@@ -469,7 +529,7 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
         # 统一时间解析器（兼容 jw/备份/时钟变体），按目标星期取该课的排课时段
         slots = parse_course_time(normalize_time_str(time_str))
         for slot in slots:
-            if slot.get("day") != weekday:
+            if slot.get("day") != weekday or not slot_is_active_in_week(slot, current_week):
                 continue
             clock = slot_clock_range(slot)
             periods = slot.get("periods") or []
@@ -485,7 +545,8 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
                 "weeks": slot.get("weeks_raw", ""),
             })
     return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
-            "courses": courses, "count": len(courses), "source": "fallback",
+            "teaching_week": current_week, "courses": courses,
+            "count": len(courses), "source": "fallback",
             "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
 
 
@@ -510,7 +571,7 @@ def find_empty_room(building: str, time_desc: str) -> dict:
     period = parsed.get("period", "全天")
     period_start = parsed.get("period_start", "08:00")
     period_end = parsed.get("period_end", "18:00")
-    target_date = parsed.get("date", date.today())
+    target_date = parsed.get("date", Date.today())
 
     building_code = resolve_building(building)
     building_display = building  # 默认使用用户输入
@@ -518,7 +579,7 @@ def find_empty_room(building: str, time_desc: str) -> dict:
     # 尝试真实 API
     try:
         api = _catalog()
-        date_str = target_date.isoformat() if isinstance(target_date, date) else str(target_date)
+        date_str = target_date.isoformat() if isinstance(target_date, Date) else str(target_date)
         timetable_data = api.get_timetable(date_str)
 
         if isinstance(timetable_data, dict) and "error" not in timetable_data:
@@ -713,6 +774,10 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
     """
     sid = student_id
 
+    if _is_locked(sid):
+        return {"student_id": sid, "exams": [], "count": 0,
+                "source": "locked", "message": _LOGIN_MSG}
+
     # 尝试真实 API
     try:
         api = _catalog()
@@ -783,12 +848,42 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
                         })
 
                 if exams:
+                    # Catalog 端点返回全校考试。只保留当前学生课表中的课程，
+                    # 无法确认个人课表时宁可返回空，也不能把其他课程误作个人考试。
+                    cas = _cas()
+                    selected = _fetch_real_schedule(cas, sem_id) if cas else None
+                    if selected is None:
+                        rows = _db().query(
+                            "SELECT course_code, course_name FROM student_courses "
+                            "WHERE student_id = ?",
+                            (sid,),
+                        )
+                        selected = rows
+                    selected_codes = {
+                        str(c.get("course_code") or "").strip().upper()
+                        for c in selected if c.get("course_code")
+                    }
+                    selected_names = {
+                        _norm_course_name(c.get("course_name") or "")
+                        for c in selected if c.get("course_name")
+                    }
+                    if not selected_codes and not selected_names:
+                        return {
+                            "student_id": sid, "exams": [], "count": 0,
+                            "source": "fallback",
+                            "message": "无法确认当前学生的选课范围，未返回全校考试数据",
+                        }
+                    exams = [
+                        e for e in exams
+                        if str(e.get("course_code") or "").strip().upper() in selected_codes
+                        or _norm_course_name(e.get("course") or "") in selected_names
+                    ]
                     # 按课程名过滤
                     if course_name:
                         exams = [e for e in exams if course_name in e.get("course", "")]
                     # 按日期排序
                     exams.sort(key=lambda x: x.get("date", ""))
-                    return {"exams": exams, "count": len(exams), "source": "real",
+                    return {"student_id": sid, "exams": exams, "count": len(exams), "source": "real",
                             "semester": current_sem.get("nameZh", "")}
     except Exception as e:
         log.warning(f"考试 API 失败 (student_id={sid}, course_name={course_name})，如实提示无数据: {e}")
@@ -881,7 +976,7 @@ def get_semester_list() -> dict:
         api = _catalog()
         semesters = api.get_semesters()
         if isinstance(semesters, list) and semesters and "error" not in semesters[0]:
-            today = date.today().isoformat()
+            today = Date.today().isoformat()
             result = []
             current = None
             for s in semesters[-10:]:  # 最近 10 个学期

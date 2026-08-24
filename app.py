@@ -9,6 +9,7 @@ v3.0: 统一 QA LangGraph 架构
 """
 
 import sys
+from datetime import date
 from pathlib import Path
 
 # 确保项目根目录在 Python 路径中
@@ -77,6 +78,10 @@ def maybe_show_activity_recommendation():
     user = st.session_state.get("user")
     if not user or not YOUNG_TOKEN:
         return
+    attempt_key = (user["id"], date.today().isoformat())
+    if st.session_state.get("_activity_recommendation_attempt") == attempt_key:
+        return
+    st.session_state["_activity_recommendation_attempt"] = attempt_key
     from ui.activity_dialog import shown_today, mark_shown, show_activity_dialog
     if shown_today(user["id"]):
         return
@@ -133,7 +138,8 @@ def maybe_show_morning_brief():
 # ============================================================
 # Streamlit 主页面
 # ============================================================
-def main():
+def main(startup_hook=None):
+    """渲染应用；测试入口可通过 startup_hook 注入离线登录数据。"""
     from ui.chat import init_page, apply_custom_css, render_sidebar, render_chat_area, add_assistant_message, check_cas_callback
 
     init_page()
@@ -144,6 +150,9 @@ def main():
 
     # ── CAS 重定向回调处理：检查 URL 中是否有 ticket 参数 ──
     check_cas_callback()
+
+    if startup_hook is not None:
+        startup_hook(container)
 
     # 页面标题
     st.markdown(

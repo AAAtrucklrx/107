@@ -23,6 +23,12 @@ def main() -> None:
     check("周一的下周一", parse_natural_time("下周一", date(2026, 8, 24))["date"] == date(2026, 8, 31))
     check("周四的下周三", parse_natural_time("下周三", date(2026, 8, 27))["date"] == date(2026, 9, 2))
 
+    # "第N周"绝对周次（按 config.SEMESTER 开学日 2026-08-31 换算）
+    check("第1周周一", parse_natural_time("第1周周一")["date"] == date(2026, 8, 31))
+    check("第5周周四", parse_natural_time("第5周周四")["date"] == date(2026, 10, 1))
+    check("第5周默认周一", parse_natural_time("第5周")["date"] == date(2026, 9, 28))
+    check("第N周不受参考日影响", parse_natural_time("第2周", sunday)["date"] == date(2026, 9, 7))
+
     cases = [
         ("明天下午3点到4点开会", "2026-08-24T15:00:00", "2026-08-24T16:00:00"),
         ("明天下午3点半到4点半开会", "2026-08-24T15:30:00", "2026-08-24T16:30:00"),

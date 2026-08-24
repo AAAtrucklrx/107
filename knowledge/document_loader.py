@@ -98,12 +98,12 @@ def _parse_faq_doc(content: str, category: str) -> dict | None:
                 source = source_line.strip("- ").strip()
             break
 
-    # 提取最后更新时间
+    # 提取最后更新时间（文档格式：`| 最后更新 | 2025-07-01 |`，取表格第二列日期）
     last_updated = ""
     for line in lines:
-        m = re.search(r"\| 最后更新\s*$", line)
+        m = re.search(r"\|\s*最后更新\s*\|\s*([^|]+?)\s*\|", line)
         if m:
-            last_updated = line.split("|")[-1].strip()
+            last_updated = m.group(1).strip()
             break
 
     return {

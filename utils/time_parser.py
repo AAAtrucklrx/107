@@ -34,7 +34,7 @@ def parse_natural_time(text: str, reference_date: date = None) -> dict:
     解析自然语言时间表达。
 
     Args:
-        text: 自然语言文本，如 "明天下午"、"周三上午"、"下周三3-4节"
+        text: 自然语言文本，如 "明天下午"、"周三上午"、"下周三3-4节"、"第5周周四"（绝对周次，按 config.SEMESTER 开学日换算）
         reference_date: 参考日期，默认今天
 
     Returns:
@@ -79,16 +79,32 @@ def parse_natural_time(text: str, reference_date: date = None) -> dict:
     elif not has_explicit_date and "昨天" in text:
         result["date"] = ref + timedelta(days=-1)
 
+    # 解析 "第N周"（绝对周次：第N周周一 = SEMESTER.start_date + (N-1) 周；未写星期默认周一）
+    m_week_no = re.search(r"第(\d+)周", text)
+    has_week_no = False
+    if m_week_no and not has_explicit_date:
+        try:
+            from config import SEMESTER
+            semester_start = date.fromisoformat(SEMESTER["start_date"])
+            week_no = int(m_week_no.group(1))
+            m_wd = re.search(r"[周星期]([一二三四五六日天])", text)
+            target_wd = _WEEKDAY_MAP.get(f"周{m_wd.group(1)}", 0) if m_wd else 0
+            result["date"] = (semester_start + timedelta(weeks=week_no - 1)
+                              + timedelta(days=(target_wd - semester_start.weekday()) % 7))
+            has_week_no = True
+        except (ValueError, TypeError):
+            pass  # SEMESTER 不可解析时按相对周次兜底
+
     # 解析 "下周X"
     m_next_week = re.search(r"下周([一二三四五六日天])", text)
-    if m_next_week and not has_explicit_date:
+    if m_next_week and not has_explicit_date and not has_week_no:
         target_wd = _WEEKDAY_MAP.get(f"周{m_next_week.group(1)}", 0)
         days_ahead = 7 - ref.weekday() + target_wd
         result["date"] = ref + timedelta(days=days_ahead)
 
     # 解析 "周X"
     m_this_week = re.search(r"(?:这周)?周([一二三四五六日天])(?!期)", text)
-    if m_this_week and "下周" not in text and not has_explicit_date:
+    if m_this_week and "下周" not in text and not has_explicit_date and not has_week_no:
         target_wd = _WEEKDAY_MAP.get(f"周{m_this_week.group(1)}", 0)
         days_ahead = target_wd - ref.weekday()
         if days_ahead < 0:

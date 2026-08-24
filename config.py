@@ -63,7 +63,7 @@ YOUNG_SNAPSHOT_PATH = PROJECT_ROOT / "scripts" / "data" / "young_personal" / "yo
 # ── 学期常量（每学期开学前只更新这一处；来源：教务处校历 teach.ustc.edu.cn/calendar）──
 # start_date 必须为该学期第一个周一；schedule_tools.import_schedule 等据此对齐课表星期
 SEMESTER = {
-    "name": "2025-2026-2",
-    "start_date": os.getenv("XIAOWO_SEMESTER_START", "2026-02-23"),
+    "name": "2026-2027-1",
+    "start_date": os.getenv("XIAOWO_SEMESTER_START", "2026-08-31"),
     "total_weeks": 18,
 }

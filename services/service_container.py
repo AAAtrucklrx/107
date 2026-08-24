@@ -117,19 +117,35 @@ class ServiceContainer:
         self._cas_client = client
         return True
 
-    def login_with_ticket(self, ticket: str, service_url: str = None) -> bool:
+    def authenticate_ticket(self, ticket: str, service_url: str | None = None) -> CASClient | None:
         """
-        CAS 重定向登录：用 CAS ticket 建立教务系统会话（推荐方式）。
-        每次登录新建独立 CASClient，成功后按学号归桶，多用户互不干扰。
+        CAS 重定向登录并返回本次认证创建的客户端。
+
+        回调发生时学生 ContextVar 尚未设置，因此调用方不能紧接着通过
+        ``cas_client`` 属性读取认证结果；该属性会命中默认空桶。直接返回客户端
+        可以让回调安全地读取学号和个人信息，再由后续请求按学号命中对应桶。
         """
         from services.cas_client import CASClient
         client = CASClient()
         success = client.login_with_ticket(ticket, service_url)
-        if success:
-            key = client.student_id or current_student()
-            self._cas_clients[key] = client
-            self._cas_client = client
-        return success
+        if not success or not client.student_id:
+            return None
+        self._cas_clients[client.student_id] = client
+        self._cas_client = client
+        return client
+
+    def login_with_ticket(self, ticket: str, service_url: str | None = None) -> bool:
+        """兼容旧调用：认证成功返回 True。"""
+        return self.authenticate_ticket(ticket, service_url) is not None
+
+    def logout(self, student_id: str | None = None) -> None:
+        """只清理指定学生（或当前上下文学生）的 CAS 会话。"""
+        key = current_student() if student_id is None else (student_id or "")
+        client = self._cas_clients.pop(key, None)
+        if client is not None:
+            client.logout()
+        if self._cas_client is client:
+            self._cas_client = None
 
     # ── Catalog API ────────────────────────────────────
 

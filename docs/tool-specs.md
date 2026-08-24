@@ -281,7 +281,7 @@ semester: str = None    # 学期（可选，默认全部学期累计）
 **计算逻辑**（`utils/gpa_calculator.py`）：
 ```
 GPA = sum(grade_point × credits) / sum(credits)
-科大4.3制对照表：100→4.3, 95→4.0, 90→3.7, 85→3.3, 82→3.0, ...
+科大4.3制对照表（教字〔2019〕14号）：100~95→4.3, 94~90→4.0, 89~85→3.7, 84~82→3.3, 81~78→3.0, ...
 ```
 
 **当前种子数据的 GPA**：
@@ -770,9 +770,9 @@ student_id: str  # 学号
 3. 插入 events 表（`is_recurring=1, source='schedule_import'`）
 4. 去重：已导入的不重复插入
 
-**已知问题**：
-- `base_date` 硬编码为 `2026-02-23`（假设开学日期）
-- `sections_map` 只支持4种节次（1-2, 3-4, 5-6, 7-8），不包含晚课
+**已知问题（P3-3 已修复，2026-08-22）**：
+- `base_date` 硬编码已改读 `config.SEMESTER`（env `XIAOWO_SEMESTER_START` 可覆盖；当前 2026-08-31）
+- 节次映射已统一走 `utils/course_periods.PERIOD_TIMES`（13 节含晚课 11-13）
 
 ---
 

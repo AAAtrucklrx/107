@@ -43,14 +43,12 @@ class FAQVectorStore:
             )
             self._init_collection()
         except Exception as e:
-            # ChromaDB 持久化数据损坏时重建
-            log.warning(f"ChromaDB init failed, rebuilding: {e}")
-            _nuke_chroma_db(persist_dir)
-            self.client = chromadb.PersistentClient(
-                path=persist_dir,
-                settings=ChromaSettings(anonymized_telemetry=False),
-            )
-            self._init_collection()
+            log.error(f"ChromaDB 初始化失败，已保留原数据: {e}")
+            raise RuntimeError(
+                "ChromaDB 初始化失败，原索引未被删除。"
+                "请先排查文件占用或权限；确认索引损坏后运行 "
+                "rebuild_kb.py --yes 显式重建。"
+            ) from e
 
     def _init_collection(self):
         existing = [c.name for c in self.client.list_collections()]

@@ -17,14 +17,20 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
-from utils.course_periods import PERIOD_TIMES, parse_periods
+from utils.course_periods import PERIOD_TIMES
 
 _DAY_CN = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
 _DAY_NUM_CN = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
 
 _DAY_RE = re.compile(r"[周星期]([一二三四五六日天])")
-_WEEKS_RE = re.compile(r"(\d+(?:\s*[~\-—至,，]\s*\d+)*)\s*周")
+_WEEKS_RE = re.compile(
+    r"(\d+(?:\s*[~\-—至]\s*\d+)?"
+    r"(?:\s*[,，]\s*\d+(?:\s*[~\-—至]\s*\d+)?)*)"
+    r"\s*(?:[（(]\s*([单双])\s*[）)])?\s*周"
+    r"(?:\s*[（(]\s*([单双])\s*[）)])?"
+)
 _PERIODS_RE = re.compile(r"第([0-9,，\-]+)\s*节")
 _CLOCK_RE = re.compile(r"(\d{1,2}:\d{2})\s*[~\-—至]\s*(\d{1,2}:\d{2})")
 
@@ -67,13 +73,66 @@ def _expand_periods(raw: str) -> list[int]:
     return sorted({p for p in expanded if 1 <= p <= 13})
 
 
+def _expand_weeks(raw: str, parity: str | None = None) -> list[int]:
+    """展开 ``1~2,4~8,12`` 一类周次表达式，并处理单双周。"""
+    expanded: list[int] = []
+    for token in re.split(r"[,，]", raw):
+        token = token.strip()
+        if not token:
+            continue
+        bounds = re.split(r"[~\-—至]", token, maxsplit=1)
+        if len(bounds) == 2 and all(bound.strip().isdigit() for bound in bounds):
+            lo, hi = (int(bound.strip()) for bound in bounds)
+            if lo <= hi:
+                expanded.extend(range(lo, hi + 1))
+        elif token.isdigit():
+            expanded.append(int(token))
+
+    weeks = sorted({week for week in expanded if week > 0})
+    if parity == "单":
+        return [week for week in weeks if week % 2 == 1]
+    if parity == "双":
+        return [week for week in weeks if week % 2 == 0]
+    return weeks
+
+
+def teaching_week(
+    target_date: date,
+    semester_start: date,
+    total_weeks: int,
+) -> int | None:
+    """返回目标日期的教学周（从 1 开始）；学期范围外返回 None。"""
+    days = (target_date - semester_start).days
+    if days < 0 or total_weeks < 1:
+        return None
+    week = days // 7 + 1
+    return week if week <= total_weeks else None
+
+
+def slot_week_numbers(slot: dict, total_weeks: int) -> list[int]:
+    """返回排课时段在本学期内生效的精确周次；未知周次按全学期处理。"""
+    exact = slot.get("week_numbers")
+    if exact is None:
+        return list(range(1, total_weeks + 1))
+    return sorted({int(week) for week in exact if 1 <= int(week) <= total_weeks})
+
+
+def slot_is_active_in_week(slot: dict, week: int | None) -> bool:
+    """判断时段是否在指定教学周生效；已知学期范围外不生效。"""
+    if week is None:
+        return False
+    exact = slot.get("week_numbers")
+    return exact is None or week in exact
+
+
 def parse_course_time(time_str: str) -> list[dict]:
     """解析课程时间字符串 → 时间段列表（每段一个 dict）。
 
     每段字段：
       day        "周一".."周日" 或 None（无星期信息）
       day_num    1..7 或 None
-      weeks      (start, end) 周次闭区间 或 None（无周次信息）
+      weeks      (start, end) 周次包围区间 或 None（兼容旧调用）
+      week_numbers 精确周次列表，支持不连续周/单双周；无周次信息时为 None
       weeks_raw  原始周次文本（如 '2~11周'），用于展示
       periods    节次号列表（[] 表示无节次信息）
       clock      (start_min, end_min) 或 None（无时钟信息）
@@ -88,18 +147,28 @@ def parse_course_time(time_str: str) -> list[dict]:
         part = part.strip()
         if not part:
             continue
-        slot = {"day": None, "day_num": None, "weeks": None, "weeks_raw": "",
-                "periods": [], "clock": None, "raw": part}
+        slot = {
+            "day": None,
+            "day_num": None,
+            "weeks": None,
+            "week_numbers": None,
+            "weeks_raw": "",
+            "periods": [],
+            "clock": None,
+            "raw": part,
+        }
         m = _DAY_RE.search(part)
         if m:
             slot["day_num"] = _DAY_CN[m.group(1)]
             slot["day"] = _DAY_NUM_CN[slot["day_num"]]
         m = _WEEKS_RE.search(part)
         if m:
-            nums = [int(x) for x in re.findall(r"\d+", m.group(1))]
-            if nums:
-                slot["weeks"] = (min(nums), max(nums))
-                slot["weeks_raw"] = f"{m.group(1)}周"
+            parity = m.group(2) or m.group(3)
+            week_numbers = _expand_weeks(m.group(1), parity)
+            if week_numbers:
+                slot["weeks"] = (min(week_numbers), max(week_numbers))
+                slot["week_numbers"] = week_numbers
+                slot["weeks_raw"] = m.group(0).strip()
         m = _PERIODS_RE.search(part)
         if m:
             slot["periods"] = _expand_periods(m.group(1))
@@ -142,8 +211,12 @@ def slots_overlap(a: dict, b: dict) -> tuple[str, dict]:
         return ("no_conflict", {"reason": "不同星期", "weeks_unknown": False})
 
     wa, wb = a.get("weeks"), b.get("weeks")
+    exact_a, exact_b = a.get("week_numbers"), b.get("week_numbers")
     weeks_unknown = False
-    if wa and wb:
+    if exact_a is not None and exact_b is not None:
+        if not set(exact_a) & set(exact_b):
+            return ("no_conflict", {"reason": "周次不重叠", "weeks_unknown": False})
+    elif wa and wb:
         if not (wa[0] <= wb[1] and wb[0] <= wa[1]):
             return ("no_conflict", {"reason": "周次不重叠", "weeks_unknown": False})
     else:

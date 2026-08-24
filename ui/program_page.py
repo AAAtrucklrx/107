@@ -177,16 +177,16 @@ def _course_action_buttons(courses: list[dict], prefix: str) -> None:
             st.markdown(f"**{c['name']}**")
         with cols[1]:
             st.button("💬点评", key=f"ask_{prefix}_{i}",
-                      use_container_width=True, on_click=_ask_xiaowo, args=(c["name"],))
+                      width="stretch", on_click=_ask_xiaowo, args=(c["name"],))
         with cols[2]:
             st.button("👍推荐", key=f"rec_{prefix}_{i}",
-                      use_container_width=True, on_click=_ask_recommend, args=(c["name"],))
+                      width="stretch", on_click=_ask_recommend, args=(c["name"],))
         with cols[3]:
             st.button("⚠️冲突", key=f"cf_{prefix}_{i}",
-                      use_container_width=True, on_click=_ask_conflict, args=(c["name"],))
+                      width="stretch", on_click=_ask_conflict, args=(c["name"],))
         with cols[4]:
             st.button("➕日程", key=f"add_{prefix}_{i}",
-                      use_container_width=True, on_click=_open_add_event, args=(c["name"],))
+                      width="stretch", on_click=_open_add_event, args=(c["name"],))
 
 
 # ── 各子页 ─────────────────────────────────────────
@@ -231,7 +231,7 @@ def _render_my_program(program: dict):
                 "必修": c["required"],
                 "学期": c["term"],
             } for c in courses],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         _course_action_buttons(courses, f"prog_{cat}")
@@ -268,7 +268,7 @@ def _render_semester_plan(program: dict, major: str, grade: str, tree, year_inde
                     "必修": c["required"],
                     "模块": c["category"],
                 } for c in courses],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             _course_action_buttons(courses, f"plan_{tag}_{year_index}")
@@ -309,7 +309,7 @@ def _render_progress(progress: dict, is_logged_in: bool):
                     "学期": c["term"],
                     "模块": c["category"],
                 } for c in remaining_sorted],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             _course_action_buttons(remaining_sorted, "gap")
@@ -387,18 +387,25 @@ def render_program_page(container) -> None:
     elif not is_logged_in:
         st.info("🔒 登录后可查看个人培养进度。")
 
-    tabs = st.tabs(["我的方案", "学期规划", "进度概览"])
-    with tabs[0]:
-        _render_my_program(program)
-    with tabs[1]:
-        years = min(6, max(1, _estimate_years(program.get("courses") or [])))
-        year_index = st.selectbox("选择学年", list(range(1, years + 1)),
-                                  format_func=lambda y: {1: "大一", 2: "大二", 3: "大三",
-                                                        4: "大四", 5: "大五", 6: "大六"}.get(y, f"第{y}年"),
-                                  key="program_year_select")
-        _render_semester_plan(program, major, grade, tree, int(year_index))
-    with tabs[2]:
-        _render_progress(progress, is_logged_in)
+    tabs = st.tabs(
+        ["我的方案", "学期规划", "进度概览"],
+        key="program_view",
+        on_change="rerun",
+    )
+    if tabs[0].open:
+        with tabs[0]:
+            _render_my_program(program)
+    if tabs[1].open:
+        with tabs[1]:
+            years = min(6, max(1, _estimate_years(program.get("courses") or [])))
+            year_index = st.selectbox("选择学年", list(range(1, years + 1)),
+                                      format_func=lambda y: {1: "大一", 2: "大二", 3: "大三",
+                                                            4: "大四", 5: "大五", 6: "大六"}.get(y, f"第{y}年"),
+                                      key="program_year_select")
+            _render_semester_plan(program, major, grade, tree, int(year_index))
+    if tabs[2].open:
+        with tabs[2]:
+            _render_progress(progress, is_logged_in)
 
     # P5-3 加日程弹窗：任一课程点「➕日程」后在本 run 末打开（结构化注入 add_event）
     add_course = st.session_state.pop(_ADD_COURSE_KEY, None)

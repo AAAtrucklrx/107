@@ -90,7 +90,7 @@ def render_sidebar() -> str:
 
         st.markdown("---")
 
-        if st.button("🗑️ 清空对话", use_container_width=True):
+        if st.button("🗑️ 清空对话", width="stretch"):
             st.session_state.messages = []
             st.rerun()
 
@@ -123,7 +123,7 @@ def _render_login_panel():
         elapsed = time.time() - user.get("logged_in_at", 0)
         if elapsed > 3600:
             st.warning("⏰ 登录已过期，请重新登录")
-            if st.button("🔄 重新登录", use_container_width=True):
+            if st.button("🔄 重新登录", width="stretch"):
                 _logout()
                 st.rerun()
             return
@@ -133,7 +133,7 @@ def _render_login_panel():
         if user.get("major"):
             st.caption(f"专业: {user['major']}")
         st.caption("🟢 已连接教务系统")
-        if st.button("🔓 退出登录", use_container_width=True):
+        if st.button("🔓 退出登录", width="stretch"):
             _logout()
             st.rerun()
     else:
@@ -158,8 +158,15 @@ def _logout():
     """退出登录"""
     from services.service_container import ServiceContainer
 
-    st.session_state.pop("user", None)
-    ServiceContainer.reset()
+    user = st.session_state.pop("user", None) or {}
+    ServiceContainer().logout(user.get("id"))
+    for key in (
+        "messages",
+        "pending_query",
+        "pending_force_calls",
+        "_activity_recommendation_attempt",
+    ):
+        st.session_state.pop(key, None)
     # 清除 URL 中可能残留的 ticket 参数
     try:
         st.query_params.clear()
@@ -190,10 +197,10 @@ def check_cas_callback():
     from services.service_container import ServiceContainer
     sc = ServiceContainer()
     try:
-        success = sc.login_with_ticket(ticket)
-        if success:
-            info = sc.cas_client.get_student_info() or {}
-            username = sc.cas_client.student_id or ""
+        client = sc.authenticate_ticket(ticket)
+        if client is not None:
+            info = client.get_student_info() or {}
+            username = client.student_id or ""
             st.session_state["user"] = {
                 "id": username,
                 "name": info.get("name", username),
@@ -309,9 +316,24 @@ def _render_card(card):
             # selection_tools.check_course_conflict →
             #   {courses, conflicts:[{course_a,course_b,day,a_time,b_time,reason,weeks_unknown}], conflict_count}
             confs = d.get("conflicts") or []
+            missing = d.get("missing") or []
+            incomplete = d.get("time_incomplete") or []
+            total = int(d.get("total") or 0)
             head = "### ⚠️ 选课冲突检查\n"
             if not confs:
-                return head + "无冲突，安排合理 ✅"
+                if total == 0:
+                    detail = d.get("message") or "没有可用于检测的课程数据，暂时无法判断冲突。"
+                    if missing and not all(name in detail for name in missing):
+                        detail += f"\n\n未找到：{'、'.join(missing)}"
+                    return head + detail
+                detail = f"已检查 {total} 门课程，未发现时间冲突。"
+                if total < 2:
+                    detail += " 当前数据不足两门课程，无法进行课程间对比。"
+                if missing:
+                    detail += f"\n\n未找到：{'、'.join(missing)}"
+                if incomplete:
+                    detail += f"\n\n时间信息不完整：{'、'.join(incomplete)}"
+                return head + detail
             lines = []
             for c in confs:
                 wu = "（周次未知，保守判定）" if c.get("weeks_unknown") else ""

@@ -16,7 +16,7 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from utils.logger import get_logger
 
@@ -125,11 +125,17 @@ def _build_ddl(student_id: str) -> dict | None:
 
 def build_morning_brief(student_id: str) -> dict:
     """聚合三板块晨报；空板块自动隐藏不占位。"""
-    sections = []
-    sources: dict[str, str] = {}
-    for builder in (_build_schedule, _build_exam_today, _build_ddl):
-        sec = builder(student_id)
-        if sec:
-            sections.append(sec)
-            sources[sec["key"]] = sec.get("source", "local")
-    return {"date": date.today().isoformat(), "sections": sections, "sources": sources}
+    from services.session_ctx import reset_student, set_student
+
+    token = set_student(student_id)
+    try:
+        sections = []
+        sources: dict[str, str] = {}
+        for builder in (_build_schedule, _build_exam_today, _build_ddl):
+            sec = builder(student_id)
+            if sec:
+                sections.append(sec)
+                sources[sec["key"]] = sec.get("source", "local")
+        return {"date": date.today().isoformat(), "sections": sections, "sources": sources}
+    finally:
+        reset_student(token)
