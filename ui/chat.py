@@ -132,6 +132,8 @@ def _render_login_panel():
         st.caption(f"学号: {user['id']}")
         if user.get("major"):
             st.caption(f"专业: {user['major']}")
+        if user.get("grade"):
+            st.caption(f"年级: {user['grade']}")
         st.caption("🟢 已连接教务系统")
         if st.button("🔓 退出登录", width="stretch"):
             _logout()
@@ -154,17 +156,30 @@ def _render_login_panel():
         st.caption("点击后跳转到科大 CAS 认证页面 (id.ustc.edu.cn)")
 
 
+def _clear_program_preview_state() -> None:
+    """清理匿名预览选择，防止其被下一位登录用户继承。"""
+    for key in ("profile_major", "profile_grade", "program_year_select"):
+        st.session_state.pop(key, None)
+
+
 def _logout():
     """退出登录"""
     from services.service_container import ServiceContainer
 
     user = st.session_state.pop("user", None) or {}
-    ServiceContainer().logout(user.get("id"))
+    student_id = user.get("id")
+    ServiceContainer().logout(student_id)
+    try:
+        from agents.qa.nodes import clear_personal_tree_cache
+        clear_personal_tree_cache(student_id)
+    except Exception:
+        pass
+    _clear_program_preview_state()
     for key in (
         "messages",
         "pending_query",
-        "pending_force_calls",
         "_activity_recommendation_attempt",
+        "_cas_ticket_processed",
     ):
         st.session_state.pop(key, None)
     # 清除 URL 中可能残留的 ticket 参数
@@ -201,11 +216,13 @@ def check_cas_callback():
         if client is not None:
             info = client.get_student_info() or {}
             username = client.student_id or ""
+            _clear_program_preview_state()
             st.session_state["user"] = {
                 "id": username,
                 "name": info.get("name", username),
                 "major": info.get("major", ""),
                 "grade": info.get("grade", ""),
+                "profile_source": info.get("profile_source", "cas_authenticated"),
                 "logged_in_at": time.time(),
             }
             # 清除 URL 中的 ticket 参数
@@ -343,11 +360,11 @@ def _render_card(card):
 
         if t == "recommend_courses":
             # advisor_tools.recommend_courses →
-            #   {recommendations, groups:{required,elective}, total_candidates}
-            # item 字段: name/credit/teachers/rating_avg/rate_count/program_hint（无 reason 字段）
+            #   {recommendations, groups:{required,elective,exploratory}, total_candidates}
             body = "### 📚 选课推荐\n"
             groups = d.get("groups") or {}
-            for label, key in (("必修", "required"), ("选修", "elective")):
+            for label, key in (("必修", "required"), ("方案内选修", "elective"),
+                               ("方向补充", "exploratory")):
                 items = groups.get(key) or []
                 if not items:
                     continue
@@ -360,6 +377,9 @@ def _render_card(card):
                     if hint:
                         line += f" | {hint[:30]}"
                     body += line + "\n"
+            limitations = d.get("limitations") or []
+            if limitations:
+                body += "\n" + "\n".join(f"> {text}" for text in limitations) + "\n"
             found = d.get("total_candidates")
             body += f"\n> 候选 {found if found is not None else 'N/A'} 门（本卡仅结构化概览，细则见正文回答）"
             return body

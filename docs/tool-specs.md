@@ -1,7 +1,7 @@
 # 🐌 小蜗 — Tool 详细规格说明
 
 > 本文档逐一定义每个 Tool 的当前实现、升级方案和 Plan-and-Execute 兼容性。
-> 最后更新：2026-08-22（增补 render_link / query_activities / 生态工具协议 / 若干重写说明；**更正 GPA 对照表旧描述**，见文末增补节）
+> 最后更新：2026-08-25（同步推荐语义、个人培养方案来源、工具数量与当前验证口径）
 
 ---
 
@@ -447,13 +447,13 @@ fallback: SELECT * FROM courses WHERE name LIKE ? OR teacher LIKE ?
 ```
 
 **实现细节**：
-- 偏好存储在模块级 `_current_profile` 字典中（进程内单例）
+- 偏好存储在进程内 `_profiles` 字典中，并按 `session_ctx.current_student()` 分桶；未登录会话使用 `_anon` 桶
 - Agent 通过自然语言对话收集字段，调用 `update_profile()` 更新
 - 5 个字段：`major`, `grade`, `interests`, `preference_type`, `target_gpa`
 
 **已知问题**：
-- 模块级全局变量，多用户场景下数据会互相覆盖
 - 没有持久化，重启后丢失
+- 匿名会话共用 `_anon` 桶；正式个人数据只在已认证学号上下文中使用
 
 **Plan-and-Execute 兼容性**：
 - Planner 通常在 Step 1 调用此 Tool 检查偏好是否已收集
@@ -466,62 +466,76 @@ fallback: SELECT * FROM courses WHERE name LIKE ? OR teacher LIKE ?
 | 项目 | 内容 |
 |------|------|
 | **所属模块** | `tools/advisor_tools.py` |
-| **当前状态** | ✅ 可用（基于种子数据 8 门课） |
-| **升级计划** | ★ B6 — 扩充评课数据后自动提升推荐质量 |
+| **当前状态** | ✅ 可用（icourse.club 快照：5667 个课程页 / 44418 条评论 / 632 套培养方案） |
+| **升级计划** | 按 `scripts/refresh_course_db.py` 定期刷新评课快照 |
 
-**功能**：根据用户偏好推荐课程。
+**功能**：根据本轮明确需求、培养方案、已修课程与评课数据推荐课程。登录用户优先使用本人的教务培养方案；个人方案不可用时才按已验证专业/年级降级到本地通用方案。
 
 **参数**：
 ```python
-profile: dict  # {
-    "major": "计算机科学",
-    "grade": "大二",
-    "interests": ["人工智能"],
-    "preference_type": "balanced" | "easy_grade" | "learn_hard",
-    "target_gpa": 3.5,
-    "max_results": 5
-}
+profile: dict | None = None
+major: str | None = None
+grade: str | None = None
+interests: list[str] | str | None = None
+preference_type: "balanced" | "easy_grade" | "learn_hard" | None = None
+preference: str | None = None
+keywords: list[str] | str | None = None       # 课程范围硬限定
+max_results: int = 10
+taken_courses: list[str] | None = None         # None 表示未知
+current_year_index: int | None = None
+current_term: str | None = None
+gpa: float | None = None
+workload_preference: str | None = None
+course_scope: "all" | "required" | "elective" | "general" = "all"
+preferred_teachers: list[str] | str | None = None
+target_term: str | None = None
+personal_tree: dict | list | None = None
 ```
+
+顶层显式参数覆盖 `profile` 中的旧值。工具已永久移除 `schedule_constraints`；早八、晚课、星期和课表冲突不参与推荐。
 
 **返回值**：
 ```python
 {
-    "recommendations": [
-        {
-            "course_name": "机器学习导论",
-            "teacher": "王教授",
-            "rating": 8.7,
-            "difficulty": 6.5,
-            "give_score": "给分好",
-            "reason": "与你的兴趣（人工智能）高度匹配；评分8.7，口碑很好",
-            "review_summary": "...",
-            "review_count": 45
-        },
-        ...  # 最多 max_results 条
-    ],
-    "total_candidates": 10,
-    "filtered_count": 5
+    "recommendations": [...],  # 三组拼接，兼容旧调用方
+    "groups": {
+        "required": [...],     # 培养方案必修
+        "elective": [...],     # 方案内选修
+        "exploratory": [...]   # 仅由本轮明确兴趣触发，且标注方案外
+    },
+    "progress": {...} | None,
+    "program_context": {
+        "matched": True,
+        "source": "personal" | "generic" | "unavailable",
+        "name": "...",
+        "taken_courses_known": True
+    },
+    "profile_note": {"name": "均衡兼顾", "source": "explicit|gpa_default|default"},
+    "limitations": [...],
+    "total_candidates": 110,
+    "filtered_count": 10
 }
 ```
 
 **推荐算法**：
 ```
-score = w_rating × rating + w_give × give_score + w_interest × interest_match
-
-权重配置（按 preference_type）：
-  easy_grade: rating=0.3, give_score=0.5, interest=0.2
-  learn_hard: rating=0.5, give_score=0.1, interest=0.4
-  balanced:   rating=0.4, give_score=0.3, interest=0.3
+1. 数据边界：个人方案 > 同专业同年级通用方案 > 无方案透明降级。
+2. 硬条件：keywords / course_scope；兴趣、工作量、教师、目标学期仅在用户说“只要/必须”时升级为硬过滤。
+3. 软排序：兴趣、工作量、给分、挑战性、教师、目标学期默认只影响排序；软偏好零命中时保留硬范围内候选。
+4. 缺省画像：本轮明确需求优先；仅在没有明确偏好时按 GPA 选择 easy_grade / balanced / learn_hard。
+5. 分组：必修 → 方案内选修 → 方向补充；方向补充只由本轮明确兴趣触发，自动从已修课推测的兴趣不触发。
+6. 评分：真实评课均分结合小样本收缩，避免少量满分评论压过稳定课程。
+7. 透明性：已修记录未知时不声称“未修缺口”；硬条件零命中不放宽，并写入 limitations。
 ```
 
-**★ B6 升级方案**：
-- 爬虫写入 `course_reviews` 表 → 数据量从 10 → 50+
-- 推荐算法不变，数据更多 = 结果更好
-- 可选增强：加入"已修课程排除"逻辑（依赖 query_schedule 结果）
+**冲突边界**：
+- `recommend_courses` 不检查个人课表，也不接受任何时间偏好参数。
+- “推荐几门课并看看是否冲突”只执行普通推荐，并通过 `limitations` 明示尚未检查冲突。
+- 已有的独立 `check_course_conflict` 保留，用于用户单独提出课表冲突检查时调用。
 
 **Plan-and-Execute 兼容性**：
-- 常依赖 Step N 的 `calc_gpa` 结果（`target_gpa` 可动态计算）
-- 占位符示例：`{step_1.gpa}` 作为推荐阈值
+- 上层在登录上下文中注入已认证学号对应的 GPA、已修课程和个人方案树。
+- 显式推荐动作在确定性路由中优先于 embedding 首分类；仅含“选修”名词的冲突问句仍走独立冲突检查。
 
 ---
 
@@ -530,8 +544,8 @@ score = w_rating × rating + w_give × give_score + w_interest × interest_match
 | 项目 | 内容 |
 |------|------|
 | **所属模块** | `tools/advisor_tools.py` |
-| **当前状态** | ✅ 可用（基于种子数据） |
-| **升级计划** | ★ B6 — 数据扩充后自动升级 |
+| **当前状态** | ✅ 可用（icourse.club 真实评课快照） |
+| **升级计划** | 随评课快照刷新自动更新 |
 
 **功能**：对比两门课程。
 
@@ -571,8 +585,8 @@ SELECT * FROM course_reviews WHERE course_name LIKE '%{course_b}%'
 | 项目 | 内容 |
 |------|------|
 | **所属模块** | `tools/advisor_tools.py` |
-| **当前状态** | ✅ 可用（种子数据 3 位教师） |
-| **升级计划** | ★ B6 — 爬虫数据扩充 |
+| **当前状态** | ✅ 可用（2982 位教师、同课多师独立统计） |
+| **升级计划** | 随评课快照刷新自动更新 |
 
 **功能**：分析指定教师的评价。
 
@@ -998,7 +1012,7 @@ TOOL_REGISTRY = {
 
 ## 2026-08-22 增补（v2.2：工具生态 + 活动数据线）
 
-> 注册表现状：**29 个内置工具 + 生态工具**（`agents/tool_registry.py` 合并 `tools/ecosystem/`）。本文上半部分为历史规格存档，以下增补为当前基准。
+> 注册表现状：**28 个内置工具 + 1 个随仓库提供的生态自检工具 `eco:echo`**（`agents/tool_registry.py` 合并 `tools/ecosystem/`）。本文上半部分的旧状态说明以本节和各工具最新正文为准。
 
 ### 更正与重写说明（覆盖上文对应条目）
 
@@ -1008,9 +1022,9 @@ TOOL_REGISTRY = {
 | §3 query_schedule / §4 find_empty_room | "模拟数据/种子数据"状态描述过时：主路径为 jw API/catalog API 实时数据 + SQLite 降级；假数据 fallback 已删除（P1-2 治理），不可用时如实提示 |
 | §18 import_schedule | **已重写（2026-08-22）**：开学日期读 `config.SEMESTER`；节次换算走 `utils/schedule_parse` + 官方 13 节次表（含晚课 11-13 节）；无"第"前缀写法自动补齐；解析失败不猜时间，`time_unparsed` 如实列出 |
 | query_daily_schedule（新增说明） | 降级分支已重写：统一解析器按星期取时段，输出精确时钟/节次/周次（`weeks` 字段）；同课多时段逐段返回 |
-| §10 collect_preferences | 已知问题（全局单例/不持久化）仍在；个性化主路径已由 `services/activity_profile.py`（活动域）承担 |
+| §10 collect_preferences | 已按当前学号分桶隔离；仍为进程内状态、不持久化。活动域画像由 `services/activity_profile.py` 独立承担 |
 
-### 28. render_link（tools/link_tools.py）
+### 27. render_link（tools/link_tools.py）
 
 | 项目 | 内容 |
 |---|---|
@@ -1020,7 +1034,7 @@ TOOL_REGISTRY = {
 | 数据源 | `config/links.yaml`（19 条已核实官方链接，六分类 + 场景关键词；与校园导航页共用） |
 | 约束 | THINK 规则 21：URL 只能来自本工具返回或知识库来源；找不到入口如实说明 |
 
-### 29. query_activities（tools/activity_tools.py）
+### 28. query_activities（tools/activity_tools.py）
 
 | 项目 | 内容 |
 |---|---|
@@ -1030,6 +1044,20 @@ TOOL_REGISTRY = {
 | 数据源 | `services/young_client.py`（报名中列表）；**token 失效自动回退快照**（source 标"本地缓存"） |
 | 副作用 | 返回项计入偏好画像 asked 流水（最多 3 条/次） |
 | 决策 | THINK 规则 22 + intents「活动推荐」意图；报名入口走规则 21 |
+
+### 培养方案工具来源约定（program_tools.py）
+
+`get_my_program`、`get_program_progress` 和 `plan_semester` 统一使用以下来源语义：
+
+| `source` | 含义 | UI 要求 |
+|---|---|---|
+| `personal` | 当前认证用户的教务个人培养方案树 | 显示“教务系统个人培养方案” |
+| `generic` | 个人方案不可用，按当前用户已验证的专业和年级命中本地通用方案 | 醒目标注“专业通用参考，不是个人培养方案” |
+| `unavailable` | 个人方案和对应通用方案均不可用 | 明确报错，不猜专业或年级 |
+
+- 三个工具均返回 `personal`、`source` 和 `fallback_from_personal`；个人方案树通过 `personal_tree` 参数传入。
+- CAS 档案学号必须与认证学号一致；专业、年级只从该用户的 `student-info` 或成绩档案提取，年份统一为 `YYYY级`。
+- 登录会话缺专业/年级时不读取匿名预览控件；个人方案树注入、CAS 客户端和缓存均按用户隔离。
 
 ### 生态工具协议 v1（tools/ecosystem/）
 

@@ -10,7 +10,7 @@ program_page.py — 培养方案三合一页面（我的方案 / 学期规划 / 
 数据准备：
 - 已登录：从 st.session_state.user 取 major/grade，读 student_grades 已修课程，
   并经 ServiceContainer.cas_client.get_my_program_tree() 拉取个人方案树传给三工具；
-  拉取失败/未登录自动降级到全量库。
+  拉取失败时仅按该用户已验证的专业/年级展示醒目标注的专业通用参考。
 - 未登录：用画像 major/grade（若会话有）+ 全量库方案；进度区提示「登录后查看个人进度」。
 
 页面使用 Streamlit 原生组件，不引入外部依赖。
@@ -23,6 +23,13 @@ import streamlit as st
 from tools.program_tools import get_my_program, get_program_progress, plan_semester
 
 _LOGIN_PROMPT = "🔒 先登录或填写专业年级后查看个人培养方案"
+
+_PROFILE_SOURCE_LABELS = {
+    "cas_student_info": "教务系统学生档案",
+    "cas_grade_profile": "教务系统成绩档案",
+    "cas_authenticated": "科大统一身份认证",
+    "test_backup": "本地测试数据备份",
+}
 
 
 def _get_user_context():
@@ -57,30 +64,29 @@ def _load_taken(student_id: str):
         return [], []
 
 
-def _pull_personal_tree(container) -> dict | list | None:
-    """登录后经 ServiceContainer 拉取个人方案树；未登录/失败返回 None（降级全量库）。
+def _pull_personal_tree(container) -> tuple[dict | list | None, str]:
+    """按当前登录学号拉取个人方案树，返回 (tree, failure_reason)。
 
     Phase 2a：在"当前学生"上下文中拉取，保证多用户会话各自命中自己的 CAS 桶。"""
     from services.session_ctx import reset_student, set_student
-    token = set_student((st.session_state.get("user") or {}).get("id"))
+    student_id = (st.session_state.get("user") or {}).get("id") or ""
+    if not student_id:
+        return None, "缺少已认证学号"
+    token = set_student(student_id)
     try:
         if not container.has_cas():
-            return None
-        tree = container.cas_client.get_my_program_tree()
+            return None, "教务登录会话不可用"
+        client = container.cas_client
+        if client.student_id != student_id:
+            return None, "教务会话与当前用户不一致"
+        tree = client.get_my_program_tree()
         if isinstance(tree, dict) and "error" in tree:
-            return None
-        return tree
-    except Exception:
-        return None
+            return None, str(tree.get("error") or "个人方案接口返回错误")
+        return tree, ""
+    except Exception as exc:
+        return None, str(exc)
     finally:
         reset_student(token)
-
-
-def _major_grade_from_profile() -> tuple:
-    """未登录降级：尝试从会话画像（如 selectbox 等已填画像）取 major/grade。"""
-    major = st.session_state.get("profile_major", "")
-    grade = st.session_state.get("profile_grade", "")
-    return major, grade
 
 
 def _program_options() -> tuple:
@@ -108,105 +114,83 @@ def _term_sort_key(c):
     return (0, 0) if not m else (1, int(m.group(1)))
 
 
-# ── 选课顾问联动（Phase 1b 点评 + P5-3 结构化三按钮）────────────────────────
-_ADD_COURSE_KEY = "_p53_add_course"
+def _profile_source_label(source: str) -> str:
+    parts = [part for part in str(source or "").split("+") if part]
+    labels = [_PROFILE_SOURCE_LABELS.get(part, part) for part in parts]
+    return " + ".join(labels) if labels else "未提供"
+
+
+def _render_program_header(user: dict | None, major: str, grade: str,
+                           program: dict | None, is_logged_in: bool,
+                           personal_error: str = "") -> None:
+    """统一页头：身份、专业、年级、档案来源与方案来源各显示一次。"""
+    st.subheader("培养方案")
+    if is_logged_in:
+        user = user or {}
+        st.markdown(f"**{user.get('name') or user.get('id') or '已登录用户'}**")
+        st.caption(
+            f"学号 {user.get('id') or '未提供'} · 专业 {major or '未提供'} · "
+            f"年级 {grade or '未提供'} · 身份来源："
+            f"{_profile_source_label(user.get('profile_source', ''))}"
+        )
+    else:
+        st.caption(f"未登录预览 · 专业 {major or '未选择'} · 年级 {grade or '未选择'}")
+
+    source = (program or {}).get("source") or "unavailable"
+    name = (program or {}).get("name") or ""
+    resolved_grade = (program or {}).get("grade") or ""
+    plan_meta = " · ".join(x for x in (name, resolved_grade) if x)
+    if source == "personal":
+        st.success(f"来源：教务系统个人培养方案{f' · {plan_meta}' if plan_meta else ''}")
+    elif source == "generic":
+        detail = f"当前按已验证的专业与年级定位本地通用方案{f'：{plan_meta}' if plan_meta else ''}。"
+        if personal_error:
+            detail += f" 个人方案不可用：{personal_error}。"
+        st.warning(f"**专业通用参考，不是个人培养方案**\n\n{detail}")
+    elif is_logged_in:
+        st.error("未能取得个人培养方案，也无法按已验证的专业与年级定位通用方案。")
+    else:
+        st.info("**专业通用参考，不是个人培养方案**")
+
+
+# ── 选课顾问联动 ────────────────────────────────────────
 
 
 def _ask_xiaowo(course_name: str) -> None:
-    """点击课程「点评」：切到选课顾问模块并自动发起该课程的问答。"""
+    """点击课程「问问小蜗」：切到选课顾问模块并发起普通文本问答。"""
     st.session_state["pending_query"] = f"「{course_name}」这门课怎么样？老师评价如何？"
     st.session_state["module_switch"] = "选课顾问"
     st.rerun()
 
 
-def _ask_recommend(course_name: str) -> None:
-    """P5-3 推荐：结构化注入 analyze_teacher(course=课程名) → 同课多师均分对比。"""
-    st.session_state["pending_query"] = f"推荐「{course_name}」同课多师对比"
-    st.session_state["pending_force_calls"] = [
-        {"tool": "analyze_teacher", "args": {"course": course_name}}]
-    st.session_state["module_switch"] = "选课顾问"
-    st.rerun()
-
-
-def _ask_conflict(course_name: str) -> None:
-    """P5-3 查冲突：结构化注入 check_course_conflict(course_names=[课程名])。"""
-    st.session_state["pending_query"] = f"「{course_name}」与会已选课程有无冲突？"
-    st.session_state["pending_force_calls"] = [
-        {"tool": "check_course_conflict", "args": {"course_names": [course_name]}}]
-    st.session_state["module_switch"] = "选课顾问"
-    st.rerun()
-
-
-def _open_add_event(name: str) -> None:
-    st.session_state[_ADD_COURSE_KEY] = name
-
-
-@st.dialog("➕ 加入日程", width="small")
-def _add_event_dialog(course_name: str):
-    """P5-3 加日程：填 开始/结束时间（必填）+ 可选地点 → 结构化注入 add_event。"""
-    title = st.text_input("事件标题", value=course_name)
-    start = st.text_input("开始时间 (YYYY-MM-DDTHH:MM)", key="p53_start")
-    end = st.text_input("结束时间 (YYYY-MM-DDTHH:MM)", key="p53_end")
-    loc = st.text_input("地点（可选）", key="p53_loc")
-    if st.button("确认添加"):
-        if not start or not end:
-            st.warning("请同时填写开始与结束时间")
-            return
-        args = {"title": title or course_name, "start_time": start, "end_time": end}
-        if loc:
-            args["location"] = loc
-        st.session_state["pending_query"] = f"把「{title or course_name}」加入日程"
-        st.session_state["pending_force_calls"] = [{"tool": "add_event", "args": args}]
-        st.session_state["module_switch"] = "选课顾问"
-        st.session_state[_ADD_COURSE_KEY] = ""
-        st.rerun()
-
-
-def _course_action_buttons(courses: list[dict], prefix: str) -> None:
-    """课程表下方「每门课一行」动作按钮组：课程名 | 点评 | 推荐 | 查冲突 | 加日程。
-
-    按课程编号区分的课程对象；多师公共课当普通课程处理（不按老师拆分）。
-    """
+def _course_ask_buttons(courses: list[dict], prefix: str) -> None:
+    """在课程表下方渲染紧凑的「问问小蜗」按钮组。"""
     named = [c for c in courses if c.get("name")]
     if not named:
         return
-    st.caption("💡 每门课可选：点评 / 推荐（同课多师对比）/ 查冲突 / 加日程")
+    st.caption("点击课程可让选课顾问直接点评该课程：")
+    cols = st.columns(4)
     for i, c in enumerate(named):
-        cols = st.columns([3, 1, 1, 1, 1])
-        with cols[0]:
-            st.markdown(f"**{c['name']}**")
-        with cols[1]:
-            st.button("💬点评", key=f"ask_{prefix}_{i}",
-                      width="stretch", on_click=_ask_xiaowo, args=(c["name"],))
-        with cols[2]:
-            st.button("👍推荐", key=f"rec_{prefix}_{i}",
-                      width="stretch", on_click=_ask_recommend, args=(c["name"],))
-        with cols[3]:
-            st.button("⚠️冲突", key=f"cf_{prefix}_{i}",
-                      width="stretch", on_click=_ask_conflict, args=(c["name"],))
-        with cols[4]:
-            st.button("➕日程", key=f"add_{prefix}_{i}",
-                      width="stretch", on_click=_open_add_event, args=(c["name"],))
+        with cols[i % 4]:
+            st.button(
+                f"💬 {c['name']}",
+                key=f"ask_{prefix}_{i}",
+                width="stretch",
+                on_click=_ask_xiaowo,
+                args=(c["name"],),
+            )
 
 
 # ── 各子页 ─────────────────────────────────────────
 
 def _render_my_program(program: dict):
-    """我的方案：方案名 + 模块构成 + 按模块分组的课程表。"""
+    """我的方案：模块构成 + 按模块分组的课程表；方案身份已在页头展示。"""
     if not program or not program.get("courses"):
         st.info("未能定位到培养方案。")
         return
 
-    st.markdown(f"### 📜 {program.get('name') or '个人培养方案'}")
-    meta = []
-    if program.get("college"):
-        meta.append(f"{program['college']}")
-    if program.get("grade"):
-        meta.append(f"{program['grade']}")
     if program.get("totalCredits") is not None:
-        meta.append(f"总学分 {program['totalCredits']}")
-    if meta:
-        st.caption(" · ".join(meta))
+        st.caption(f"方案课程学分合计 {program['totalCredits']}")
 
     # 模块构成
     if program.get("modules"):
@@ -234,7 +218,7 @@ def _render_my_program(program: dict):
             width="stretch",
             hide_index=True,
         )
-        _course_action_buttons(courses, f"prog_{cat}")
+        _course_ask_buttons(courses, f"prog_{cat}")
 
 
 def _render_semester_plan(program: dict, major: str, grade: str, tree, year_index: int):
@@ -271,7 +255,7 @@ def _render_semester_plan(program: dict, major: str, grade: str, tree, year_inde
                 width="stretch",
                 hide_index=True,
             )
-            _course_action_buttons(courses, f"plan_{tag}_{year_index}")
+            _course_ask_buttons(courses, f"plan_{tag}_{year_index}")
 
 
 def _render_progress(progress: dict, is_logged_in: bool):
@@ -312,7 +296,7 @@ def _render_progress(progress: dict, is_logged_in: bool):
                 width="stretch",
                 hide_index=True,
             )
-            _course_action_buttons(remaining_sorted, "gap")
+            _course_ask_buttons(remaining_sorted, "gap")
         else:
             st.success("🎉 必修课程已全部修完！")
 
@@ -331,14 +315,20 @@ def _render_progress(progress: dict, is_logged_in: bool):
 def render_program_page(container) -> None:
     """渲染培养方案三合一页面（由 app.py 在选中「培养方案」模块时调用）。"""
     major, grade, taken_courses, taken_credits, is_logged_in = _get_user_context()
+    user = st.session_state.get("user") or None
 
-    # 未登录降级：用画像 major/grade（若会话有），否则提供全量库专业/年级选择器
-    if not major:
-        pm, pg = _major_grade_from_profile()
-        major, grade = pm, pg
-    if not major:
+    # 登录后专业/年级只能来自该用户的认证档案；字段缺失时不读取匿名预览选择。
+    if is_logged_in and (not major or not grade):
+        _render_program_header(user, major, grade, None, True)
+        missing = "、".join(label for label, value in (("专业", major), ("年级", grade)) if not value)
+        st.error(f"教务档案未提供{missing}，无法可靠定位培养方案；本页不会使用登录前的预览选择代替。")
+        return
+
+    # 未登录仅展示可切换的通用方案预览。
+    if not is_logged_in:
         majors, grades = _program_options()
-        if not majors:
+        if not majors or not grades:
+            _render_program_header(None, major, grade, None, False)
             st.info(_LOGIN_PROMPT)
             return
         st.caption("🔒 未登录：展示全量库培养方案预览（登录后自动切换为个人方案）")
@@ -350,26 +340,22 @@ def render_program_page(container) -> None:
                                  index=min(2, len(grades) - 1) if grades else 0,
                                  key="profile_grade")
 
-    # 拉取个人方案树（登录/未登录均可能为 None → 降级全量库）
-    tree = _pull_personal_tree(container) if is_logged_in else None
+    # 拉取个人方案树；失败后只能用上述已验证身份定位通用参考。
+    tree, personal_error = _pull_personal_tree(container) if is_logged_in else (None, "")
 
     # 顶部方案名 + 进度概览条
     try:
         program = get_my_program.invoke(
             {"major": major, "grade": grade, "personal_tree": tree})
     except Exception:
+        _render_program_header(user, major, grade, None, is_logged_in, personal_error)
         st.error("培养方案加载失败，请稍后重试。")
         return
 
+    _render_program_header(user, major, grade, program, is_logged_in, personal_error)
     if not program or not program.get("courses"):
         st.info("未能定位到培养方案，请确认专业名称后重试。")
         return
-
-    # 顶部：方案名 + 年级 + 进度条
-    st.markdown(f"### 📜 {program.get('name') or '个人培养方案'}")
-    meta = [x for x in [program.get("college"), program.get("grade")] if x]
-    if meta:
-        st.caption(" · ".join(meta))
 
     try:
         progress = get_program_progress.invoke(
@@ -406,12 +392,6 @@ def render_program_page(container) -> None:
     if tabs[2].open:
         with tabs[2]:
             _render_progress(progress, is_logged_in)
-
-    # P5-3 加日程弹窗：任一课程点「➕日程」后在本 run 末打开（结构化注入 add_event）
-    add_course = st.session_state.pop(_ADD_COURSE_KEY, None)
-    if add_course:
-        _add_event_dialog(add_course)
-
 
 def _estimate_years(courses: list) -> int:
     """按方案课程里最大学年号估算总学年数（1-4+），缺省 4。"""

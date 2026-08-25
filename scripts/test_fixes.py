@@ -118,6 +118,12 @@ def build_mini_db() -> str:
     cur.execute(
         "INSERT INTO program_courses(program_id, course_id, code, name, required, exam, credit, category, term) "
         "VALUES(1, 3, 'MATH100604', '数学分析(B1)', '必修', '笔试（闭卷）', '6', '专业基础课程', '1秋')")
+    cur.execute(
+        "INSERT INTO program_courses(program_id, course_id, code, name, required, exam, credit, category, term) "
+        "VALUES(1, 1, 'COMP6002P04', '组合数学', '选修', '', '3', '专业选修课程', '2秋')")
+    cur.execute(
+        "INSERT INTO program_courses(program_id, course_id, code, name, required, exam, credit, category, term) "
+        "VALUES(1, 2, 'HS153403', '社会心理学', '选修', '', '2', '通识课程', '2春')")
     # courses 汇总回填
     cur.execute(
         "UPDATE courses SET rating_avg = (SELECT rating_avg FROM course_rates r WHERE r.course_id = courses.id),"
@@ -137,17 +143,18 @@ def run() -> None:
     r = at.recommend_courses.invoke({"profile": {"major": "数学与应用数学", "max_results": 10}})
     recs = r["recommendations"]
     names = [c["name"] for c in recs]
-    t("推荐返回非空", len(recs) >= 4, f"共 {len(recs)} 门")
+    t("推荐返回方案内课程", len(recs) == 3, f"共 {len(recs)} 门")
     # 分组语义: 必修组前置（同档按评分降序）, 选修组评分降序; 不再要求全局均分降序
     groups = r.get("groups") or {}
     req_recs = groups.get("required") or []
     ele_recs = groups.get("elective") or []
-    req_ok = all(req_recs[i]["rating_avg"] >= req_recs[i + 1]["rating_avg"]
+    req_ok = all(req_recs[i]["recommendation_score"] >= req_recs[i + 1]["recommendation_score"]
                  for i in range(len(req_recs) - 1))
-    ele_ok = all(ele_recs[i]["rating_avg"] >= ele_recs[i + 1]["rating_avg"]
+    ele_ok = all(ele_recs[i]["recommendation_score"] >= ele_recs[i + 1]["recommendation_score"]
                  for i in range(len(ele_recs) - 1))
-    t("必修组前置且组内降序", req_ok and ele_ok and recs[:len(req_recs)] == req_recs,
+    t("必修组前置且组内按推荐分降序", req_ok and ele_ok and recs[:len(req_recs)] == req_recs,
       f"必修 {len(req_recs)} 门 / 选修 {len(ele_recs)} 门")
+    t("无本轮明确兴趣时不生成方向补充", not (groups.get("exploratory") or []), str(groups))
     # 数学分析(B1): 5 条评论（汪 5,5,4 + 李 3,2）→ (19×2)/5 = 7.6, 与 course_rates 一致
     math = next((c for c in recs if c["name"] == "数学分析(B1)"), None)
     if math:
@@ -288,16 +295,62 @@ def run() -> None:
     t("显式偏好优先于 GPA", r_exp.get("profile_note", {}).get("name") == "冲分保绩"
       and not r_exp["profile_note"].get("auto"), str(r_exp.get("profile_note")))
 
-    r_int = at.recommend_courses.invoke({"profile": {"taken_courses": ["计算机程序设计"], "max_results": 5}})
-    hit = any("兴趣「计算机」" in "；".join(c.get("reasons") or []) for c in r_int["recommendations"])
-    t("已修课程推断兴趣理由", hit,
-      f"样本 reasons: {[c['reasons'][:2] for c in r_int['recommendations'][:3]]}")
+    r_int = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "taken_courses": ["计算机程序设计"], "max_results": 5,
+    }})
+    t("已修课程推断不触发方向补充",
+      not ((r_int.get("groups") or {}).get("exploratory") or []), str(r_int.get("groups")))
+
+    r_direction = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "interests": ["算法"], "max_results": 4,
+    }})
+    exploratory = (r_direction.get("groups") or {}).get("exploratory") or []
+    t("本轮明确方向才生成方向补充",
+      [c["name"] for c in exploratory] == ["算法设计"], str([c["name"] for c in exploratory]))
+
+    r_soft = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "interests": ["不存在方向"], "max_results": 4,
+    }})
+    t("软偏好零命中仍保留硬范围内候选",
+      bool(r_soft["recommendations"]) and not ((r_soft.get("groups") or {}).get("exploratory") or []),
+      str([c["name"] for c in r_soft["recommendations"]]))
+
+    r_hard_interest = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "interests": ["不存在方向"],
+        "_explicit_interests": True, "_hard_preferences": ["interests"], "max_results": 4,
+    }})
+    t("只要兴趣零命中时不放宽硬条件",
+      not r_hard_interest["recommendations"]
+      and any("未放宽" in x for x in r_hard_interest.get("limitations") or []),
+      str(r_hard_interest.get("limitations")))
+
+    r_required = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "course_scope": "required", "max_results": 5,
+    }})
+    r_elective = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "course_scope": "elective", "max_results": 5,
+    }})
+    t("课程范围作为硬条件",
+      [c["name"] for c in r_required["recommendations"]] == ["数学分析(B1)"]
+      and {c["name"] for c in r_elective["recommendations"]} == {"组合数学", "社会心理学"}
+      and not ((r_elective.get("groups") or {}).get("required") or [])
+      and not ((r_elective.get("groups") or {}).get("exploratory") or []),
+      str(([c["name"] for c in r_required["recommendations"]],
+           [c["name"] for c in r_elective["recommendations"]])))
+
+    r_compound = at.recommend_courses.invoke({"profile": {
+        "major": "数学与应用数学", "_conflict_not_checked": True, "max_results": 3,
+    }})
+    t("复合推荐明确未做冲突检查",
+      any("尚未与个人课表做冲突检查" in x for x in r_compound.get("limitations") or []),
+      str(r_compound.get("limitations")))
 
     # ── 11. Phase 2b: 方案定位双实现收敛（advisor 与 program 口径一致）──
     conn2 = sqlite3.connect(db_path)
     conn2.row_factory = sqlite3.Row
     try:
         import tools.program_tools as _pt
+        _pt.COURSE_DB = Path(db_path)
         row = _pt._resolve_program(conn2, "数学与应用数学", "2025级")
         pid2, pname2 = at._resolve_program(conn2, "数学与应用数学", "2025级")
         t("方案定位双实现收敛", row is not None and row["id"] == pid2 and row["name"] == pname2,
@@ -306,6 +359,26 @@ def run() -> None:
           and at._resolve_program(conn2, None, None) == (None, None), "")
     finally:
         conn2.close()
+
+    generic_program = _pt.get_my_program.invoke({
+        "major": "数学与应用数学", "grade": "2025级", "personal_tree": {},
+    })
+    personal_program = _pt.get_my_program.invoke({
+        "major": "数学与应用数学", "grade": "2025级",
+        "personal_tree": {"type": {"nameZh": "个人模块"}, "planCourses": [{
+            "course": {"code": "SELF1", "nameZh": "个人专属课程", "credits": 1},
+            "compulsory": True, "readableTerms": ["1秋"],
+        }]},
+    })
+    unavailable_program = _pt.get_my_program.invoke({
+        "major": "不存在专业", "grade": "2025级", "personal_tree": {},
+    })
+    t("培养方案来源显式区分个人/通用/不可用",
+      personal_program["source"] == "personal" and personal_program["personal"] is True
+      and generic_program["source"] == "generic" and generic_program["personal"] is False
+      and generic_program["fallback_from_personal"] is True
+      and unavailable_program["source"] == "unavailable",
+      str((personal_program["source"], generic_program["source"], unavailable_program["source"])))
 
     # ── 12. 选课 H 项: 课程时间解析与节次级冲突判定（纯函数，无 DB）──
     from utils.schedule_parse import parse_course_time as _pct, slots_overlap as _ov

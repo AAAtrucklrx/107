@@ -10,7 +10,8 @@
 |------|------|
 | 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
 | 📊 课业助手 | 成绩查询、课表查询（节次精确到分钟）、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
-| 🔍 选课顾问 | 基于 icourse.club 真实评课数据推荐（5667 个课程页 / 4.4 万条评论，不合并同课多师）：真实均分降序、同课多师并列对比、5-6 条真实评论引用，支持画像软过滤与教师分析；选课冲突检测（节次/周次级）与退补选压力评估 |
+| 🔍 选课顾问 | 基于 icourse.club 真实评课数据（5667 个课程页 / 4.4 万条评论）与培养方案，按“必修 / 方案内选修 / 方向补充”推荐；本轮需求优先，课程范围和“只要/必须”是硬条件，其余偏好默认软排序；独立提供节次/周次级课表冲突检查与退补选压力评估 |
+| 🧭 培养方案 | 登录后只使用当前用户 CAS/成绩档案中的专业、年级和个人方案；个人方案不可用时可按已验证身份显示醒目标注的“专业通用参考，不是个人培养方案”，不会继承登录前的匿名预览选择 |
 | 📅 日程管理 | 日程记录与查询（自然语言时间解析："明天下午3点到4点"精确落点）、冲突检测、课表导入 |
 | 🎪 活动推荐 | **青春科大（第二课堂）实时数据**：对话直接查报名中活动；每日弹窗四因子个性化推荐（紧迫度/课表空闲/个性化/热度），个性化=平台兴趣标签+行为学习+**德智体美劳模块学时均衡补短板**；token 失效自动回退本地快照 |
 | 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；侧边栏"校园导航"页收录 19 条官方工具与网站 |
@@ -81,19 +82,22 @@ streamlit run app.py
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 - [docs/学习报告.md](docs/学习报告.md) — 项目学习基线
 
-## ✅ 回归验证（2026-08-22 基线）
+## ✅ 回归验证（2026-08-25 本地基线）
 
 | 命令 | 结果 |
 |------|------|
 | `python scripts/check_course_db.py` | 9/9（评课库完整性） |
-| `python scripts/verify_tools.py` | 39/39（工具层断言） |
-| `python scripts/test_fixes.py` | 43/43（历史修复回归） |
-| `python scripts/verify_nodes.py` | 46/46（节点/路由/工具校验） |
+| `python scripts/verify_tools.py` | 40/40（工具层断言） |
+| `python scripts/test_fixes.py` | 50/50（历史修复与推荐语义回归） |
+| `python scripts/verify_nodes.py` | 53/53（节点/路由/身份隔离校验） |
 | `python scripts/verify_ecosystem.py` | 10/10（生态协议） |
 | `python scripts/verify_links.py` | 12/12（官方链接/入口跳转） |
-| `python scripts/verify_activities.py` | 8/8（活动查询，需 YOUNG_TOKEN，失效自动 SKIP） |
+| `python scripts/verify_activities.py` | 8/8（活动查询；实时或快照降级） |
 | `python scripts/verify_profile.py` | 11/11（偏好画像/均衡/快照回退） |
-| `python scripts/qa_consistency.py` / `qa_new_docs.py` | 12/12 · 10/10（需 LLM） |
+| `python scripts/verify_time_parser.py` | 17/17（自然语言时间与 GPA 表） |
+| `python scripts/verify_security_ui.py` | 20/20（认证绑定、多用户方案隔离与 UI 安全） |
+| `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
+| `python scripts/qa_consistency.py` / `qa_new_docs.py` | 需 LLM；最近一次已确认基线 12/12 · 10/10 |
 | 全模块 UI 问答实测 | 19 问 18 直接通过 + 1 断言误判（答案正确），见 docs/e2e_full_module_test.png |
 
 ### 已知限制
@@ -101,7 +105,8 @@ streamlit run app.py
 - 评课数据为 icourse.club 抓取快照（重爬 SOP：`scripts/refresh_course_db.py`）；样本量过少的课程/教师评分仅供参考
 - 真实 CAS 登录部署需 service 白名单；本地开发用 `app_test.py` 离线路径
 - YOUNG_TOKEN 约 7 天有效期，失效后活动功能自动回退本地快照（来源如实标注）
-- 教师对比样本量差异大（1~553 条），均分排序存在小样本偏差
+- 教师对比样本量差异大（1~553 条）；推荐排序已做小样本收缩，原始均分和样本量仍会同时展示
+- 课程推荐不会自动应用早八、晚课、星期或个人课表冲突过滤；确定候选后需单独运行课表冲突检查
 - `scripts/test_fixes.py` 受限沙箱下可设 `XIAOWO_TEST_TMP`
 
 ## ⚖️ 说明

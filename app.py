@@ -37,7 +37,7 @@ def init_services() -> ServiceContainer:
     return container
 
 
-def process_query(user_input: str, selected_module: str, force_calls: list[dict] = None) -> dict:
+def process_query(user_input: str, selected_module: str) -> dict:
     """
     处理用户查询的核心流程（v3.0）：
     统一 QA LangGraph — 意图识别 → 工具调用 → 综合回答
@@ -61,7 +61,7 @@ def process_query(user_input: str, selected_module: str, force_calls: list[dict]
                     for m in (st.session_state.get("messages") or [])][-20:]
     result = run_qa(user_input, module_signal=selected_module,
                     student_id=student_id, user_profile=user_profile,
-                    chat_history=chat_history, force_calls=force_calls)
+                    chat_history=chat_history)
     if result.get("error"):
         log.warning(f"QA 流程提示: {result['error']}")
     answer = (result.get("answer") or result.get("clarify_question")
@@ -194,19 +194,16 @@ def main(startup_hook=None):
     # 对话区域
     prompt = render_chat_area()
 
-    # ── 培养方案页联动（Phase 1b 文本点评 + P5-3 结构化按钮）：pending_query 展示为提问，
-    #    pending_force_calls 为三按钮预置的工具调用（optional），传给 QA 直达 act ──
+    # ── 培养方案页「问问小蜗」联动：pending_query 作为普通用户提问处理 ──
     pending = st.session_state.pop("pending_query", None)
-    pending_force = st.session_state.pop("pending_force_calls", None)
-    if pending or pending_force:
+    if pending:
         from datetime import datetime
-        display = pending or "选课顾问操作"
         st.session_state.messages.append({
-            "role": "user", "content": display,
+            "role": "user", "content": pending,
             "timestamp": datetime.now().strftime("%H:%M"),
         })
         with st.spinner("小蜗正在思考..."):
-            _r = process_query(display, selected_module, force_calls=pending_force)
+            _r = process_query(pending, selected_module)
         add_assistant_message(_r["answer"], tool_results=_r["tool_results"])
         st.rerun()
 

@@ -146,6 +146,98 @@ def verify_cas_final_host() -> None:
     check("CAS 登录页 200 不得冒充教务登录成功", result is False and not client.is_logged_in)
 
 
+def verify_profile_and_program_isolation() -> None:
+    from agents.qa import nodes
+    from services.cas_client import CASClient, _normalize_student_profile
+    from services.service_container import ServiceContainer
+    from services.session_ctx import reset_student, set_student
+
+    nested = {
+        "data": {
+            "student": {
+                "studentNo": "PB-PROFILE",
+                "nameZh": "测试学生",
+                "major": {"nameZh": "人工智能"},
+                "grade": 2025,
+            }
+        }
+    }
+    normalized = _normalize_student_profile(nested, "PB-PROFILE")
+    check(
+        "CAS 嵌套档案规范化专业与年级",
+        normalized == {"name": "测试学生", "major": "人工智能", "grade": "2025级"},
+        str(normalized),
+    )
+    check(
+        "CAS 档案学号不一致时拒绝使用",
+        _normalize_student_profile(nested, "PB-OTHER") == {},
+    )
+
+    tree_a = {"type": {"nameZh": "A方案"}, "planCourses": [{
+        "course": {"code": "A1", "nameZh": "A课程", "credits": 1},
+        "compulsory": True, "readableTerms": ["1秋"],
+    }]}
+    tree_b = {"type": {"nameZh": "B方案"}, "planCourses": [{
+        "course": {"code": "B1", "nameZh": "B课程", "credits": 2},
+        "compulsory": True, "readableTerms": ["2秋"],
+    }]}
+    ServiceContainer.reset()
+    nodes._PERSONAL_TREE_CACHE.clear()
+    container = ServiceContainer()
+    token_a = set_student("PB-A")
+    client_a = container.cas_client
+    client_a._logged_in = True
+    client_a._student_id = "PB-A"
+    client_a.inject_program_tree(tree_a)
+    pulled_a = nodes._load_personal_tree("PB-A")
+    reset_student(token_a)
+    token_b = set_student("PB-B")
+    client_b = container.cas_client
+    client_b._logged_in = True
+    client_b._student_id = "PB-B"
+    client_b.inject_program_tree(tree_b)
+    pulled_b = nodes._load_personal_tree("PB-B")
+    reset_student(token_b)
+    check(
+        "双用户个人方案树与缓存按学号隔离",
+        client_a is not client_b and pulled_a == tree_a and pulled_b == tree_b
+        and nodes._PERSONAL_TREE_CACHE == {"PB-A": tree_a, "PB-B": tree_b},
+        str(nodes._PERSONAL_TREE_CACHE),
+    )
+    ServiceContainer.reset()
+    nodes._PERSONAL_TREE_CACHE.clear()
+
+    from ui import chat, program_page
+
+    class FakeSt:
+        session_state = {
+            "user": {"id": "PB-A", "major": "", "grade": ""},
+            "profile_major": "错误专业",
+            "profile_grade": "2099级",
+            "program_year_select": 4,
+        }
+
+    with (
+        patch.object(program_page, "st", FakeSt),
+        patch.object(program_page, "_load_taken", return_value=([], [])),
+    ):
+        major, grade, *_ = program_page._get_user_context()
+    check(
+        "登录档案不继承匿名预览专业年级",
+        major == "" and grade == "",
+        str((major, grade)),
+    )
+    with patch.object(chat, "st", FakeSt):
+        chat._clear_program_preview_state()
+    check(
+        "登录切换会清理匿名方案选择",
+        all(key not in FakeSt.session_state for key in (
+            "profile_major", "profile_grade", "program_year_select",
+        )),
+        str(FakeSt.session_state),
+    )
+
+
 def verify_ui_and_entrypoint() -> None:
     from ui.chat import _render_card
 
@@ -410,6 +502,7 @@ def main() -> None:
     verify_agent_identity_binding()
     verify_ticket_and_logout_isolation()
     verify_cas_final_host()
+    verify_profile_and_program_isolation()
     verify_ui_and_entrypoint()
     verify_vector_store_preserves_data()
     verify_course_tools()

@@ -51,10 +51,12 @@ def _init_test_mode(container: ServiceContainer) -> None:
         if st.session_state.get("user") is None:
             user = dict(test_data["user"])
             user.setdefault("logged_in_at", time.time())
+            user.setdefault("profile_source", "test_backup")
             st.session_state["user"] = user
+            for key in ("profile_major", "profile_grade", "program_year_select"):
+                st.session_state.pop(key, None)
 
         student_id = test_data["user"]["id"]
-        from services.cas_client import CASClient
         from services.session_ctx import reset_student, set_student
         from tools import course_tools
 
@@ -64,7 +66,7 @@ def _init_test_mode(container: ServiceContainer) -> None:
             client._logged_in = True
             client._student_id = student_id
 
-            CASClient._injected_program_tree = test_data["program_tree"]
+            client.inject_program_tree(test_data["program_tree"])
             course_tools.set_offline_mode(True)
         finally:
             reset_student(token)

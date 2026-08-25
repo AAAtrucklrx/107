@@ -175,29 +175,33 @@ def _join_category(parent: str, name: str) -> str:
 # ── 统一入口：个人树优先，否则全量库 ──────────────────────
 
 def _resolve_courses(major: str, grade: str, personal_tree: dict | list | None):
-    """返回 (program_meta, courses)。个人树优先；未传入/解析为空则用全量库。"""
-    conn = None
-    try:
-        conn = _cdb()
-    except sqlite3.Error:
-        conn = None
-
+    """返回 (program_meta, courses)，并显式区分个人、通用和不可用来源。"""
     if personal_tree is not None:
         courses = _parse_tree(personal_tree)
         if courses:
             return {"id": None, "name": "个人培养方案", "college": "", "grade": grade or "",
-                    "personal": True}, courses
+                    "personal": True, "source": "personal",
+                    "fallback_from_personal": False}, courses
 
-    if conn is None:
+    try:
+        conn = _cdb()
+    except sqlite3.Error:
         return {"id": None, "name": "", "college": "", "grade": grade or "",
-                "personal": False}, []
-    prog = _resolve_program(conn, major, grade)
-    if not prog:
-        return {"id": None, "name": "", "college": "", "grade": grade or "",
-                "personal": False}, []
-    prog = dict(prog)
-    prog["personal"] = False
-    return prog, _load_full_program_courses(conn, prog["id"])
+                "personal": False, "source": "unavailable",
+                "fallback_from_personal": personal_tree is not None}, []
+    try:
+        prog = _resolve_program(conn, major, grade)
+        if not prog:
+            return {"id": None, "name": "", "college": "", "grade": grade or "",
+                    "personal": False, "source": "unavailable",
+                    "fallback_from_personal": personal_tree is not None}, []
+        prog = dict(prog)
+        prog["personal"] = False
+        prog["source"] = "generic"
+        prog["fallback_from_personal"] = personal_tree is not None
+        return prog, _load_full_program_courses(conn, prog["id"])
+    finally:
+        conn.close()
 
 
 # ── 工具 ─────────────────────────────────────────────
@@ -250,10 +254,11 @@ def get_my_program(major: str, grade: Optional[str] = None,
         "college": prog["college"],
         "grade": prog["grade"],
         "personal": prog.get("personal", False),
+        "source": prog.get("source", "unavailable"),
+        "fallback_from_personal": prog.get("fallback_from_personal", False),
         "totalCredits": total,
         "modules": modules,
         "courses": [dict(c) for c in courses_public],
-        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
     }
 
 
@@ -335,7 +340,9 @@ def get_program_progress(major: str, grade: Optional[str] = None,
         "credits_required": credits_required,
         "percent": percent,
         "modules_progress": modules_progress,
-        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
+        "personal": prog.get("personal", False),
+        "source": prog.get("source", "unavailable"),
+        "fallback_from_personal": prog.get("fallback_from_personal", False),
     }
 
 
@@ -392,5 +399,7 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
         "year_index": year_index,
         "terms": ordered,
         "total_credits": round(total, 1),
-        "source": "local",  # 本地方案库/个人方案树数据，非教务实时
+        "personal": prog.get("personal", False),
+        "source": prog.get("source", "unavailable"),
+        "fallback_from_personal": prog.get("fallback_from_personal", False),
     }

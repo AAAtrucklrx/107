@@ -2,11 +2,12 @@
 小蜗 — 选课顾问 Agent 工具
 数据源: data/course_data.db（icourse.club 真实评课, 8 表结构见 database/schema_course.sql）
 
-推荐原则（与用户确认）:
-- 排序: 真实星级均分降序（不归一化）, 平手时样本量大优先
-- 老师维度: 同课多师并列, 各自均分/样本量/代表评论
-- 画像: 仅软过滤 + 理由生成, 不参与排序权重
-- 展示: 文字流（标题行 + 评分行 + 5-6 条真实评论引用, 点赞序, 作者去重）
+推荐原则:
+- 培养方案先约束候选：必修缺口优先，方案内选修优先于方向补充课
+- 用户明确需求参与排序：兴趣、课程范围、工作量、给分、挑战性、教师和目标学期
+- 自动画像只在用户没有明确需求时作为缺省信号，不能覆盖用户本轮表达
+- 评分采用小样本收缩，避免少量满分评论压过稳定课程
+- 无个人成绩、个人方案或实时排课时明确降级，不伪造匹配结论
 """
 
 from __future__ import annotations
@@ -37,8 +38,24 @@ PROFILES = {
 _PREF_CN = {
     "给分好": "easy_grade", "好拿分": "easy_grade", "轻松": "easy_grade",
     "水课": "easy_grade", "不点名": "easy_grade", "任务少": "easy_grade",
-    "摸鱼": "easy_grade", "省时": "easy_grade", "硬核": "learn_hard",
-    "学东西": "learn_hard", "挑战": "learn_hard",
+    "作业少": "easy_grade", "低负担": "easy_grade", "摸鱼": "easy_grade",
+    "省时": "easy_grade", "冲分": "easy_grade", "保绩": "easy_grade",
+    "硬核": "learn_hard", "学东西": "learn_hard", "学到东西": "learn_hard",
+    "挑战": "learn_hard", "收获": "learn_hard",
+}
+
+_VALID_PREFERENCES = frozenset(PROFILES)
+
+# 兴趣词扩展只用于课程文本匹配，不改写用户原始需求，也不把扩展词展示成用户偏好。
+_INTEREST_ALIASES = {
+    "AI": ("人工智能", "机器学习", "深度学习", "模式识别", "计算机视觉", "自然语言处理", "智能"),
+    "人工智能": ("人工智能", "机器学习", "深度学习", "模式识别", "计算机视觉", "自然语言处理", "智能"),
+    "机器学习": ("机器学习", "深度学习", "模式识别", "数据挖掘", "神经网络", "人工智能"),
+    "编程": ("编程", "程序设计", "程序设计实践", "软件"),
+    "算法": ("算法", "组合数学", "离散数学", "运筹", "优化"),
+    "数据": ("数据", "数据库", "统计", "信息"),
+    "金融": ("金融", "经济", "投资", "计量"),
+    "设计": ("设计", "艺术", "视觉", "交互"),
 }
 
 # 已修课程名 → 兴趣关键词（个性化 v1：仅作理由信号，不参与候选池过滤）
@@ -66,6 +83,34 @@ def _infer_preference(profile: dict) -> str:
     if g <= 2.7:
         return "easy_grade"
     return "balanced"
+
+
+def _as_list(value) -> list[str]:
+    """将工具的宽容列表参数归一为去空、保序、去重的字符串列表。"""
+    if value is None:
+        return []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
+
+
+def _normalize_preference(value: str | None) -> str | None:
+    """兼容英文枚举和自然语言偏好；无法识别时返回 None，避免静默套错画像。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text in _VALID_PREFERENCES:
+        return text
+    for phrase, pref in _PREF_CN.items():
+        if phrase in text:
+            return pref
+    return None
 
 
 def _cdb() -> sqlite3.Connection:
@@ -287,31 +332,55 @@ def _program_hint(conn: sqlite3.Connection, major: str | None, course_id: int,
     return {"required": h["required"], "term": h["term"], "program": h["name"], "grade": h["grade"]}
 
 
-def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict) -> list[str]:
-    """软过滤理由: 兴趣匹配 + 画像提示（不参与排序）。"""
+def _generate_reason(conn: sqlite3.Connection, course: dict, profile: dict,
+                     rank: dict | None = None, program_hint: dict | None = None) -> list[str]:
+    """只依据实际方案与评课信号生成解释；未知信息不包装成命中理由。"""
     reasons: list[str] = []
-    interests = profile.get("interests") or []
-    if interests:
-        matched = [k for k in interests if k and (k in course["name"] or k in course["dept"]
-                                                  or k in course["course_type"])]
-        if matched:
-            reasons.append(f"与兴趣「{'、'.join(matched[:3])}」相关")
+    rank = rank or {}
+    hint = program_hint or {}
+    status = rank.get("program_status")
+    term = hint.get("term") or "未标注学期"
+    if status == "required":
+        if profile.get("_taken_known"):
+            reasons.append(f"培养方案必修缺口（{term}），应优先安排")
+        else:
+            reasons.append(f"培养方案必修课（{term}）；尚未取得完整已修记录，请先确认是否已修")
+    elif status == "elective":
+        reasons.append(f"当前培养方案内选修课（{term}）")
+    elif status == "outside":
+        reasons.append("方向补充课，不在当前定位到的培养方案清单中")
+
+    matched = rank.get("matched_interests") or []
+    if matched:
+        if profile.get("_auto_interests"):
+            reasons.append(f"根据已修课程推测可能相关的方向「{'、'.join(matched[:3])}」")
+        else:
+            reasons.append(f"匹配本轮需求「{'、'.join(matched[:3])}」")
+    matched_teachers = rank.get("matched_teachers") or []
+    if matched_teachers:
+        reasons.append(f"包含偏好的教师「{'、'.join(matched_teachers[:3])}」")
+
     pref = profile.get("preference_type", "balanced")
     dims = course["dims"]["avg"]
-    if pref == "easy_grade":
-        if dims.get("给分", 0) >= 8:
-            reasons.append("给分评价好, 适合冲分")
+    if profile.get("workload_preference") == "low":
+        if dims.get("作业", 0) >= 7.5:
+            reasons.append("作业负担评价较低，符合省时需求")
+        elif dims.get("作业", 0):
+            reasons.append("作业负担评价不低，与省时需求并非完全匹配")
+    elif pref == "easy_grade":
+        if dims.get("给分", 0) >= 7.5:
+            reasons.append("给分评价较好，适合冲分保绩")
         if dims.get("难度", 0) and dims["难度"] <= 4.5:
-            reasons.append("注意: 难度评价较高, 冲分需谨慎")
+            reasons.append("难度评价偏高，冲分需谨慎")
     elif pref == "learn_hard":
-        if dims.get("收获", 0) >= 8:
-            reasons.append("收获评价高, 值得深入学习")
+        if dims.get("收获", 0) >= 7.5:
+            reasons.append("收获评价较高，适合深入学习")
         if dims.get("难度", 0) and dims["难度"] <= 4.5:
             reasons.append("课程有挑战性")
     if profile.get("_auto_pref") and profile.get("gpa") is not None:
-        reasons.append(f"按你的 GPA {profile['gpa']} 自动采用「{PROFILES.get(pref, {}).get('name', pref)}」画像")
+        reasons.append(f"未指定偏好时按 GPA {profile['gpa']} 使用「{PROFILES.get(pref, {}).get('name', pref)}」缺省排序")
     if course["rate_count"] < 10:
-        reasons.append("样本较少, 评分仅供参考")
+        reasons.append("评价样本较少，排序已做小样本收缩")
     return reasons
 
 
@@ -352,24 +421,41 @@ def _parse_term_year(term: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _term_urgency(term: str, current_yi: int | None) -> int:
+def _term_urgency(term: str, current_yi: int | None,
+                  target_term: str | None = None) -> int:
     """学期紧迫度档位（必修组内排序）：
     0=已过期应修未修（学年号 < current_year_index）置顶；
     1=当前学年且为下学期（1-8 月面向秋季、9-12 月面向春季）该修；
     2=当前学年但非下学期（可稍后修）；3=未来学年或无法解析（最后）。
     春/秋区分避免「2春」与「2秋」同档按评分乱排（如 8 月选课应 2秋 优先于 2春）。"""
-    y = _parse_term_year(term)
-    if y is None or current_yi is None:
+    segments = [s.strip() for s in re.split(r"[,，、/]", term or "") if s.strip()]
+    if not segments:
         return 3
-    if y < current_yi:
-        return 0
-    if y > current_yi:
+
+    target = _canonical_target_term(target_term, current_yi)
+    if target:
+        if any(target == s for s in segments):
+            return 0
+        target_year = _parse_term_year(target)
+        years = [y for y in (_parse_term_year(s) for s in segments) if y is not None]
+        if target_year is not None and years:
+            return 1 if min(years) < target_year else 3
         return 3
-    # 当前学年：区分春秋——「下学期」优先（8 月前面向秋季选课, 9 月起面向春季选课）
-    month = date.today().month
-    next_is_autumn = month <= 8
-    season = "秋" if "秋" in (term or "") else "春"
-    return 1 if (season == "秋") == next_is_autumn else 2
+
+    def _one(segment: str) -> int:
+        y = _parse_term_year(segment)
+        if y is None or current_yi is None:
+            return 3
+        if y < current_yi:
+            return 0
+        if y > current_yi:
+            return 3
+        # 当前学年：区分春秋——「下学期」优先（8 月前面向秋季选课, 9 月起面向春季选课）
+        next_is_autumn = date.today().month <= 8
+        season = "秋" if "秋" in segment else "春"
+        return 1 if (season == "秋") == next_is_autumn else 2
+
+    return min(_one(segment) for segment in segments)
 
 
 def _infer_current_year_index(grade: str | None, selection: bool = True) -> int | None:
@@ -407,6 +493,242 @@ def _infer_next_selection_term() -> str:
     return f"{today.year}秋" if today.month <= 8 else f"{today.year + 1}春"
 
 
+def _canonical_target_term(value: str | None, current_yi: int | None) -> str | None:
+    """把用户目标学期归一为培养方案标签（如“大二上/下学期”→“2秋/2春”）。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text in {"next", "下学期", "下个学期"} and current_yi is not None:
+        return f"{current_yi}{'秋' if date.today().month <= 8 else '春'}"
+    m = re.search(r"([1-6])\s*(秋|春|夏)", text)
+    if m:
+        return f"{m.group(1)}{m.group(2)}"
+    zh = "一二三四五六"
+    m = re.search(r"大([一二三四五六])\s*(?:年级)?\s*(上|下|秋|春)", text)
+    if m:
+        year = zh.index(m.group(1)) + 1
+        season = "秋" if m.group(2) in {"上", "秋"} else "春"
+        return f"{year}{season}"
+    return None
+
+
+def _urgency_label(urgency: int, target_term: str | None = None) -> str:
+    if target_term:
+        return {0: "target", 1: "earlier", 3: "future"}.get(urgency, "unknown")
+    return {0: "overdue", 1: "next", 2: "same_year", 3: "future"}.get(urgency, "unknown")
+
+
+def _row_dict(row) -> dict:
+    return dict(row) if not isinstance(row, dict) else dict(row)
+
+
+def _metric(row: dict, key: str, default: float = 6.0) -> float:
+    try:
+        value = float(row.get(key))
+    except (TypeError, ValueError):
+        return default
+    return min(max(value, 0.0), 10.0) if value > 0 else default
+
+
+def _adjusted_rating(row: dict) -> float:
+    """对真实均分做轻量贝叶斯收缩，降低 1-2 条满分评论的排序优势。"""
+    try:
+        rating = float(row.get("rating_avg") or 0)
+        count = max(int(row.get("rating_count") or 0), 0)
+    except (TypeError, ValueError):
+        return 7.0
+    prior_count, prior_mean = 8, 7.0
+    return (rating * count + prior_mean * prior_count) / (count + prior_count)
+
+
+def _candidate_text(row: dict) -> str:
+    return " ".join(str(row.get(k) or "") for k in (
+        "name", "dept", "course_type", "course_level", "program_category",
+    ))
+
+
+def _expanded_interest_terms(term: str) -> tuple[str, ...]:
+    direct = _INTEREST_ALIASES.get(term)
+    if direct:
+        return direct
+    upper = term.upper()
+    return _INTEREST_ALIASES.get(upper, (term,))
+
+
+def _match_need_terms(row: dict, terms: list[str]) -> tuple[list[str], float]:
+    """返回强命中的原始需求词及加权覆盖率；院系弱命中不会冒充课程内容命中。"""
+    if not terms:
+        return [], 0.0
+    primary = _norm_course_name(" ".join(str(row.get(k) or "") for k in (
+        "name", "course_level", "program_category",
+    )))
+    secondary = _norm_course_name(" ".join(str(row.get(k) or "") for k in (
+        "dept", "course_type",
+    )))
+    matched = []
+    scores = []
+    for term in terms:
+        aliases = _expanded_interest_terms(term)
+        direct = _norm_course_name(term)
+        alias_norms = [_norm_course_name(alias) for alias in aliases if alias]
+        if direct and direct in primary:
+            score = 1.0
+        elif any(alias in primary for alias in alias_norms):
+            score = 0.85
+        elif direct and direct in secondary:
+            score = 0.45
+        elif any(alias in secondary for alias in alias_norms):
+            score = 0.25
+        else:
+            score = 0.0
+        scores.append(score)
+        if score >= 0.5:
+            matched.append(term)
+    return matched, sum(scores) / len(terms)
+
+
+def _matches_scope(row: dict, scope: str | None) -> bool:
+    if scope != "general":
+        return True
+    text = _candidate_text(row)
+    return any(k in text for k in ("通识", "通修", "人文", "社科", "文化素质"))
+
+
+def _preference_score(row: dict, profile: dict) -> float:
+    """把评课四维映射为 0-1 需求适配分；缺维度时使用中性值而非猜测。"""
+    rating = _adjusted_rating(row) / 10.0
+    ease = _metric(row, "diff_avg") / 10.0       # 高分 = 评价更简单
+    workload = _metric(row, "hw_avg") / 10.0     # 高分 = 作业更少
+    grading = _metric(row, "score_avg") / 10.0
+    gain = _metric(row, "gain_avg") / 10.0
+    if profile.get("workload_preference") == "low":
+        return 0.55 * workload + 0.15 * ease + 0.15 * grading + 0.15 * rating
+    pref = profile.get("preference_type") or "balanced"
+    if pref == "easy_grade":
+        return 0.35 * grading + 0.25 * workload + 0.20 * ease + 0.20 * rating
+    if pref == "learn_hard":
+        challenge = 1.0 - ease
+        return 0.45 * gain + 0.25 * challenge + 0.25 * rating + 0.05 * (1.0 - workload)
+    return 0.55 * rating + 0.20 * gain + 0.15 * grading + 0.10 * workload
+
+
+def _teacher_map(conn: sqlite3.Connection, rows: list[dict]) -> dict[int, set[str]]:
+    ids = sorted({int(r["id"]) for r in rows if r.get("id") is not None})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    out: dict[int, set[str]] = {}
+    sql = (
+        "SELECT ct.course_id AS course_id, t.name AS teacher FROM course_teachers ct "
+        "JOIN teachers t ON t.id=ct.teacher_id WHERE ct.course_id IN (" + placeholders + ") "
+        "UNION ALL SELECT course_id, teacher FROM reviews WHERE course_id IN (" + placeholders + ")"
+    )
+    for hit in conn.execute(sql, ids + ids):
+        if hit["teacher"]:
+            out.setdefault(int(hit["course_id"]), set()).update(_norm_teacher(hit["teacher"]))
+    return out
+
+
+def _rank_rows(conn: sqlite3.Connection, rows: list, profile: dict,
+               current_yi: int | None, program_status: str) -> list[dict]:
+    candidates = [_row_dict(row) for row in rows]
+    preferred_teachers = _as_list(profile.get("preferred_teachers"))
+    teachers_by_course = _teacher_map(conn, candidates) if preferred_teachers else {}
+    need_terms = _as_list(profile.get("keywords")) + [
+        x for x in _as_list(profile.get("interests"))
+        if x not in _as_list(profile.get("keywords"))
+    ]
+    target_term = _canonical_target_term(profile.get("target_term"), current_yi)
+    explicit_pref = bool(profile.get("_explicit_preference") or profile.get("workload_preference"))
+    explicit_needs = bool(profile.get("_explicit_needs"))
+    hard_preferences = set(_as_list(profile.get("_hard_preferences")))
+    ranked_candidates = []
+
+    for row in candidates:
+        matched_interests, interest_score = _match_need_terms(row, need_terms)
+        hard_interest_matches, _ = _match_need_terms(
+            row, _as_list(profile.get("interests")),
+        )
+        course_teachers = teachers_by_course.get(int(row["id"]), set()) if row.get("id") else set()
+        matched_teachers = [wanted for wanted in preferred_teachers
+                            if any(wanted in actual or actual in wanted for actual in course_teachers)]
+        teacher_score = len(matched_teachers) / len(preferred_teachers) if preferred_teachers else 0.0
+        pref_score = _preference_score(row, profile)
+
+        # “只要/必须”才把偏好升级为硬条件。无法从现有数据核验时不放宽条件。
+        if "interests" in hard_preferences and not hard_interest_matches:
+            continue
+        if "workload_preference" in hard_preferences and _metric(row, "hw_avg") < 7.5:
+            continue
+        if "preferred_teachers" in hard_preferences and not matched_teachers:
+            continue
+        if "target_term" in hard_preferences:
+            segments = [s.strip() for s in re.split(",|，|、|/", row.get("program_term") or "") if s.strip()]
+            if not target_term or target_term not in segments:
+                continue
+
+        weighted: list[tuple[float, float]] = []
+        if need_terms:
+            weighted.append((interest_score, 0.55))
+        if explicit_pref:
+            weighted.append((pref_score, 0.30))
+        if preferred_teachers:
+            weighted.append((teacher_score, 0.15))
+        if weighted:
+            need_score = sum(v * w for v, w in weighted) / sum(w for _, w in weighted)
+        else:
+            # GPA 自动画像或均衡缺省只作为弱排序信号。
+            need_score = pref_score
+
+        urgency = _term_urgency(row.get("program_term") or "", current_yi, target_term)
+        program_fit = {0: 1.0, 1: 0.9, 2: 0.65, 3: 0.25}.get(urgency, 0.25)
+        quality = _adjusted_rating(row) / 10.0
+        auto_needs = bool(profile.get("_auto_interests"))
+        if program_status == "required":
+            score = (0.45 * program_fit + 0.35 * need_score + 0.20 * quality
+                     if explicit_needs else (
+                         0.60 * program_fit + 0.10 * need_score + 0.30 * quality
+                         if auto_needs else 0.65 * program_fit + 0.35 * quality
+                     ))
+        elif program_status == "elective":
+            score = (0.30 * program_fit + 0.45 * need_score + 0.25 * quality
+                     if explicit_needs else (
+                         0.35 * program_fit + 0.20 * need_score + 0.45 * quality
+                         if auto_needs else 0.45 * program_fit + 0.55 * quality
+                     ))
+        else:
+            score = 0.65 * need_score + 0.35 * quality if explicit_needs else quality
+
+        row["_rank"] = {
+            "score": round(score, 4),
+            "program_status": program_status,
+            "urgency": _urgency_label(urgency, target_term),
+            "urgency_rank": urgency,
+            "matched_interests": matched_interests,
+            "matched_teachers": matched_teachers,
+            "interest_score": round(interest_score, 3),
+            "preference_score": round(pref_score, 3),
+            "adjusted_rating": round(_adjusted_rating(row), 2),
+        }
+        ranked_candidates.append(row)
+
+    candidates = ranked_candidates
+
+    if program_status == "required":
+        candidates.sort(key=lambda r: (
+            r["_rank"]["urgency_rank"], -r["_rank"]["interest_score"],
+            -r["_rank"]["score"], -int(r.get("rating_count") or 0),
+        ))
+    elif program_status == "elective":
+        candidates.sort(key=lambda r: (
+            -r["_rank"]["score"], r["_rank"]["urgency_rank"],
+            -int(r.get("rating_count") or 0),
+        ))
+    else:
+        candidates.sort(key=lambda r: (-r["_rank"]["score"], -int(r.get("rating_count") or 0)))
+    return candidates
+
+
 def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) -> list:
     """全量评分候选池（真实均分降序），keywords 可选过滤课程名/院系/类型。
 
@@ -415,15 +737,17 @@ def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) 
     where, params = "r.rating_count > 0", []
     if keywords:
         like = " OR ".join(
-            f"({_SQL_NORM_NAME} LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ?)"
+            f"({_SQL_NORM_NAME} LIKE ? OR c.dept LIKE ? OR c.course_type LIKE ? "
+            f"OR c.course_level LIKE ?)"
             for _ in keywords
         )
         where += f" AND ({like})"
         for k in keywords:
-            params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%"]
+            params += [f"%{_norm_course_name(k)}%", f"%{k}%", f"%{k}%", f"%{k}%"]
     rows = conn.execute(
-        f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-        f"r.rating_avg, r.rating_count FROM courses c JOIN course_rates r ON r.course_id = c.id "
+        f"SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.course_level, c.icourse_ids, "
+        f"r.rating_avg, r.rating_count, r.diff_avg, r.hw_avg, r.score_avg, r.gain_avg "
+        f"FROM courses c JOIN course_rates r ON r.course_id = c.id "
         f"WHERE {where} ORDER BY r.rating_avg DESC, r.rating_count DESC LIMIT ?",
         params + [limit],
     ).fetchall()
@@ -438,9 +762,36 @@ def _pool_rows(conn: sqlite3.Connection, keywords: list[str], limit: int = 200) 
     return out
 
 
+def _merge_candidate_rows(*pools: list) -> list[dict]:
+    """合并聚焦池与宽池，同名课程只保留先出现的高优先候选。"""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for pool in pools:
+        for raw in pool:
+            row = _row_dict(raw)
+            key = _norm_course_name(row.get("name") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(row)
+    return out
+
+
+def _candidate_pool(conn: sqlite3.Connection, profile: dict,
+                    hard_keywords: list[str]) -> tuple[list[dict], bool]:
+    """构造候选池：keywords 保持硬限定，其余兴趣只负责聚焦和排序。"""
+    if hard_keywords:
+        return [_row_dict(r) for r in _pool_rows(conn, hard_keywords, limit=400)], False
+    interests = _as_list(profile.get("interests"))
+    focused = _pool_rows(conn, interests, limit=250) if interests else []
+    broad = _pool_rows(conn, None, limit=400)
+    return _merge_candidate_rows(focused, broad), bool(interests and not focused)
+
+
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     """由课程行构建完整推荐条目（字段与旧实现一致）。
     row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。"""
+    row = _row_dict(row)
     cid = row["id"]
     dims = _dims_info(conn, cid)
     teachers = _teacher_cells(conn, cid)
@@ -452,7 +803,19 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         reviews = reviews[:6]
     else:
         reviews = _top_reviews(conn, cid, limit=6)
-    return {
+    if row.get("program_name"):
+        program_hint = {
+            "required": row.get("program_required") or "",
+            "term": row.get("program_term") or "",
+            "category": row.get("program_category") or "",
+            "program": row.get("program_name") or "",
+            "grade": row.get("program_grade") or "",
+            "source": row.get("program_source") or "local",
+        }
+    else:
+        program_hint = _program_hint(conn, profile.get("major"), cid, profile.get("grade"))
+    rank = dict(row.get("_rank") or {})
+    item = {
         "id": cid,
         "name": row["name"],
         "code": row["code"],
@@ -466,151 +829,259 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         "multi_teacher": multi,
         "terms": _recent_terms(conn, cid),
         "top_reviews": reviews,
-        "program_hint": _program_hint(conn, profile.get("major"), cid, profile.get("grade")),
-        "reasons": _generate_reason(conn, {"name": row["name"], "dept": row["dept"],
-                                           "course_type": row["course_type"],
-                                           "rate_count": row["rating_count"], "dims": dims},
-                                    profile),
+        "program_hint": program_hint,
+        "recommendation_score": rank.get("score"),
+        "match": {k: v for k, v in rank.items() if k != "urgency_rank"},
     }
+    item["reasons"] = _generate_reason(conn, item, profile, rank, program_hint)
+    return item
 
 
-def _split_targets(max_results: int) -> tuple[int, int]:
-    """条数拆分：默认 10（6 必修 + 4 选修，60%/40%）；<=1 时全给第一组。"""
+_RATED_SELECT = (
+    "c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.course_level, c.icourse_ids, "
+    "r.rating_avg, r.rating_count, r.diff_avg, r.hw_avg, r.score_avg, r.gain_avg"
+)
+
+
+def _dedupe_rows(rows: list[dict]) -> list[dict]:
+    """同名多个评课页只保留样本量较大的一个；必修身份优先于选修身份。"""
+    best: dict[str, dict] = {}
+    for raw in rows:
+        row = _row_dict(raw)
+        key = _norm_course_name(row.get("name") or "")
+        old = best.get(key)
+        if old is None:
+            best[key] = row
+            continue
+        old_required = old.get("program_required") == "必修"
+        new_required = row.get("program_required") == "必修"
+        if new_required and not old_required:
+            best[key] = row
+        elif new_required == old_required and int(row.get("rating_count") or 0) > int(old.get("rating_count") or 0):
+            best[key] = row
+    return list(best.values())
+
+
+def _load_local_program_rows(conn: sqlite3.Connection, prog_id: int,
+                             prog_name: str) -> tuple[list[dict], int, list[str]]:
+    meta = conn.execute("SELECT grade FROM programs WHERE id=?", (prog_id,)).fetchone()
+    grade = meta["grade"] if meta else ""
+    rows = conn.execute(
+        f"SELECT {_RATED_SELECT}, pc.required AS program_required, pc.term AS program_term, "
+        "pc.category AS program_category FROM program_courses pc "
+        "JOIN courses c ON c.id=pc.course_id JOIN course_rates r ON r.course_id=c.id "
+        "WHERE pc.program_id=? AND pc.course_id IS NOT NULL",
+        (prog_id,),
+    ).fetchall()
+    out = []
+    for raw in rows:
+        row = _row_dict(raw)
+        row.update({"program_name": prog_name, "program_grade": grade, "program_source": "generic"})
+        out.append(row)
+    all_rows = conn.execute(
+        "SELECT name FROM program_courses WHERE program_id=?", (prog_id,),
+    ).fetchall()
+    rated = {_norm_course_name(r.get("name") or "") for r in out}
+    unmatched = [r["name"] for r in all_rows if _norm_course_name(r["name"]) not in rated]
+    return _dedupe_rows(out), len(all_rows), unmatched
+
+
+def _find_rated_course(conn: sqlite3.Connection, course: dict) -> dict | None:
+    row = None
+    code = str(course.get("code") or "").strip()
+    if code:
+        row = conn.execute(
+            f"SELECT {_RATED_SELECT} FROM courses c JOIN course_rates r ON r.course_id=c.id "
+            "WHERE UPPER(c.code)=UPPER(?) ORDER BY r.rating_count DESC LIMIT 1",
+            (code,),
+        ).fetchone()
+    if row is None and course.get("name"):
+        row = conn.execute(
+            f"SELECT {_RATED_SELECT} FROM courses c JOIN course_rates r ON r.course_id=c.id "
+            f"WHERE {_SQL_NORM_NAME}=? ORDER BY r.rating_count DESC LIMIT 1",
+            (_norm_course_name(course["name"]),),
+        ).fetchone()
+    return _row_dict(row) if row is not None else None
+
+
+def _load_personal_program_rows(conn: sqlite3.Connection, personal_tree) \
+        -> tuple[list[dict], int, list[str]]:
+    from tools.program_tools import _parse_tree
+
+    courses = _parse_tree(personal_tree) if personal_tree else []
+    out = []
+    unmatched = []
+    for course in courses:
+        row = _find_rated_course(conn, course)
+        if row is None:
+            unmatched.append(course.get("name") or course.get("code") or "未命名课程")
+            continue
+        row.update({
+            "program_required": course.get("required") or "",
+            "program_term": course.get("term") or "",
+            "program_category": course.get("category") or "",
+            "program_name": "个人培养方案",
+            "program_grade": "",
+            "program_source": "personal",
+        })
+        out.append(row)
+    return _dedupe_rows(out), len(courses), unmatched
+
+
+def _split_targets(max_results: int, profile: dict) -> tuple[int, int]:
+    """根据用户明确课程范围分配必修/非必修名额；明确需求时给选修更多空间。"""
+    scope = profile.get("course_scope") or "all"
+    if scope in {"elective", "general"}:
+        return 0, max_results
+    if scope == "required":
+        return max_results, 0
     if max_results <= 1:
         return max_results, 0
-    req = int(round(max_results * 0.6))
+    ratio = 0.4 if profile.get("_explicit_needs") else 0.6
+    req = max(1, int(round(max_results * ratio)))
     return req, max_results - req
 
 
 def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str],
                     max_results: int, taken: set[str]) -> dict:
-    """无方案命中：纯评分推荐（保留关键字过滤与过窄回退全量）。
-
-    按需构建（Phase 2c 性能修复）：只 build 到 max_results 条，
-    避免对整个候选池（最多 200 门）逐课做 5 组 N+1 子查询。"""
-    rows = _pool_rows(conn, keywords)
-    keyword_fallback = False
-    if not rows and keywords:
-        keyword_fallback = True
-        rows = _pool_rows(conn, None)
-    total = len(rows)
-    items = []
-    for r in rows:
-        if len(items) >= max_results:
-            break
-        if _norm_course_name(r["name"]) in taken:
-            continue
-        items.append(_build_item(conn, r, profile))
+    """无方案命中：按用户需求 + 可靠度排序，并明确标记为无方案降级。"""
+    scope = profile.get("course_scope") or "all"
+    if scope in {"required", "elective"}:
+        return {
+            "recommendations": [], "groups": None, "progress": None,
+            "total_candidates": 0, "filtered_count": 0, "keyword_fallback": False,
+            "need_fallback": False, "scope_unavailable": scope,
+            "program_context": {
+                "matched": False, "source": "unavailable", "name": None,
+                "taken_courses_known": bool(profile.get("_taken_known")),
+            },
+        }
+    rows, need_fallback = _candidate_pool(conn, profile, keywords)
+    filtered = [_row_dict(r) for r in rows
+                if _norm_course_name(r["name"]) not in taken and _matches_scope(_row_dict(r), scope)]
+    ranked = _rank_rows(conn, filtered, profile, profile.get("current_year_index"), "unscoped")
+    if profile.get("_explicit_interests") and not any(
+        row.get("_rank", {}).get("matched_interests") for row in ranked
+    ):
+        need_fallback = True
+    items = [_build_item(conn, row, profile) for row in ranked[:max_results]]
     return {
-        "recommendations": items[:max_results],
+        "recommendations": items,
         "groups": None,
         "progress": None,
-        "total_candidates": total,
-        "filtered_count": len(items[:max_results]),
-        "keyword_fallback": keyword_fallback,
+        "total_candidates": len(ranked),
+        "filtered_count": len(items),
+        "keyword_fallback": False,
+        "need_fallback": need_fallback,
+        "program_context": {
+            "matched": False,
+            "source": "unavailable",
+            "name": None,
+            "taken_courses_known": bool(profile.get("_taken_known")),
+        },
     }
 
 
 def _recommend_grouped(conn: sqlite3.Connection, profile: dict, keywords: list[str],
                        max_results: int, taken: set[str], current_yi: int | None,
-                       prog_id: int, prog_name: str) -> dict:
-    """分成「必修组 + 选修组」：必修组前置、按学期紧迫度 + 评分；选修组按评分降序。
+                       program_rows: list[dict], program_name: str,
+                       program_source: str, program_total: int,
+                       unmatched: list[str]) -> dict:
+    """培养方案内必修/选修先分层，再用本轮明确需求和可靠评分排序。"""
+    scope = profile.get("course_scope") or "all"
 
-    Phase 2c 性能修复：行级过滤/排序后再按需构建条目，避免全池 N+1 子查询。
-    """
-    # ── 必修组候选: 方案必修且未修, 按紧迫度（已过期置顶→当前学年→未来）再按评分降序 ──
-    req_rows = conn.execute(
-        "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-        "r.rating_avg, r.rating_count, pc.term FROM program_courses pc "
-        "JOIN courses c ON c.id = pc.course_id JOIN course_rates r ON r.course_id = c.id "
-        "WHERE pc.program_id=? AND pc.required='必修' AND pc.course_id IS NOT NULL",
-        (prog_id,),
-    ).fetchall()
+    def _hard_match(row: dict) -> bool:
+        return not keywords or bool(_match_need_terms(row, keywords)[0])
 
-    def _req_sort_key(rr):
-        urgency = _term_urgency(rr["term"], current_yi)
-        if "毕业" in (rr["name"] or ""):
-            urgency = 3  # 毕业论文/设计仅毕业年级修, 非毕业班一律排最后
-        return (urgency, -(rr["rating_avg"] or 0))
+    available = [row for row in program_rows
+                 if _norm_course_name(row.get("name") or "") not in taken and _hard_match(row)]
+    req_rows = [row for row in available if row.get("program_required") == "必修"] \
+        if scope in {"all", "required"} else []
+    elec_rows = [row for row in available if row.get("program_required") != "必修"
+                 and _matches_scope(row, scope)] if scope in {"all", "elective", "general"} else []
+    ranked_required = _rank_rows(conn, req_rows, profile, current_yi, "required")
+    ranked_elective = _rank_rows(conn, elec_rows, profile, current_yi, "elective")
 
-    req_rows.sort(key=_req_sort_key)
-    req_filtered = [rr for rr in req_rows if _norm_course_name(rr["name"]) not in taken]
-    required_ids = {rr["id"] for rr in req_filtered}  # 必修组整体排除出选修组，保证两组不重叠
-
-    req_target, elec_target = _split_targets(max_results)
-    required = [_build_item(conn, rr, profile) for rr in req_filtered[:max(req_target, 1)]]
-
-    # ── 选修组候选行: 方案内选修优先（按评分降序），方案外高分池仅作条数补足 ──
-    # （避免方案外课程混排靠前造成“乱推”观感）
-    elec_rows: list = []
-    seen_ids: set[int] = set()
-    seen_norm: set[str] = set()  # 不合并适配：选修组按归一课名去重（跨页/跨池同课只出现一次）
-    for pr in conn.execute(
-        "SELECT c.id, c.name, c.code, c.credit, c.dept, c.course_type, c.icourse_ids, "
-        "r.rating_avg, r.rating_count, pc.term FROM program_courses pc "
-        "JOIN courses c ON c.id = pc.course_id JOIN course_rates r ON r.course_id = c.id "
-        "WHERE pc.program_id=? AND pc.required='选修' AND pc.course_id IS NOT NULL",
-        (prog_id,),
-    ).fetchall():
-        if _norm_course_name(pr["name"]) in taken or pr["id"] in required_ids or pr["id"] in seen_ids:
+    program_names = {_norm_course_name(row.get("name") or "") for row in program_rows}
+    allow_exploratory = bool(profile.get("_explicit_interests")) and scope in {"all", "general"}
+    pool, need_fallback = _candidate_pool(conn, profile, keywords) if allow_exploratory else ([], False)
+    outside_rows = []
+    for raw in pool:
+        row = _row_dict(raw)
+        name = _norm_course_name(row.get("name") or "")
+        if name in taken or name in program_names or not _matches_scope(row, scope):
             continue
-        nk = _norm_course_name(pr["name"])
-        if nk in seen_norm:
-            continue
-        seen_norm.add(nk)
-        seen_ids.add(pr["id"])
-        elec_rows.append(pr)
-    # 选修组排序（组 A 修复）：方案学期紧迫度优先（当前学年该修 → 未来学年），同档按评分降序；
-    # 避免把大三/大四学期的选修课排在大一/大二用户的前面
-    elec_rows.sort(key=lambda r: (_term_urgency(r["term"] or "", current_yi),
-                                  -(r["rating_avg"] or 0), -(r["rating_count"] or 0)))
-    for r in _pool_rows(conn, keywords):
-        if _norm_course_name(r["name"]) in taken or r["id"] in required_ids or r["id"] in seen_ids:
-            continue
-        nk = _norm_course_name(r["name"])
-        if nk in seen_norm:
-            continue
-        seen_norm.add(nk)
-        seen_ids.add(r["id"])
-        elec_rows.append(r)
+        outside_rows.append(row)
+    ranked_outside = _rank_rows(conn, outside_rows, profile, current_yi, "outside")
+    # 方向补充必须真的命中本轮明确方向；不匹配的课不能仅凭高分进入该组。
+    ranked_outside = [row for row in ranked_outside
+                      if row.get("_rank", {}).get("matched_interests")]
+    if profile.get("_explicit_interests"):
+        need_fallback = not any(
+            row.get("_rank", {}).get("matched_interests")
+            for row in (ranked_required + ranked_elective + ranked_outside)
+        )
 
-    # ── 条数拆分: 60%/40%（不足互补）──
-    req_sel = required[:req_target]
-    if max_results <= 1:
-        elec_sel: list[dict] = []
-    else:
-        short = max(req_target - len(req_sel), 0)  # 必修不足其目标时选修补足
-        need_elec = elec_target + short
-        elec_sel = [_build_item(conn, r, profile) for r in elec_rows[:need_elec]]
+    req_target, nonreq_target = _split_targets(max_results, profile)
+    req_sel_rows = ranked_required[:req_target]
+    nonreq_target += max(req_target - len(req_sel_rows), 0)
 
-    # ── 进度摘要: 已修必修/方案必修总数/已修学分（用方案行 credit 汇总）──
+    need_terms = keywords or _as_list(profile.get("interests"))
+    outside_target = 0
+    if ranked_outside and nonreq_target:
+        if need_terms:
+            outside_target = min(max(1, round(nonreq_target * 0.35)), nonreq_target)
+        elif len(ranked_elective) < nonreq_target:
+            outside_target = min(nonreq_target - len(ranked_elective), len(ranked_outside))
+    elec_target = max(nonreq_target - outside_target, 0)
+    elec_sel_rows = ranked_elective[:elec_target]
+    outside_target += max(elec_target - len(elec_sel_rows), 0)
+    outside_sel_rows = ranked_outside[:outside_target]
+    if len(outside_sel_rows) < outside_target:
+        extra = outside_target - len(outside_sel_rows)
+        elec_sel_rows.extend(ranked_elective[len(elec_sel_rows):len(elec_sel_rows) + extra])
+
+    # 若非必修候选不足，通用/必修请求可继续补充必修；明确只要选修时不越过用户范围。
+    selected_count = len(req_sel_rows) + len(elec_sel_rows) + len(outside_sel_rows)
+    if selected_count < max_results and scope not in {"elective", "general"}:
+        need = max_results - selected_count
+        req_sel_rows.extend(ranked_required[len(req_sel_rows):len(req_sel_rows) + need])
+
+    required = [_build_item(conn, row, profile) for row in req_sel_rows]
+    elective = [_build_item(conn, row, profile) for row in elec_sel_rows]
+    exploratory = [_build_item(conn, row, profile) for row in outside_sel_rows]
+
     progress = None
-    if taken:
-        total_req = 0
-        taken_req = 0
-        credits_taken = 0.0
-        for pc in conn.execute(
-            "SELECT name, credit FROM program_courses WHERE program_id=? AND required='必修'",
-            (prog_id,),
-        ):
-            total_req += 1
-            if _norm_course_name(pc["name"]) in taken:
-                taken_req += 1
-                try:
-                    credits_taken += float(pc["credit"]) if pc["credit"] else 0.0
-                except (TypeError, ValueError):
-                    pass
-        progress = {"required_taken": taken_req, "required_total": total_req,
-                    "credits_taken": round(credits_taken, 1)}
+    if profile.get("_taken_known"):
+        required_all = [row for row in program_rows if row.get("program_required") == "必修"]
+        taken_required = [row for row in required_all
+                          if _norm_course_name(row.get("name") or "") in taken]
+        progress = {
+            "required_taken": len(taken_required),
+            "required_total": len(required_all),
+            "required_remaining": len(required_all) - len(taken_required),
+            "credits_taken": round(sum(float(row.get("credit") or 0) for row in taken_required), 1),
+        }
 
-    recommendations = req_sel + elec_sel
+    recommendations = required + elective + exploratory
     return {
         "recommendations": recommendations,
-        "groups": {"required": req_sel, "elective": elec_sel},
+        "groups": {"required": required, "elective": elective, "exploratory": exploratory},
         "progress": progress,
-        "total_candidates": len(req_rows) + len(_pool_rows(conn, keywords)),
+        "total_candidates": len(ranked_required) + len(ranked_elective) + len(ranked_outside),
         "filtered_count": len(recommendations),
         "keyword_fallback": False,
+        "need_fallback": need_fallback,
+        "program_context": {
+            "matched": True,
+            "source": program_source,
+            "name": program_name,
+            "course_count": program_total,
+            "rated_course_count": len(program_rows),
+            "unrated_course_count": len(unmatched),
+            "taken_courses_known": bool(profile.get("_taken_known")),
+            "target_term": _canonical_target_term(profile.get("target_term"), current_yi),
+        },
     }
 
 
@@ -645,10 +1116,16 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
                       taken_courses: list[str] | None = None,
                       current_year_index: int | None = None,
                       current_term: str | None = None,
-                      gpa: float | None = None) -> dict:
+                      gpa: float | None = None,
+                      workload_preference: str | None = None,
+                      course_scope: str | None = None,
+                      preferred_teachers: list[str] | str | None = None,
+                      target_term: str | None = None,
+                      personal_tree: dict | list | None = None) -> dict:
     """
-    根据用户画像推荐课程。有专业方案时按「必修组 + 选修组」两段式返回（必修组前置、
-    按学期紧迫度 + 评分排序）；无专业/未命中方案时保持纯评分推荐。
+    根据培养方案和用户本轮需求推荐课程。先排除已修课并按方案分为必修、方案内选修，
+    再综合兴趣、负担、给分、挑战、教师、目标学期与小样本收缩评分排序；方案外课程
+    只作为透明标注的方向补充。无方案或个人数据时明确降级。
 
     Args:
         profile: 用户画像, 格式: {"major": "计算机科学", "grade": "大二",
@@ -662,51 +1139,110 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         preference: 中文偏好描述（可选，如 "给分好""不点名""任务少"→冲分保绩，"硬核""学东西"→硬核学习）
         keywords: 限定候选范围的关键词（可选，如 ["数学分析"]，匹配课程名/院系/类型；
             不要用“给分好”“不点名”这类偏好词）
-        max_results: 返回条数（默认 10，约 6 必修 + 4 选修，不足互补）
+        max_results: 返回条数（默认 10；明确用户需求时约 4 必修 + 6 非必修）
         taken_courses: 已修课程名列表（可选，登录后由上层从成绩单读取传入；
-            None 视为全部未修）
+            None 表示未知，不会声称课程是“未修缺口”）
         current_year_index: 当前学年（可选，1=大一，2=大二…）；None 时按 profile.grade
             推算（"大二"→2；"2024级"→当前日期所在学年）
         current_term: 当前学期标识（可选，如 "2026秋"）；None 时由当前日期推断
         gpa: 4.3 制 GPA（可选，登录用户由上层从成绩单计算注入）；未显式指定
             preference_type 时按 GPA 自动推断画像（≥3.7 硬核 / ≤2.7 冲分 / 其余均衡）
+        workload_preference: 工作量偏好（low=低负担）
+        course_scope: all|required|elective|general（全部/必修/选修/通识）
+        preferred_teachers: 偏好的教师姓名列表
+        target_term: 目标方案学期，如 2秋、大二上、下学期
+        personal_tree: 登录用户的个人培养方案树；有数据时优先于本地通用方案
 
     Returns:
-        {"recommendations": [...], "groups": {"required": [...], "elective": [...]},
+        {"recommendations": [...], "groups": {"required": [...], "elective": [...],
+          "exploratory": [...]},
          "progress": {"required_taken", "required_total", "credits_taken"},
          "total_candidates": N, "filtered_count": N, "profile_note": {...}, "keyword_fallback": bool}
         每门课: {name, code, credit, dept, rating_avg, rate_count, dims, teachers,
                  terms, top_reviews, program_hint, reasons}
-        recommendations = 必修组 + 选修组拼接（向后兼容）; 无分组时 groups 为 None。
+        recommendations = 必修 + 方案内选修 + 方向补充拼接；无方案时 groups 为 None。
     """
-    # 宽容参数: 顶层参数自动归一化进 profile（兼容 LLM 不定式传参）
+    # 宽容参数：顶层显式参数覆盖 profile 中的缺省值，避免旧画像盖过用户本轮表达。
     p = dict(profile or {})
-    if major:
-        p.setdefault("major", major)
-    if grade:
-        p.setdefault("grade", grade)
-    if interests:
-        p.setdefault("interests", interests if isinstance(interests, list) else [interests])
-    if preference_type:
-        p.setdefault("preference_type", preference_type)
-    if preference:
-        p.setdefault("preference_type", _PREF_CN.get(preference, preference))
-    if p.get("preference") and not p.get("preference_type"):
-        p["preference_type"] = _PREF_CN.get(p["preference"], p["preference"])
-    if keywords:
-        p.setdefault("keywords", keywords if isinstance(keywords, list) else [keywords])
-    if taken_courses:
-        p.setdefault("taken_courses", taken_courses)
-    if current_year_index:
-        p.setdefault("current_year_index", current_year_index)
-    if current_term:
-        p.setdefault("current_term", current_term)
+    if major is not None:
+        p["major"] = major
+    if grade is not None:
+        p["grade"] = grade
+    if interests is not None:
+        p["interests"] = _as_list(interests)
+    if keywords is not None:
+        p["keywords"] = _as_list(keywords)
+    if taken_courses is not None:
+        p["taken_courses"] = _as_list(taken_courses)
+    if current_year_index is not None:
+        p["current_year_index"] = current_year_index
+    if current_term is not None:
+        p["current_term"] = current_term
     if gpa is not None:
-        p.setdefault("gpa", gpa)
+        p["gpa"] = gpa
+    if workload_preference is not None:
+        p["workload_preference"] = workload_preference
+    if course_scope is not None:
+        p["course_scope"] = course_scope
+    if preferred_teachers is not None:
+        p["preferred_teachers"] = _as_list(preferred_teachers)
+    if target_term is not None:
+        p["target_term"] = target_term
+
+    raw_pref = preference_type if preference_type is not None else (
+        preference if preference is not None else p.get("preference_type") or p.get("preference")
+    )
+    normalized_pref = _normalize_preference(raw_pref)
+    if normalized_pref:
+        p["preference_type"] = normalized_pref
+        p["_explicit_preference"] = True
+    else:
+        p.pop("preference_type", None)
+
+    if raw_pref and any(term in str(raw_pref) for term in ("任务少", "作业少", "低负担", "省时", "轻松", "水课")):
+        p.setdefault("workload_preference", "low")
+
+    workload = str(p.get("workload_preference") or "").lower()
+    if workload and any(k in workload for k in ("low", "少", "低", "轻", "省时")):
+        p["workload_preference"] = "low"
+        if not p.get("_explicit_preference"):
+            p["preference_type"] = "easy_grade"
+        p["_explicit_preference"] = True
+    elif workload:
+        p.pop("workload_preference", None)
+
+    scope_text = str(p.get("course_scope") or "all").lower()
+    scope = next((value for value, aliases in {
+        "required": ("required", "必修", "补修", "缺口"),
+        "elective": ("elective", "选修", "任选"),
+        "general": ("general", "通识", "通修"),
+    }.items() if any(alias in scope_text for alias in aliases)), "all")
+    p["course_scope"] = scope
+    p["interests"] = _as_list(p.get("interests"))
+    p["keywords"] = _as_list(p.get("keywords"))
+    p["preferred_teachers"] = _as_list(p.get("preferred_teachers"))
+    if "_explicit_interests" not in p:
+        p["_explicit_interests"] = bool(p["interests"] and not p.get("_auto_interests"))
+    hard_preferences = set(_as_list(p.get("_hard_preferences")))
+    p["_hard_preferences"] = [key for key in (
+        "interests", "workload_preference", "preferred_teachers", "target_term",
+    ) if key in hard_preferences]
+    p["_taken_known"] = "taken_courses" in p and p.get("taken_courses") is not None
+
+    explicit_fields = (
+        p["interests"], p["keywords"], p.get("_explicit_preference"),
+        p["preferred_teachers"], scope != "all", p.get("target_term"),
+        p["_hard_preferences"],
+    )
+    p["_explicit_needs"] = bool(p.get("_explicit_needs") or any(explicit_fields))
     p.setdefault("max_results", max_results)
+    try:
+        p["max_results"] = min(max(int(p.get("max_results") or 10), 1), 20)
+    except (TypeError, ValueError):
+        p["max_results"] = 10
     profile = p
 
-    # 个性化 v1：未显式指定偏好时按 GPA 自动推断（显式偏好永远优先）
+    # 用户明确需求永远优先；只有缺少明确偏好时才按 GPA 选择缺省画像。
     if not profile.get("preference_type"):
         profile["preference_type"] = _infer_preference(profile)
         if profile.get("gpa") is not None:
@@ -718,13 +1254,14 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         return {"recommendations": [], "groups": None, "progress": None,
                 "total_candidates": 0, "filtered_count": 0, "error": "课程数据库不可用"}
 
-    keywords = profile.get("keywords") or profile.get("interests") or []
-    max_results = profile.get("max_results", 10)
+    hard_keywords = profile.get("keywords") or []
+    max_results = profile["max_results"]
 
     # 当前学年：显式传入优先，否则按年级推算
     current_yi = profile.get("current_year_index")
     if current_yi is None:
         current_yi = _infer_current_year_index(profile.get("grade"))
+    profile["current_year_index"] = current_yi
     # 已修课程（归一化集合）; 未提供视为全部未修。
     # (L) 实验/语言班型后缀兼容：成绩里 "计算机程序设计(L)" 视同 "计算机程序设计" 已修。
     taken: set[str] = set()
@@ -733,24 +1270,44 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         taken.add(n)
         if n.endswith("L") and len(n) > 1:
             taken.add(n[:-1])
-    # 个性化 v1：无兴趣线索时由已修课程名推断兴趣（仅作理由信号，不参与池过滤）
+    # 无明确兴趣时才由已修课程推测方向；该信号权重低于用户本轮表达。
     if not profile.get("interests") and taken:
         auto_ints = [kw for kw in _TAKEN_INTEREST_KW
                      if any(kw in n for n in (profile.get("taken_courses") or []))]
         if auto_ints:
             profile["interests"] = auto_ints[:5]
+            profile["_auto_interests"] = True
 
-    # 方案定位：无 major / 未命中 / 库缺方案表 → 纯评分推荐
+    program_rows: list[dict] = []
+    program_total = 0
+    unmatched: list[str] = []
+    program_name = ""
+    program_source = ""
+    personal_requested = bool(personal_tree is not None or profile.get("_personal_program_expected"))
+    if personal_tree is not None:
+        try:
+            program_rows, program_total, unmatched = _load_personal_program_rows(conn, personal_tree)
+        except Exception:
+            program_rows, program_total, unmatched = [], 0, []
+        if program_total:
+            program_name, program_source = "个人培养方案", "personal"
+
+    # 个人方案为空/不可用时，按专业和年级定位本地通用方案。
     try:
         prog_id, prog_name = _resolve_program(conn, profile.get("major"), profile.get("grade"))
     except sqlite3.Error:
         prog_id, prog_name = None, None
+    if not program_total and prog_id is not None:
+        program_rows, program_total, unmatched = _load_local_program_rows(conn, prog_id, prog_name)
+        program_name, program_source = prog_name, "generic"
 
-    if prog_id is None:
-        result = _recommend_flat(conn, profile, keywords, max_results, taken)
+    if not program_total:
+        result = _recommend_flat(conn, profile, hard_keywords, max_results, taken)
     else:
-        result = _recommend_grouped(conn, profile, keywords, max_results, taken,
-                                    current_yi, prog_id, prog_name)
+        result = _recommend_grouped(
+            conn, profile, hard_keywords, max_results, taken, current_yi,
+            program_rows, program_name, program_source, program_total, unmatched,
+        )
 
     conn.close()
     pref = profile.get("preference_type", "balanced")
@@ -758,7 +1315,48 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     if profile.get("_auto_pref") and profile.get("gpa") is not None:
         note["auto"] = True
         note["gpa"] = profile["gpa"]
+        note["source"] = "gpa_default"
+    elif profile.get("_explicit_preference"):
+        note["auto"] = False
+        note["source"] = "explicit"
+    else:
+        note["auto"] = False
+        note["source"] = "default"
+    note["needs"] = {
+        "interests": profile.get("interests") or [],
+        "course_scope": profile.get("course_scope") or "all",
+        "workload_preference": profile.get("workload_preference"),
+        "preferred_teachers": profile.get("preferred_teachers") or [],
+        "target_term": _canonical_target_term(profile.get("target_term"), current_yi),
+    }
     result.setdefault("profile_note", note)
+    limitations = []
+    if not result.get("program_context", {}).get("matched"):
+        limitations.append(
+            "未提供专业或未定位到对应培养方案，本次仅按用户需求与评课数据排序。"
+        )
+        if result.get("scope_unavailable") == "required":
+            limitations.append("没有培养方案时无法判断哪些课程属于你的必修要求，因此未生成必修推荐。")
+        elif result.get("scope_unavailable") == "elective":
+            limitations.append("没有培养方案时无法确认哪些课程属于你的方案内选修，因此未放宽课程范围。")
+    elif personal_requested and program_source != "personal":
+        limitations.append("个人培养方案数据不可用，已降级为本地同专业同年级方案。")
+    if not profile.get("_taken_known"):
+        limitations.append("未取得完整已修课程记录，无法确认所有必修缺口或排除全部已修课。")
+    if unmatched:
+        limitations.append(f"培养方案中有 {len(unmatched)} 门课程缺少评课映射，未参与评分排序。")
+    if profile.get("_conflict_not_checked"):
+        limitations.append(
+            "本次只完成课程推荐，候选课尚未与个人课表做冲突检查；确定候选后请使用独立冲突检查。"
+        )
+    if hard_keywords and not result.get("recommendations"):
+        limitations.append("指定课程范围没有命中可核验候选，本次未放宽该硬条件。")
+    if profile.get("_hard_preferences") and not result.get("recommendations"):
+        limitations.append("“只要/必须”条件没有命中可核验候选，本次未放宽这些硬条件。")
+    if (result.get("keyword_fallback") or result.get("need_fallback")) \
+            and not profile.get("_hard_preferences"):
+        limitations.append("指定方向未命中足够候选，已回退到更宽的评课候选池。")
+    result["limitations"] = limitations
     return result
 
 

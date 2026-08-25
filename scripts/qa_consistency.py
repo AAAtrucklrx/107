@@ -31,7 +31,7 @@ CASES = [
     ("本科普通专业学生一个学年的学费是多少？", "4800", None, None),  # 区分传播学4500特例，普通本科应为4800
     ("四六级怎么报名？", "neea", None, None),  # 回答须附 cet-bm.neea.edu.cn 官方报名链接（可溯源）
     # 工具调用正确性（AGENT 决策加固）
-    ("推荐几门课会不会和我课表冲突？", None, None, "check_course_conflict"),
+    ("推荐几门课会不会和我课表冲突？", None, None, "recommend_courses"),
     ("我要退一门课，帮我看看选课压力", None, None, "evaluate_selection_pressure"),
 ]
 

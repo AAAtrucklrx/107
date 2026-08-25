@@ -82,18 +82,41 @@ def _load_gpa(student_id: str) -> float | None:
 
 
 def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
-    """recommend_courses 参数兜底：补齐专业/年级/已修课程/学年号。
+    """recommend_courses 参数兜底：合并本轮明确需求并补齐个人上下文。
 
     LLM 决策常只传兴趣漏传身份，导致方案定位失败退化成全量评分乱推；
-    此处从登录用户画像与本地成绩表补齐，保证命中培养方案分组推荐。"""
+    此处以原始问题中的明确需求覆盖自动画像，再从登录上下文补专业、年级、
+    已修课程、GPA、学年号和个人培养方案。"""
     profile = dict(args.get("profile") or {})
     up = state.get("user_profile") or {}
-    _v = up.get("major")
-    if _v and not profile.get("major") and not args.get("major"):
-        profile["major"] = _v
-    _g = up.get("grade")
-    if _g and not profile.get("grade") and not args.get("grade"):
-        profile["grade"] = _g
+    extracted = _extract_profile(state.get("query") or "", up)
+    explicit_fields = set(extracted.get("_explicit_fields") or [])
+    for key in (
+        "major", "grade", "interests", "preference_type", "workload_preference",
+        "course_scope", "preferred_teachers", "target_term",
+    ):
+        value = extracted.get(key)
+        if value in (None, "", [], "all"):
+            continue
+        if key in explicit_fields:
+            # 原始问题是最高优先级事实。移除同名顶层参数，避免 LLM 旧值在
+            # recommend_courses 的宽容参数合并阶段再次覆盖本轮明确需求。
+            args.pop(key, None)
+            profile[key] = value
+        elif not args.get(key):
+            profile[key] = value
+    profile.pop("_explicit_fields", None)
+    if extracted.get("_explicit_needs"):
+        profile["_explicit_needs"] = True
+    for key in ("_explicit_interests", "_hard_preferences", "_conflict_not_checked"):
+        if extracted.get(key):
+            profile[key] = extracted[key]
+    if not profile.get("major") and not args.get("major") and up.get("major"):
+        profile["major"] = up["major"]
+    if not profile.get("grade") and not args.get("grade") and up.get("grade"):
+        profile["grade"] = up["grade"]
+    if sid:
+        profile["_personal_program_expected"] = True
     if not profile.get("taken_courses") and not args.get("taken_courses") and sid:
         taken = _load_taken_courses(sid)
         if taken:
@@ -109,10 +132,19 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
         if yi:
             profile["current_year_index"] = yi
     args["profile"] = profile
+    if sid and not args.get("personal_tree"):
+        tree = _load_personal_tree(sid)
+        if tree:
+            args["personal_tree"] = tree
 
 
 # 个人方案树 per-student 缓存（进程内，避免 QA 循环内多次经 CAS 重复拉取阻塞数秒）
-_PERSONAL_TREE_CACHE: dict[str, dict] = {}
+_PERSONAL_TREE_CACHE: dict[str, dict | list] = {}
+
+
+def clear_personal_tree_cache(student_id: str | None = None) -> None:
+    """清理指定学生的个人方案缓存；缺省时仅清理空键，不影响其他用户。"""
+    _PERSONAL_TREE_CACHE.pop(student_id or "", None)
 
 
 def _load_personal_tree(student_id: str | None = None):
@@ -218,7 +250,7 @@ _TOOL_LIST = (
     "query_course_selection(选课情况), query_program(培养方案), "
     "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入), get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入), "
     "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入), "
-    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"gpa\"} 或顶层 major/grade/interests/preference/keywords/gpa), "
+    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"workload_preference\",\"course_scope\",\"preferred_teachers\",\"target_term\",\"gpa\"} 或同名顶层参数), "
     "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
     "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
     "check_conflict(日程冲突), import_schedule(导入课表), "
@@ -291,14 +323,14 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 7. 意图分类仅供参考，自行判断真实需求并修正
 8. 绝不编造数据：工具结果不足时继续 retrieve/call_tool/clarify，不要硬答
 9. 禁止重复调用：已有工具结果（tool_summary 中 status=done 的工具）不得再次调用同一工具，应转 compose 或 clarify
-10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中含偏好线索时直接调用 recommend_courses；用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences 收集，不要用默认画像硬推。已登录用户即使未说偏好，系统已按其 GPA 自动采用画像（tool_summary 的 profile_note 会注明），可直接推荐并在回答中一句话说明画像依据
+10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中明确请求推荐时调用 recommend_courses，并完整传递用户本轮条件（选修/通识/必修、低负担/冲分/挑战、兴趣、教师、目标学期）；本轮明确条件优先于 GPA 自动画像。课程范围是硬条件，兴趣/负担/教师/目标学期默认只参与排序，只有用户明确说“只要/必须”时才可作为硬条件。用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences，不要用默认画像硬推。若用户同时问“推荐且不冲突”，本轮仍只调用 recommend_courses，并明确说明候选课尚未与个人课表做冲突检查
 11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")；"XX老师在XX课怎么样/XX老师的XX课评价"（同时含老师与课程）用 analyze_teacher(teacher_name="教师名", course="课程名") 双参数，聚焦该老师在该课程的评价，不要只用 teacher_name 全量返回
 12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略；调用 query_daily_schedule/get_day_view 时，问句中的"周X/明天/后天"等日期词必须解析后作为 date/date_str 传参，不得缺省为今天
-17. 选课冲突/退补选：问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
+17. 选课冲突/退补选：没有推荐诉求、单独问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
 20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
@@ -315,8 +347,27 @@ _BUILDINGS = ["高新", "一教", "二教", "三教", "四教", "五教"]
 _MAJOR_KEYWORDS = {"计算机": "计算机科学", "人工智能": "人工智能", "数学": "数学",
                    "物理": "物理", "生物": "生物", "化学": "化学", "金融": "金融", "经管": "经管"}
 _INTEREST_KEYWORDS = ["人工智能", "AI", "机器学习", "深度学习", "编程", "算法", "数学",
-                      "英语", "物理", "生物", "化学", "金融", "经管", "文学", "历史", "设计"]
-_GRADE_WORDS = ["大一", "大二", "大三", "大四"]
+                      "数据", "数据库", "计算机视觉", "自然语言处理", "机器人", "英语",
+                      "物理", "生物", "化学", "金融", "经管", "文学", "历史", "设计"]
+_GRADE_WORDS = ["大一", "大二", "大三", "大四", "大五", "大六"]
+
+
+def _is_recommendation_request(query: str) -> bool:
+    """识别明确的推荐动作；“选修/通识”等课程名词本身不构成推荐请求。"""
+    q = (query or "").strip()
+    if not q:
+        return False
+    if any(k in q for k in ("推荐", "选课建议", "课程建议", "值得选", "适合我")):
+        return True
+    if any(k in q for k in ("冲突", "撞课", "时间重", "课表重")):
+        return False
+    patterns = (
+        r"选(?:什么|哪些|哪门|哪几门)(?:课|课程)",
+        r"(?:什么|哪些|哪门|哪几门)(?:课|课程).{0,10}(?:适合|好拿分|轻松|值得)",
+        r"(?:有没有|有什么).{0,12}(?:适合|好拿分|轻松|低负担|硬核|有挑战).{0,8}(?:课|课程)",
+        r"(?:只要|必须).{0,24}(?:课|课程)",
+    )
+    return any(re.search(pattern, q) for pattern in patterns)
 
 
 _SENSITIVE_WORDS = ["作弊", "改成绩", "代考", "抄袭", "替考", "考试答案", "舞弊"]
@@ -447,16 +498,41 @@ def _direct_tool_route(state: QaState) -> dict | None:
     轮1 实测修复（2026-08-15）：路由未检查工具是否已有结果，导致工具被
     重复调用直至轮次上限（Q11/Q12 各调 4 次）。此处补 done 检查：路由工具
     已有成功结果时转 compose，不再重复调用。
-    2026-08-16 加固：允许「选课推荐」意图在命中强冲突/退补选关键词时同样
-    直连对应工具，避免 embedding 对"冲突"类问句分类在「选课冲突/选课推荐」
-    之间漂移时路由失效（如"推荐几门课会不会和我课表冲突"）。"""
+    显式推荐动作优先于 embedding 意图：即使分类成「选课冲突」，复合问句仍只
+    调 recommend_courses；普通“我的选修课冲突吗”没有推荐动作，继续走独立
+    check_course_conflict。"""
     intent = state.get("intent") or ""
     query = state.get("query") or ""
     rounds = state.get("rounds") or 0
-    # 意图归并：选课域父类意图统一可为路由触发上下文
+    recommendation_request = _is_recommendation_request(query)
+    teacher_choice = any(k in query for k in ("哪个老师", "哪位老师", "老师哪个好", "选哪个老师"))
+    comparison = any(k in query for k in ("对比", "比较"))
+    pressure = any(k in query for k in _DIRECT_ROUTE_KEYWORDS["退补选评估"][1])
+    if recommendation_request and not teacher_choice and not comparison and not pressure:
+        tool = "recommend_courses"
+        results = state.get("tool_results") or []
+        if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
+            return {
+                "decision": "compose",
+                "tool_calls": [],
+                "thought_log": (state.get("thought_log") or []) + [{
+                    "round": rounds + 1, "decision": "compose",
+                    "reason": "显式推荐工具已有结果，直接合成",
+                }],
+            }
+        return {
+            "decision": "call_tool",
+            "tool_calls": [{
+                "tool": tool,
+                "args": {"profile": _extract_profile(query, state.get("user_profile") or {})},
+            }],
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "call_tool",
+                "reason": f"显式推荐动作({intent})→{tool}",
+            }],
+        }
+
     intent_set = {intent}
-    if intent == "选课推荐":
-        intent_set = {"选课冲突", "退补选评估"}
     entry = None
     if intent_set & {"选课冲突", "退补选评估"}:
         for k, (t, kws) in _DIRECT_ROUTE_KEYWORDS.items():
@@ -544,19 +620,6 @@ def think(state: QaState) -> dict:
     query = state.get("query", "")
     intent = state.get("intent") or "知识问答"
     rounds = state.get("rounds") or 0
-
-    # P5-3 结构化注入：方案页按钮预置的 tool_calls 直达 act（不经 LLM 覆盖），
-    # act 层 existing enrich（student_id/推荐参数/事件时间兜底）照常生效。
-    forced = state.get("tool_calls")
-    if forced:
-        return {
-            "decision": "call_tool",
-            "tool_calls": forced,
-            "thought_log": (state.get("thought_log") or []) + [{
-                "round": rounds + 1, "decision": "call_tool",
-                "reason": f"方案页按钮结构化注入（{forced[0].get('tool', '')}）",
-            }],
-        }
 
     # P3-2 熔断：本轮问答内 LLM 已失败过 → 不再尝试 LLM，直接走确定性规则，
     # 避免多轮每轮都等超时（断网时 think ≤4 轮叠加分钟级假死）
@@ -696,6 +759,8 @@ def _keyword_intent_fix(query: str, intent: str) -> str:
     """
     if "导入" in query and "课" in query:
         return "日程管理"  # 课表导入日程（import_schedule）
+    if _is_recommendation_request(query):
+        return "选课推荐"
     if any(k in query for k in ("课表", "有哪些课", "什么课", "上课时间", "哪天有课")):
         return "查课表"
     if any(k in query for k in ("日程", "待办", "备忘")):
@@ -796,9 +861,10 @@ def _build_chat_history(history: list[dict], max_items: int = 20) -> str:
 
 
 def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
-    """选课推荐：冲突/退补选 > 对比 > 教师分析 > 课程推荐"""
+    """选课顾问：显式推荐优先于冲突；独立冲突检查保持原入口。"""
+    recommendation_request = _is_recommendation_request(query)
     # 选课 H 项：冲突检测 / 退补选压力评估（与 _plan_course 同口径）
-    if any(k in query for k in ("冲突", "撞课", "时间重", "重了", "时间挤")):
+    if not recommendation_request and any(k in query for k in ("冲突", "撞课", "时间重", "重了", "时间挤")):
         return [{"tool": "check_course_conflict", "args": {}}]
     if any(k in query for k in ("退选", "退课", "补选", "退补选", "学分超", "学分够",
                                 "学分压力", "选太多", "退掉", "退哪门")):
@@ -807,6 +873,10 @@ def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
     pair = _extract_course_pair(query) if any(k in query for k in ("对比", "比较")) else None
     if pair:
         return [{"tool": "compare_courses", "args": {"course_a": pair[0], "course_b": pair[1]}}]
+
+    teacher_choice = any(k in query for k in ("哪个老师", "哪位老师", "老师哪个好", "选哪个老师"))
+    if recommendation_request and not teacher_choice:
+        return [{"tool": "recommend_courses", "args": {"profile": _extract_profile(query, user_profile)}}]
 
     teacher = _extract_teacher(query)
     # 双参数问法："XX老师在XX课怎么样/XX老师的XX课评价" → teacher_name + course 同时提供，
@@ -828,9 +898,6 @@ def _plan_advisor(query: str, user_profile: dict) -> list[dict]:
     if m:
         cname = m.group(1).strip("，。,.！!？? \t")
         return [{"tool": "analyze_teacher", "args": {"course": cname}}]
-
-    if any(k in query for k in ("推荐", "选修", "通识", "选什么", "什么课")):
-        return [{"tool": "recommend_courses", "args": {"profile": _extract_profile(query, user_profile)}}]
 
     return [{"tool": "search_faq", "args": {"query": query}}]
 
@@ -901,29 +968,111 @@ def _extract_course_pair(query: str) -> tuple[str, str] | None:
 
 
 def _extract_teacher(query: str) -> str | None:
-    m = re.search(r"([\u4e00-\u9fff]{2,4})(?:老师|教授)", query)
+    m = re.search(
+        r"(?:^|[，。！？,\s]|只要|必须|推荐|希望|想选|选择|觉得|请问|教师)"
+        r"([\u4e00-\u9fff]{2,4})(?:老师|教授)",
+        query,
+    )
     return m.group(1) if m else None
 
 
 def _extract_profile(query: str, user_profile: dict) -> dict:
-    """从查询与用户信息中尽力提取推荐偏好。
+    """从查询与登录信息中提取推荐上下文和本轮明确需求。
 
     无信息时留空、绝不填造假画像（历史版本硬编码"计算机科学/大二/人工智能"
     导致降级路径乱推）：缺失部分由 act 层 _enrich_recommend_args 从登录画像补齐，
     仍缺时由 think 规则引导 clarify / collect_preferences。"""
-    major = next((v for k, v in _MAJOR_KEYWORDS.items() if k in query), None) \
-        or user_profile.get("major")
-    grade = next((g for g in _GRADE_WORDS if g in query), None) \
-        or user_profile.get("grade")
+    explicit_fields: list[str] = []
+    major = user_profile.get("major")
+    for keyword, canonical in _MAJOR_KEYWORDS.items():
+        if re.search(rf"(?:我是|就读|所学|专业是|读)?\s*{re.escape(keyword)}\s*(?:专业|系|学院)", query):
+            major = canonical
+            explicit_fields.append("major")
+            break
+    query_grade = next((g for g in _GRADE_WORDS if g in query), None)
+    grade = query_grade or user_profile.get("grade")
+    if query_grade:
+        explicit_fields.append("grade")
     interests = [kw for kw in _INTEREST_KEYWORDS if kw in query]
-    if any(k in query for k in ("好拿分", "轻松", "水课", "不点名", "任务少", "省时", "摸鱼")):
+    if interests:
+        explicit_fields.append("interests")
+
+    workload_terms = ("任务少", "作业少", "低负担", "省时", "轻松", "水课", "不点名", "摸鱼", "工作量小")
+    workload = "low" if any(k in query for k in workload_terms) else None
+    if any(k in query for k in ("好拿分", "给分好", "冲分", "保绩", "提高GPA", "提高绩点")):
         pref = "easy_grade"
-    elif any(k in query for k in ("学到东西", "硬核", "挑战")):
+    elif any(k in query for k in ("学到东西", "硬核", "挑战", "收获大", "深入学习")):
         pref = "learn_hard"
-    else:
+    elif any(k in query for k in ("均衡", "综合考虑", "兼顾给分和收获")):
         pref = "balanced"
-    return {"major": major, "grade": grade, "interests": interests,
-            "preference_type": pref, "max_results": 5}
+    elif workload:
+        pref = "easy_grade"
+    else:
+        pref = None
+    if pref:
+        explicit_fields.append("preference_type")
+    if workload:
+        explicit_fields.append("workload_preference")
+
+    if any(k in query for k in ("必修", "补修", "培养方案缺口", "毕业要求缺口")):
+        scope = "required"
+    elif any(k in query for k in ("选修", "任选")):
+        scope = "elective"
+    elif any(k in query for k in ("通识", "通修")):
+        scope = "general"
+    else:
+        scope = "all"
+    if scope != "all":
+        explicit_fields.append("course_scope")
+
+    teacher = _extract_teacher(query)
+    preferred_teachers = [teacher] if teacher and _is_recommendation_request(query) else []
+    if preferred_teachers:
+        explicit_fields.append("preferred_teachers")
+
+    target_match = re.search(
+        r"(大[一二三四五六]\s*(?:上|下|秋|春)(?:学期)?|[1-6]\s*[秋春夏]|下学期|下个学期)",
+        query,
+    )
+    target_term = target_match.group(1).replace(" ", "") if target_match else None
+    if target_term:
+        explicit_fields.append("target_term")
+
+    hard_preferences = []
+    if any(k in query for k in ("只要", "必须")):
+        for key, value in (
+            ("interests", interests),
+            ("workload_preference", workload),
+            ("preferred_teachers", preferred_teachers),
+            ("target_term", target_term),
+        ):
+            if value:
+                hard_preferences.append(key)
+
+    conflict_not_checked = _is_recommendation_request(query) and any(
+        k in query for k in ("冲突", "撞课", "时间重", "时间挤", "课表重")
+    )
+
+    explicit = bool(
+        interests or pref or workload or scope != "all" or preferred_teachers
+        or target_term
+    )
+    return {
+        "major": major,
+        "grade": grade,
+        "interests": interests,
+        "preference_type": pref,
+        "workload_preference": workload,
+        "course_scope": scope,
+        "preferred_teachers": preferred_teachers,
+        "target_term": target_term,
+        "_explicit_fields": explicit_fields,
+        "_explicit_needs": explicit,
+        "_explicit_interests": bool(interests),
+        "_hard_preferences": hard_preferences,
+        "_conflict_not_checked": conflict_not_checked,
+        "max_results": 5,
+    }
 
 
 def _extract_building(query: str) -> str:
@@ -1063,9 +1212,11 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 工具结果含"第三方工具 · XX 提供"（eco: 前缀生态工具）时：回答必须保留该提供者署名并注明"仅供参考"，不得表述为小蜗或官方数据
 - 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
 - 数据表格用 Markdown 展示，回答简洁有条理
-- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有「必修组/选修组」分组时必须先完整展示必修组、再展示选修组；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
+- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有分组时依次展示「必修」「方案内选修」「方向补充」，方向补充必须明确说明不在当前定位到的培养方案清单中；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
-- 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
+- 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
+- recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
+- 培养方案工具返回 source=personal 时可称“教务系统个人培养方案”；source=generic 时必须醒目说明“专业通用参考，不是个人培养方案”；source=unavailable 时不得猜测专业方案
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
 - 先修课要求、成绩满足性、课程容量、开课院系等工具未返回的信息：必须明确说明“暂无该数据”并给出查证途径（如登录综合教务系统核对），严禁根据常识推断用户的已修状态或满足性（不得出现“已修，成绩满足”这类未经工具核实的结论）
 - 冲突检测（check_course_conflict）与压力评估（evaluate_selection_pressure）结果必须如实转述：周次不重叠不算冲突；周次未知按重叠保守判定时须注明；时间不全/无排课数据的课程明确说明无法精确检测；学分上限为参考值（默认30），以教务系统为准；不得在工具未提供排课时间的情况下臆造冲突结论
@@ -1242,6 +1393,9 @@ def _build_tool_summary(results: list[dict]) -> str:
             "real": "数据来源：教务系统实时数据",
             "fallback": "数据来源：本地缓存/模拟数据，仅供参考",
             "local": "数据来源：本地培养方案数据（非教务实时），以综合教务系统为准",
+            "personal": "数据来源：教务系统个人培养方案",
+            "generic": "数据来源：专业通用参考，不是个人培养方案",
+            "unavailable": "培养方案来源不可用",
             "locked": "需登录教务系统后获取",
         }.get(res.get("source") or "", res.get("source") or "来源未知")
 
@@ -1261,6 +1415,7 @@ def _build_tool_summary(results: list[dict]) -> str:
             groups = res.get("groups") or {}
             req = groups.get("required") or []
             elec = groups.get("elective") or []
+            exploratory = groups.get("exploratory") or []
             lines.append(f"[{tool}] 共返回 {len(res['recommendations'])} 门课（候选 {res.get('total_candidates')} 门）:")
 
             def _dump(items, prefix=""):
@@ -1278,6 +1433,8 @@ def _build_tool_summary(results: list[dict]) -> str:
                     credit_txt = f"{credit}学分" if credit else ""
                     lines.append(f"- {item.get('name', '?')}（{credit_txt}） | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
                                  f" | 近3次开课 {terms_txt}{hint_txt} | 评论{len(item.get('top_reviews') or [])}条")
+                    if item.get("reasons"):
+                        lines.append(f"  推荐依据: {'；'.join(item['reasons'])}")
                     for rv in (item.get("top_reviews") or [])[:6]:
                         lines.append(f"  > “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
 
@@ -1285,16 +1442,28 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"【必修组·共{len(req)}门，培养方案要求，回答时必须置前展示】")
                 _dump(req)
             if elec:
-                lines.append(f"【选修组·共{len(elec)}门，方案内选修，按评分排序，回答时置于必修组之后】")
+                lines.append(f"【选修组·共{len(elec)}门，方案内选修，已综合用户需求、方案学期与评课可靠度排序】")
                 _dump(elec)
-            if not req and not elec:
+            if exploratory:
+                lines.append(f"【方向补充·共{len(exploratory)}门，不在当前定位到的培养方案清单中，必须明确标注】")
+                _dump(exploratory)
+            if not req and not elec and not exploratory:
                 _dump(res["recommendations"])
+            context = res.get("program_context") or {}
+            if context:
+                lines.append(
+                    f"培养方案上下文: matched={context.get('matched')} source={context.get('source')} "
+                    f"name={context.get('name')} taken_courses_known={context.get('taken_courses_known')} "
+                    f"target_term={context.get('target_term')}"
+                )
             note = res.get("profile_note") or {}
             if note:
                 note_txt = f"画像: {note.get('name','')}——{note.get('desc','')}"
                 if note.get("auto") and note.get("gpa") is not None:
                     note_txt += f"（用户未指定偏好，按 GPA {note['gpa']} 自动采用；回答时可用一句话说明）"
                 lines.append(note_txt)
+            for limitation in res.get("limitations") or []:
+                lines.append(f"限制（回答必须说明）: {limitation}")
             # 选课季语义提示：方案学期“2秋”指大二上学期，避免 LLM 把评课库历史开课学期当“下学期”
             try:
                 from tools.advisor_tools import _infer_next_selection_term

@@ -24,7 +24,7 @@ def t(name: str, ok: bool, detail: str = "") -> None:
 
 
 def main() -> None:
-    from agents.qa.nodes import _build_tool_summary, _extract_profile
+    from agents.qa.nodes import _build_tool_summary, _extract_profile, _is_recommendation_request
 
     # 无任何线索 → 全部留空（历史版本硬编码"计算机科学/大二/人工智能"）
     p1 = _extract_profile("推荐几门课", {})
@@ -32,7 +32,8 @@ def main() -> None:
 
     # 问题中的线索优先
     p2 = _extract_profile("推荐适合大二的AI方向选修课", {})
-    t("年级/兴趣从问题提取", p2["grade"] == "大二" and p2["interests"] == ["AI"] and p2["major"] is None, str(p2))
+    t("年级/兴趣从问题提取", p2["grade"] == "大二" and p2["interests"] == ["AI"]
+      and p2["major"] is None and p2["_explicit_interests"] is True, str(p2))
 
     # 登录画像兜底
     p3 = _extract_profile("推荐几门课", {"major": "人工智能", "grade": "2025级"})
@@ -41,6 +42,15 @@ def main() -> None:
     # 偏好类型映射
     p4 = _extract_profile("有没有好拿分的课", {})
     t("easy_grade 映射", p4["preference_type"] == "easy_grade", str(p4))
+    p5 = _extract_profile("只要人工智能方向、必须张三老师的大二上课程", {})
+    t("只要/必须升级明确偏好为硬条件",
+      set(p5["_hard_preferences"]) == {"interests", "preferred_teachers", "target_term"}
+      and p5["preferred_teachers"] == ["张三"], str(p5))
+    p6 = _extract_profile("推荐几门课，会不会和我的课表冲突？", {})
+    t("复合推荐仅记录未查冲突说明",
+      p6["_conflict_not_checked"] is True and "schedule_constraints" not in p6, str(p6))
+    t("选修名词不等于推荐动作",
+      not _is_recommendation_request("我的选修课冲突吗"), "")
 
     # 工具摘要推荐分支须输出画像说明（供 LLM 向用户说明自动画像依据）
     fake = [{"tool": "recommend_courses", "status": "done", "result": {
@@ -107,10 +117,10 @@ def main() -> None:
     t("离线模式-课表拉取返回 None", _ct2._fetch_real_schedule(object(), 1) is None, "")
     t("离线模式-成绩拉取返回 None", _ct2._fetch_real_grades(object()) is None, "")
     _ct2.set_offline_mode(False)
-    _CAS._injected_program_tree = {"fake": "tree"}
     _fake_client = _CAS()
+    _fake_client.inject_program_tree({"fake": "tree"})
     t("方案树注入-返回注入数据", _fake_client.get_my_program_tree() == {"fake": "tree"}, "")
-    _CAS._injected_program_tree = None
+    _fake_client.inject_program_tree(None)
     t("方案树注入-清除后不再注入", _fake_client.get_my_program_tree() != {"fake": "tree"}, "")
 
     # ── P2: young_client token 校验与数字容错 ──
@@ -160,8 +170,11 @@ def main() -> None:
     t("路由-退补选→evaluate_selection_pressure",
       _pc2[0]["tool"] == "evaluate_selection_pressure", str(_pc2))
     _pa1 = _plan_advisor("推荐课会不会和我课表撞课", {})
-    t("路由-选课顾问冲突→check_course_conflict",
-      _pa1[0]["tool"] == "check_course_conflict", str(_pa1))
+    t("路由-复合推荐→recommend_courses",
+      _pa1[0]["tool"] == "recommend_courses", str(_pa1))
+    _pa_standalone = _plan_advisor("我的选修课冲突吗", {})
+    t("路由-独立选修冲突→check_course_conflict",
+      _pa_standalone[0]["tool"] == "check_course_conflict", str(_pa_standalone))
     _pa2 = _plan_advisor("退补选建议", {})
     t("路由-选课顾问退补选→evaluate_selection_pressure",
       _pa2[0]["tool"] == "evaluate_selection_pressure", str(_pa2))
@@ -182,6 +195,12 @@ def main() -> None:
                               "tool_results": [{"tool": "check_course_conflict", "status": "done"}]})
     t("确定性路由-已有结果转合成（轮1死循环回归）",
       _r5 is not None and _r5["decision"] == "compose", str(_r5))
+    _r6 = _direct_tool_route({"intent": "选课冲突", "query": "推荐几门课会不会和我课表冲突？"})
+    t("确定性路由-复合推荐不受 embedding 冲突意图影响",
+      _r6 is not None and _r6["tool_calls"][0]["tool"] == "recommend_courses", str(_r6))
+    _r7 = _direct_tool_route({"intent": "选课冲突", "query": "我的选修课冲突吗"})
+    t("确定性路由-名词型选修冲突保持独立检查",
+      _r7 is not None and _r7["tool_calls"][0]["tool"] == "check_course_conflict", str(_r7))
     # 轮2 回归：think 直接走确定性路由 compose 分支不得崩溃（455 行日志越界）
     from agents.qa.nodes import think as _think
     _t = _think({"query": "我选的课时间冲突吗", "intent": "选课冲突", "rounds": 1,
@@ -190,15 +209,19 @@ def main() -> None:
     t("think-路由已有结果转合成不崩溃（轮2回归）",
       _t.get("decision") == "compose" and _t.get("tool_calls") == [], str(_t))
     _vt = _valid_tools()
-    # P4-1 起：内置 26 工具 + 生态工具（eco: 前缀，动态加载；echo 为协议自检样例）
+    # P4-1 起：内置 28 工具 + 生态工具（eco: 前缀，动态加载；echo 为协议自检样例）
     _eco = [v for v in _vt if v.startswith("eco:")]
-    t("工具校验-注册表含内置26+生态工具", len(_vt) >= 26
+    t("工具校验-注册表含内置28+生态工具", len(_vt) - len(_eco) >= 28
       and "check_course_conflict" in _vt and "evaluate_selection_pressure" in _vt
       and "eco:echo" in _vt, f"{len(_vt)} 工具（生态 {len(_eco)}）")
     t("工具校验-合法工具ok", _check_tool_choice("query_grade", set()) == "ok", "")
     t("工具校验-未知工具unknown", _check_tool_choice("not_a_tool", set()) == "unknown", "")
     t("工具校验-重复调用done", _check_tool_choice("query_grade", {"query_grade"}) == "done", "")
     t("工具校验-空工具empty", _check_tool_choice("", set()) == "empty", "")
+    from tools.advisor_tools import recommend_courses as _recommend_tool
+    _recommend_schema = _recommend_tool.args_schema.model_json_schema().get("properties", {})
+    t("推荐工具已永久移除时间约束参数", "schedule_constraints" not in _recommend_schema,
+      str(sorted(_recommend_schema)))
 
     _fake_cc = [{"tool": "check_course_conflict", "status": "done", "result": {
         "total": 2, "courses": [{"course_name": "A"}, {"course_name": "B"}],

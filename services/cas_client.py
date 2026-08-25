@@ -20,6 +20,101 @@ from utils.logger import get_logger
 log = get_logger("xiaowo.cas")
 
 
+def _value_text(value) -> str:
+    """把教务 API 的字符串或 nameZh/name 包装对象归一为文本。"""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("nameZh", "name", "label", "value"):
+            text = _value_text(value.get(key))
+            if text:
+                return text
+        return ""
+    if isinstance(value, (str, int)):
+        return str(value).strip()
+    return ""
+
+
+def _profile_roots(payload: dict) -> list[dict]:
+    """展开 student-info 常见 data/result/student 包装层。"""
+    roots: list[dict] = []
+    queue = [payload]
+    seen: set[int] = set()
+    wrapper_keys = ("data", "result", "studentInfo", "student", "person", "user", "stdGradeRank")
+    while queue:
+        item = queue.pop(0)
+        if not isinstance(item, dict) or id(item) in seen:
+            continue
+        seen.add(id(item))
+        roots.append(item)
+        for key in wrapper_keys:
+            child = item.get(key)
+            if isinstance(child, dict):
+                queue.append(child)
+    return roots
+
+
+def _all_dict_roots(payload: dict) -> list[dict]:
+    """递归展开档案对象；仅用于专业/年级等带专属字段名的查找。"""
+    roots: list[dict] = []
+    queue = [payload]
+    seen: set[int] = set()
+    while queue:
+        item = queue.pop(0)
+        if not isinstance(item, dict) or id(item) in seen:
+            continue
+        seen.add(id(item))
+        roots.append(item)
+        for value in item.values():
+            if isinstance(value, dict):
+                queue.append(value)
+    return roots
+
+
+def _first_profile_value(roots: list[dict], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        for root in roots:
+            text = _value_text(root.get(key))
+            if text:
+                return text
+    return ""
+
+
+def _normalize_grade(value) -> str:
+    text = _value_text(value)
+    if not text:
+        return ""
+    match = re.search(r"(20\d{2})", text)
+    if match:
+        return f"{match.group(1)}级"
+    return text
+
+
+def _normalize_student_profile(payload, expected_id: str = "") -> dict:
+    """从 CAS/student-info 或 stdGradeRank 的嵌套结构提取已验证身份字段。"""
+    if not isinstance(payload, dict):
+        return {}
+    roots = _profile_roots(payload)
+    all_roots = _all_dict_roots(payload)
+    returned_id = _first_profile_value(
+        all_roots, ("studentCode", "studentNo", "studentId", "username", "sid"),
+    )
+    if returned_id and expected_id and returned_id.casefold() != expected_id.casefold():
+        log.warning("学生档案学号与认证学号不一致，拒绝使用该档案")
+        return {}
+    return {
+        "name": _first_profile_value(
+            roots, ("studentName", "studentNameZh", "nameZh", "displayName", "name"),
+        ),
+        "major": _first_profile_value(
+            all_roots, ("majorNameZh", "majorName", "major", "studentMajor", "majorZh"),
+        ),
+        "grade": _normalize_grade(_first_profile_value(
+            all_roots, ("grade", "gradeName", "enrollmentYear", "entryYear", "enterSchoolYear"),
+        )),
+    }
+
+
 class CASClient:
     """
     CAS 统一认证客户端。
@@ -40,10 +135,6 @@ class CASClient:
 
     TIMEOUT = 20
 
-    # 测试版注入的个人方案树（P1-2 治理：替代旧 monkey-patch 方法替换；
-    # 类级属性，app_test 启动时注入一次、进程生命周期内有效）
-    _injected_program_tree: dict | list | None = None
-
     def __init__(self) -> None:
         self._session = requests.Session()
         self._session.headers.update({
@@ -53,6 +144,10 @@ class CASClient:
         self._logged_in = False
         self._student_id: str | None = None
         self._student_data_id: int | None = None
+        self._student_profile: dict[str, str] = {}
+        self._profile_sources: list[str] = []
+        # 测试数据也按 CASClient 实例隔离，避免一个测试用户覆盖另一用户的方案树。
+        self._injected_program_tree: dict | list | None = None
 
     @property
     def session(self) -> requests.Session:
@@ -382,8 +477,20 @@ class CASClient:
         except Exception:
             self._home_page_html = None
 
-    def _resolve_data_id_from_grades(self) -> int | None:
-        """从成绩接口提取 student_data_id（成绩查询不需要 data_id）"""
+    def _merge_student_profile(self, profile: dict, source: str) -> None:
+        """只用同一认证会话返回的非空字段补齐档案，不用页面选择器或猜测值。"""
+        used_identity_field = False
+        for key in ("name", "major", "grade"):
+            value = str(profile.get(key) or "").strip()
+            if value and not self._student_profile.get(key):
+                self._student_profile[key] = value
+                if key in {"major", "grade"}:
+                    used_identity_field = True
+        if used_identity_field and source not in self._profile_sources:
+            self._profile_sources.append(source)
+
+    def _fetch_grade_profile(self) -> dict | list | None:
+        """读取成绩接口中的 stdGradeRank，作为专业/入学年级的认证兜底。"""
         try:
             sem_data = self.get_grade_semesters()
             if not isinstance(sem_data, list) or not sem_data:
@@ -392,6 +499,21 @@ class CASClient:
             if not ids:
                 return None
             grade_data = self.get_grades(ids[:2])
+            if not isinstance(grade_data, dict):
+                return grade_data
+            profile = _normalize_student_profile(
+                grade_data.get("stdGradeRank") or {}, self._student_id or "",
+            )
+            self._merge_student_profile(profile, "cas_grade_profile")
+            return grade_data
+        except Exception as e:
+            log.warning(f"从成绩接口读取学生档案失败: {e}")
+            return None
+
+    def _resolve_data_id_from_grades(self) -> int | None:
+        """从成绩接口提取 student_data_id（成绩查询不需要 data_id）"""
+        try:
+            grade_data = self._fetch_grade_profile()
             if isinstance(grade_data, dict):
                 for sem in grade_data.get("semesters", []):
                     for sc in (sem.get("scores") or []):
@@ -421,27 +543,37 @@ class CASClient:
                 timeout=self.TIMEOUT,
             )
             if resp.status_code == 200:
-                data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                content_type = resp.headers.get("content-type", "").lower()
+                data = resp.json() if "application/json" in content_type else {}
                 if data:
-                    info["name"] = data.get("nameZh", data.get("name", ""))
-                    info["major"] = data.get("major", data.get("majorNameZh", ""))
-                    info["grade"] = data.get("grade", "")
-                    return info
+                    self._merge_student_profile(
+                        _normalize_student_profile(data, self._student_id or ""),
+                        "cas_student_info",
+                    )
         except Exception:
             pass
+
+        if not self._student_profile.get("major") or not self._student_profile.get("grade"):
+            self._fetch_grade_profile()
+        info.update(self._student_profile)
+
         # Fallback: 从页面 HTML 中提取姓名
-        html = getattr(self, "_home_page_html", None) or ""
-        # 尝试常见模式
-        name_patterns = [
-            r'"nameZh"\s*:\s*"([^"]+)"',
-            r'"studentName"\s*:\s*"([^"]+)"',
-            r'class="[^"]*name[^"]*"[^>]*>([^<]+)<',
-        ]
-        for pattern in name_patterns:
-            m = re.search(pattern, html)
-            if m:
-                info["name"] = m.group(1).strip()
-                break
+        if not info.get("name"):
+            html = getattr(self, "_home_page_html", None) or ""
+            name_patterns = [
+                r'"nameZh"\s*:\s*"([^"]+)"',
+                r'"studentName"\s*:\s*"([^"]+)"',
+                r'class="[^"]*name[^"]*"[^>]*>([^<]+)<',
+            ]
+            for pattern in name_patterns:
+                m = re.search(pattern, html)
+                if m:
+                    info["name"] = m.group(1).strip()
+                    break
+        if self._profile_sources:
+            info["profile_source"] = "+".join(self._profile_sources)
+        else:
+            info["profile_source"] = "cas_authenticated"
         return info if info.get("id") else None
 
     def _extract_data_id(self, html: str) -> None:
@@ -541,8 +673,8 @@ class CASClient:
         Returns:
             模块树 dict；未登录或解析失败返回 {"error": ...}
         """
-        if CASClient._injected_program_tree is not None:
-            return CASClient._injected_program_tree
+        if self._injected_program_tree is not None:
+            return self._injected_program_tree
         if not self._logged_in:
             return {"error": "未登录"}
         try:
@@ -560,10 +692,18 @@ class CASClient:
             log.error(f"获取个人培养方案失败: {e}")
             return {"error": str(e)}
 
+    def inject_program_tree(self, tree: dict | list | None) -> None:
+        """仅为当前客户端注入离线个人方案；测试用户之间互不共享。"""
+        self._injected_program_tree = tree
+
     def logout(self) -> None:
         """清除会话"""
         self._session.cookies.clear()
         self._logged_in = False
         self._student_id = None
         self._student_data_id = None
+        self._student_profile = {}
+        self._profile_sources = []
+        self._injected_program_tree = None
+        self._home_page_html = None
         log.info("CAS 会话已清除")

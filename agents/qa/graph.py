@@ -81,7 +81,7 @@ def _ensure_services():
 
 def run_qa(query: str, module_signal: str = "自动判断",
            student_id: str = None, user_profile: dict = None,
-           chat_history: list[dict] = None, force_calls: list[dict] = None) -> dict:
+           chat_history: list[dict] = None) -> dict:
     """
     统一问答入口（替换原 router/agent 分发）。
 
@@ -113,7 +113,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "chat_history": chat_history or [],
                 "decision": "compose",
                 "retrieve_query": "",
-                "tool_calls": force_calls or [],
+                "tool_calls": [],
                 "tool_results": [],
                 "rounds": 0,
                 "thought_log": [],

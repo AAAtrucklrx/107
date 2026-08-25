@@ -115,13 +115,16 @@ cmp_r = compare_courses.invoke({"course_a": "数学分析(B1)", "course_b": "线
 ok("课程对比返回 winner", bool(cmp_r.get("comparison", {}).get("rating_winner")),
    f"{cmp_r['comparison']['rating_winner']} (diff {cmp_r['comparison']['rating_diff']})")
 
-# 5. 空结果边界: 不存在的课程/教师 → error; 过窄关键词 → 回退全量
+# 5. 空结果边界: 不存在的课程/教师 → error; 过窄课程范围保持硬约束
 cmp_err = compare_courses.invoke({"course_a": "不存在的课程XYZ123", "course_b": "另一个不存在的课ABC"})
 ok("对比不存在的课程返回 error", "error" in cmp_err, cmp_err.get("error", ""))
 ok("教师不存在返回 error", "error" in analyze_teacher.invoke({"teacher_name": "不存在老师XYZ123"}))
 r_emp = recommend_courses.invoke({"profile": {"max_results": 3}, "keywords": ["绝对不存在的课程词XYZ"]})
-ok("过窄关键词回退全量", r_emp.get("keyword_fallback") is True and len(r_emp["recommendations"]) > 0,
+ok("过窄课程范围不放宽", r_emp.get("keyword_fallback") is False and not r_emp["recommendations"],
    f"fallback={r_emp.get('keyword_fallback')}, {len(r_emp['recommendations'])} 门")
+ok("过窄课程范围说明硬条件", any("课程范围" in text and "未放宽" in text
+                                  for text in r_emp.get("limitations") or []),
+   r_emp.get("limitations"))
 
 # 6. 课程名归一化匹配: 无括号 / 带空格输入都能命中库中 "数学分析(B1)"
 r_np = analyze_teacher.invoke({"course": "数学分析B1"})
