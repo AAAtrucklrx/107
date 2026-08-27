@@ -179,7 +179,11 @@ def create_app(
             requested = (frontend_dist / spa_path).resolve()
             if requested.is_relative_to(frontend_dist.resolve()) and requested.is_file():
                 return FileResponse(requested)
-            return FileResponse(frontend_dist / "index.html")
+            # index.html 不缓存:保证前端更新后浏览器拉到新 hash 的 JS/CSS
+            return FileResponse(
+                frontend_dist / "index.html",
+                headers={"Cache-Control": "no-cache"},
+            )
     return app
 
 

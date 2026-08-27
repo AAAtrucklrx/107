@@ -109,7 +109,7 @@ class ChatManager:
             "conversation_id": conversation_id,
             "requested_mode": mode,
             "effective_mode": effective_mode,
-            "events_url": f"/api/v1/chat/runs/{run.run_id}/events",
+            "events_url": f"/chat/runs/{run.run_id}/events",
         }
 
     async def _execute(self, job: _Job) -> None:

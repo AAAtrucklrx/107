@@ -81,7 +81,7 @@ def test_chat_completion_does_not_wait_for_blocked_review_enqueue(tmp_path) -> N
                 json={"question": "公开证据异步入队测试", "mode": "local"},
                 headers=mutation_headers(csrf),
             ).json()
-            events = parse_sse(client.get(created["events_url"]).text)
+            events = parse_sse(client.get("/api/v1" + created["events_url"]).text)
             assert events[-1]["type"] == "answer.completed"
             assert review_store.enqueue_started.wait(timeout=2)
             assert not review_store.enqueue_release.is_set()
@@ -98,7 +98,7 @@ def test_runner_failure_returns_stable_code_without_exception_text(tmp_path) -> 
             json={"question": "公开运行故障测试", "mode": "local"},
             headers=mutation_headers(csrf),
         ).json()
-        response = client.get(created["events_url"])
+        response = client.get("/api/v1" + created["events_url"])
 
     events = parse_sse(response.text)
     assert events[-1]["type"] == "run.failed"

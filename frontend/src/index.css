@@ -113,6 +113,7 @@ button:disabled {
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
   width: 100vw;
+  height: 100vh;   /* 老浏览器兜底(不支持 dvh 时布局塌陷会导致回答把输入框挤出视口) */
   height: 100dvh;
   overflow: hidden;
 }

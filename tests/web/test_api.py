@@ -80,7 +80,7 @@ def test_demo_login_sse_history_and_cross_session_isolation(tmp_path) -> None:
         run_id = created_payload["run_id"]
         assert created_payload["conversation_id"]
 
-        stream = first.get(created_payload["events_url"])
+        stream = first.get("/api/v1" + created_payload["events_url"])
         assert stream.status_code == 200
         events = parse_sse(stream.text)
         assert [event["id"] for event in events] == list(range(1, len(events) + 1))
@@ -116,7 +116,7 @@ def test_personal_demo_question_forces_local_mode(tmp_path) -> None:
         )
         assert created.status_code == 200
         assert created.json()["effective_mode"] == "local"
-        events = parse_sse(client.get(created.json()["events_url"]).text)
+        events = parse_sse(client.get("/api/v1" + created.json()["events_url"]).text)
         completed = next(event for event in events if event["type"] == "answer.completed")
         assert any("未发送到互联网" in item for item in completed["data"]["limitations"])
 
@@ -136,10 +136,10 @@ def test_cancel_and_last_event_id_resume(tmp_path) -> None:
             headers=mutation_headers(csrf),
         )
         assert cancelled.status_code == 200
-        events = parse_sse(client.get(created["events_url"]).text)
+        events = parse_sse(client.get("/api/v1" + created["events_url"]).text)
         assert events[-1]["type"] == "run.cancelled"
 
-        resumed = client.get(created["events_url"], headers={"Last-Event-ID": "1"})
+        resumed = client.get("/api/v1" + created["events_url"], headers={"Last-Event-ID": "1"})
         assert resumed.status_code == 200
         assert all(event["id"] > 1 for event in parse_sse(resumed.text))
 
@@ -200,7 +200,7 @@ def test_demo_reset_only_clears_current_demo_session(tmp_path) -> None:
                 json={"question": "演示恢复测试", "mode": "local"},
                 headers=mutation_headers(current_session["csrf_token"]),
             ).json()
-            client.get(created["events_url"])
+            client.get("/api/v1" + created["events_url"])
 
         reset = first.post(
             "/api/v1/auth/demo/reset",

@@ -16,7 +16,7 @@ def _completed_answer(client: TestClient, csrf: str) -> tuple[str, str]:
         json={"question": "反馈测试问题", "mode": "local"},
         headers=mutation_headers(csrf),
     ).json()
-    events = parse_sse(client.get(created["events_url"]).text)
+    events = parse_sse(client.get("/api/v1" + created["events_url"]).text)
     completed = next(event for event in events if event["type"] == "answer.completed")
     return created["run_id"], completed["data"]["answer_id"]
 

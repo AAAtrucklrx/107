@@ -72,7 +72,12 @@ function nowIso(): string {
 }
 
 function randomId(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID()}`;
+  // crypto.randomUUID 仅在 HTTPS/localhost 安全上下文可用(HTTP 部署如 8850 会抛错),
+  // 用时间戳+随机数组合替代,不依赖安全上下文。
+  const rand = typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function"
+    ? crypto.getRandomValues(new Uint32Array(1))[0].toString(36)
+    : Math.random().toString(36).slice(2, 10);
+  return `${prefix}-${Date.now().toString(36)}-${rand}`;
 }
 
 function toChatMessages(detail: ConversationDetail): ChatMessage[] {

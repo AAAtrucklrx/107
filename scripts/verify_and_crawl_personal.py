@@ -25,6 +25,15 @@ FIX = Path(__file__).resolve().parents[1] / "fixtures" / "demo" / "PB25111691.js
 REPORT: list[dict] = []
 
 
+def sem_name(ch: str) -> str:
+    """'2026春' -> '2026年春季学期'; 兼容 '2025秋'。"""
+    import re as _re
+    m = _re.match(r"(\d{4})(春|秋)", ch or "")
+    if m:
+        return f"{m.group(1)}年{m.group(2)}季学期"
+    return ch or ""
+
+
 def report(name, ok, detail="", extra=None):
     REPORT.append({"name": name, "ok": ok, "detail": detail[:180]})
     mark = "✅" if ok else "❌"
@@ -166,10 +175,11 @@ def main() -> int:
             # 成绩转 fixture 格式
             grades_rows = []
             for sem_item in (grades.get("semesters") or []) if isinstance(grades, dict) else []:
-                semester = f"{sem_item.get('schoolYear', '')[:4]}年{'秋' if '秋' in str(sem_item.get('nameZh', '')) else '春'}季学期"
                 for sc in sem_item.get("scores", []):
                     if not isinstance(sc, dict):
                         continue
+                    # 学期名:优先 scores[].semesterCh("2026春"),回退 sem_item.nameZh("2026年春季学期")
+                    semester = sem_name(sc.get("semesterCh") or sem_item.get("nameZh") or "")
                     raw = str(sc.get("score") or "").strip()
                     import re as _re
                     numeric = _re.fullmatch(r"\d+(\.\d+)?", raw)
