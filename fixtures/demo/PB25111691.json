@@ -1,0 +1,48 @@
+{
+  "fixture_version": 1,
+  "synthetic": true,
+  "generated_for": "xiaowo-demo",
+  "user": {
+    "id": "PB25111691",
+    "name": "测试",
+    "major": "人工智能",
+    "grade": "2025级"
+  },
+  "grades": [
+    {"semester": "2025年秋季学期", "course_name": "数学分析(B1)", "credits": 6.0, "score": 85, "grade_point": 3.7},
+    {"semester": "2025年秋季学期", "course_name": "线性代数(B1)", "credits": 4.0, "score": 83, "grade_point": 3.3},
+    {"semester": "2025年秋季学期", "course_name": "计算机程序设计(L)", "credits": 3.0, "score": 79, "grade_point": 3.0},
+    {"semester": "2026年春季学期", "course_name": "数据结构A", "credits": 4.0, "score": 86, "grade_point": 3.7},
+    {"semester": "2026年春季学期", "course_name": "数学分析(B2)", "credits": 6.0, "score": 82, "grade_point": 3.3},
+    {"semester": "2026年春季学期", "course_name": "面向科学问题求解的编程实践", "credits": 2.0, "score": 90, "grade_point": 4.0}
+  ],
+  "courses": [
+    {"course_code": "MATH1007", "course_name": "数学分析(B2)", "teacher": "演示教师", "credits": 6.0, "time": "周一 第3,4节", "location": "3C202", "semester": "2026年春季学期"},
+    {"course_code": "CS2502A", "course_name": "数据结构A", "teacher": "演示教师", "credits": 4.0, "time": "周二 第8,9节", "location": "3A313", "semester": "2026年春季学期"},
+    {"course_code": "CS4024", "course_name": "面向科学问题求解的编程实践", "teacher": "演示教师", "credits": 2.0, "time": "周三 第6,7节", "location": "3C101", "semester": "2026年春季学期"},
+    {"course_code": "PHYS1001B", "course_name": "力学B", "teacher": "演示教师", "credits": 2.5, "time": "周四 第3,4节", "location": "3A112", "semester": "2026年春季学期"}
+  ],
+  "program": {
+    "program_id": "demo-ai-2025",
+    "name": "人工智能专业培养方案（演示）",
+    "college": "人工智能与数据科学学院",
+    "grade": "2025级",
+    "personal": true,
+    "source": "demo_personal",
+    "fallback_from_personal": false,
+    "totalCredits": 160.0,
+    "modules": [
+      {"category": "通识基础", "required_credits": 40.0, "course_count": 12},
+      {"category": "学科基础", "required_credits": 52.0, "course_count": 15},
+      {"category": "专业核心", "required_credits": 36.0, "course_count": 10},
+      {"category": "实践与拓展", "required_credits": 32.0, "course_count": 8}
+    ],
+    "courses": [
+      {"code": "MATH1007", "name": "数学分析(B2)", "required": "必修", "credit": 6.0, "term": "1春", "category": "学科基础"},
+      {"code": "CS2502A", "name": "数据结构A", "required": "必修", "credit": 4.0, "term": "1春", "category": "学科基础"},
+      {"code": "AI2001", "name": "人工智能导论", "required": "必修", "credit": 3.0, "term": "2秋", "category": "专业核心"},
+      {"code": "AI3002", "name": "机器学习", "required": "必修", "credit": 3.5, "term": "3秋", "category": "专业核心"},
+      {"code": "AI3010", "name": "深度学习", "required": "选修", "credit": 3.0, "term": "3春", "category": "专业核心"}
+    ]
+  }
+}

@@ -1,0 +1,97 @@
+name: xiaowo-sidecars
+
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in deploy/sidecars/.env}
+      UWSGI_WORKERS: "2"
+      UWSGI_THREADS: "2"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3).read(1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  crawl4ai-upstream:
+    image: ${CRAWL4AI_IMAGE:-unclecode/crawl4ai:0.9.2}
+    restart: unless-stopped
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:?set CRAWL4AI_API_TOKEN in deploy/sidecars/.env}
+      REDIS_PASSWORD: ${CRAWL4AI_REDIS_PASSWORD:?set CRAWL4AI_REDIS_PASSWORD in deploy/sidecars/.env}
+      CRAWL4AI_ALLOW_INTERNAL_URLS: "false"
+      CRAWL4AI_ALLOW_INSECURE_TLS: "false"
+      CRAWL4AI_HOOKS_ENABLED: "false"
+      CRAWL4AI_EXECUTE_JS_ENABLED: "false"
+      CRAWL4AI_CHROMIUM_SANDBOX: "true"
+    volumes:
+      - ./crawl4ai/config.yml:/app/config.yml:ro
+    shm_size: 1gb
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /var/lib/redis:uid=999,gid=999,mode=0700,size=64m
+      - /var/lib/crawl4ai/outputs:uid=999,gid=999,mode=0700,size=64m
+      - /home/appuser/.crawl4ai:uid=999,gid=999,mode=0700,size=64m
+      - /home/appuser/.cache/url_seeder:uid=999,gid=999,mode=0700,size=32m
+      - /home/appuser/.gunicorn:uid=999,gid=999,mode=0700,size=16m
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 4g
+    cpus: 2.0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11235/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+  crawl4ai-adapter:
+    build:
+      context: ./crawl4ai_adapter
+    restart: unless-stopped
+    depends_on:
+      crawl4ai-upstream:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:11235:11235"
+    environment:
+      CRAWL4AI_UPSTREAM_URL: http://crawl4ai-upstream:11235
+      CRAWL4AI_UPSTREAM_TOKEN: ${CRAWL4AI_API_TOKEN:?set CRAWL4AI_API_TOKEN in deploy/sidecars/.env}
+      CRAWL4AI_EXPECTED_VERSION: "0.9.2"
+      XIAOWO_CRAWL4AI_PROFILE_PATH: /security-profile/crawl4ai-config.yml
+      XIAOWO_CRAWL4AI_RUNTIME_ATTESTED: ${XIAOWO_CRAWL4AI_RUNTIME_ATTESTED:-false}
+    volumes:
+      - ./crawl4ai/config.yml:/security-profile/crawl4ai-config.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,sys,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:11235/health', timeout=3)); sys.exit(0 if data.get('status') == 'ok' else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -9,6 +9,7 @@
 | 模块 | 能力 |
 |------|------|
 | 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
+| 🌐 联网证据 | 本地资料不足、权威性不足或问题要求“最新”时，经隐私清洗后使用 SearXNG + Crawl4AI 保底；达到一手权威来源或双独立可靠来源门槛后才输出确定结论 |
 | 📊 课业助手 | 成绩查询、课表查询（节次精确到分钟）、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
 | 🔍 选课顾问 | 基于 icourse.club 真实评课数据（5667 个课程页 / 4.4 万条评论）与培养方案，按“必修 / 方案内选修 / 方向补充”推荐；本轮需求优先，课程范围和“只要/必须”是硬条件，其余偏好默认软排序；独立提供节次/周次级课表冲突检查与退补选压力评估 |
 | 🧭 培养方案 | 登录后只使用当前用户 CAS/成绩档案中的专业、年级和个人方案；个人方案不可用时可按已验证身份显示醒目标注的“专业通用参考，不是个人培养方案”，不会继承登录前的匿名预览选择 |
@@ -17,46 +18,43 @@
 | 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；侧边栏"校园导航"页收录 19 条官方工具与网站 |
 | 🧩 生态工具 | 学生自制工具投稿接入（Spec + 函数三步，`eco:` 前缀强制署名，见 `tools/ecosystem/README.md`） |
 | 🛡 可靠性 | LLM 平台断网/变慢三层降级：不假死、工具摘要直出、熔断不传染 |
+| 🧾 知识审核 | 回答完成后异步清洗公开证据；审核者查看原文、清洗稿、差异和分块，逐块批准后以不可变 Chroma/BM25 generation 原子发布 |
 
 所有降级/缓存数据均带有**来源标识**（实时数据 / 本地缓存 / 第三方工具），保证结果可追溯。
 
 ## 🛠 技术栈
 
-- **前端/框架**: Streamlit（Web UI）
+- **Web 应用**: React + Vite + TypeScript 前端，FastAPI 模块化单体后端，SSE 流式状态与回答
+- **过渡界面**: Streamlit 在迁移验收后的一个版本内只作为回退入口，不再并行发展为第二套生产 UI
 - **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮（规则 1-22）→ act → compose；确定性路由兜底）
 - **知识库**: ChromaDB 混合检索（向量 + BM25，维度不匹配自动降级 BM25-only）
-- **数据**: SQLite 双库——`database/xiaowo.db`（主库 + 日程 + 活动偏好）+ `data/course_data.db`（评课库 8 表）；青春科大个人快照 `scripts/data/young_personal/`
-- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、**青春科大 young 平台（协议已逆向，12 个数据方法）**、科大 LLM 平台（降级路由）
+- **数据**: SQLite 应用库 + 审核库 + 评课库，Chroma/BM25 generation，公开网页快照与批准数据全部位于 gitignore 数据目录
+- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、青春科大 young、科大 LLM 平台；联网 sidecar 为 SearXNG 与 Crawl4AI adapter
 
 ## 🚀 快速开始
 
-```bash
-# 1. 安装依赖
+```powershell
+# 1. Python 与前端依赖
 pip install -r requirements.txt
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
 
-# 2. 配置环境变量（复制 .env.example 为 .env 并填写）
-#    LLM_API_KEY=你的科大 LLM 平台密钥
-#    LLM_MODEL=deepseek-v4-flash
-#    LLM_EMBEDDING_MODEL=qwen3-embedding
+# 2. 复制 .env.example 为 .env；开发默认使用 anonymous，联网默认关闭。
+#    构建后的 SPA 由 FastAPI 同源托管，因此将 XIAOWO_PUBLIC_ORIGIN 改为：
+#    XIAOWO_PUBLIC_ORIGIN=http://localhost:8000
 
-# 3. 构建评课库（选做；一键重爬 SOP 见 scripts/refresh_course_db.py --dry-run）
-python scripts/crawl_icourse.py all   # 全量抓取 icourse.club 评课（断点续爬，可选）
-python scripts/build_course_db.py     # 构建 data/course_data.db（8 表）
-
-# 4. （可选）青春科大活动数据：.env 配置 YOUNG_TOKEN（登录 young.ustc.edu.cn
-#    后 F12 → localStorage → pro__Access-Token-zsxc-base 的 value，约 7 天有效）
-python scripts/crawl_young.py         # 生成个人快照（无 token 时活动功能自动降级）
-
-# 5. 初始化检查（自动建库 + 知识库校验）
+# 3. 初始化现有数据，再启动 Web 应用
 python init_check.py
-
-# 6. 启动应用
-streamlit run app.py
+python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000
 ```
 
-访问 `http://localhost:8501` 即可使用（未登录可体验知识库问答；课表/成绩/日程等个人数据需 CAS 登录后使用）。
+访问 `http://localhost:8000`。前后端分离开发时保留 `.env.example` 的 `http://localhost:5173`，另一个终端在 `frontend/` 运行 `npm run dev`。
 
-> 注：应用内 CAS 登录跳转依赖 CAS service 白名单，本地开发使用 `http://localhost:8501`，部署后需配置实际域名。
+比赛演示使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo` 和唯一合成身份 `PB25111691`；demo 管理员只能发布到 demo 索引。无 HTTPS 域名的公开 production 只能使用 anonymous，个人区和管理区均关闭。真实 CAS 只保留 Provider/API，必须等可信 HTTPS 来源与 CAS service 白名单就绪后启用。
+
+SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [Web 部署与数据迁移](docs/Web部署与数据迁移.md)。当前开发机不安装或启动这些 sidecar。旧 Streamlit 回退入口仍可用 `python -m streamlit run app_test.py --server.port 8502` 启动。
 
 ## 📁 项目结构
 
@@ -65,9 +63,13 @@ streamlit run app.py
 ├── tools/           # 工具层（课程/成绩/课表/日程/选课/官方入口/活动查询 + ecosystem/ 生态工具）
 ├── services/        # 外部服务（CAS、jw、青春科大 young 客户端、活动推荐与偏好画像、LLM 熔断）
 ├── knowledge/       # 知识库文档（data/ 80 篇 md）与混合检索向量库
-├── database/        # SQLite schema 与种子数据
-├── ui/              # Streamlit 界面（对话/培养方案页/校园导航页/活动弹窗）
-├── config/          # links.yaml 官方链接清单
+├── database/        # 应用/审核 SQLite Schema 与种子数据
+├── frontend/        # React/Vite/TypeScript 四工作区 Web 前端
+├── xiaowo_web/      # FastAPI、认证、SSE、证据、审核发布与 worker
+├── deploy/          # SearXNG/Crawl4AI 安全 sidecar 模板
+├── tests/web/       # Web API、权限、安全、发布与集成测试
+├── ui/              # 迁移期保留的 Streamlit 回退界面
+├── config/          # 官方链接与审核来源白名单
 ├── docs/            # 项目文档（会话交接摘要/接手日志/总纲方案/工具规格/团队材料）
 └── scripts/         # 采集与验证脚本（评课重爬 SOP/青春科大快照/verify_* 回归系列）
 ```
@@ -78,11 +80,13 @@ streamlit run app.py
 - [docs/接手日志.md](docs/接手日志.md) — 滚动状态与修复日志（⚡ 节为最新）
 - [docs/总纲与工具接口方案.md](docs/总纲与工具接口方案.md) — 总体开发方案（Phase 3-6）
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
+- [docs/小蜗_Web应用与联网RAG技术规格.md](docs/小蜗_Web应用与联网RAG技术规格.md) — 已确认的 Q1-Q80 Web/RAG 产品与技术契约
+- [docs/Web部署与数据迁移.md](docs/Web部署与数据迁移.md) — 运行模式、sidecar、worker、加密数据包和 generation 回滚 SOP
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 - [docs/学习报告.md](docs/学习报告.md) — 项目学习基线
 
-## ✅ 回归验证（2026-08-25 本地基线）
+## ✅ 回归验证
 
 | 命令 | 结果 |
 |------|------|
@@ -97,6 +101,10 @@ streamlit run app.py
 | `python scripts/verify_time_parser.py` | 17/17（自然语言时间与 GPA 表） |
 | `python scripts/verify_security_ui.py` | 20/20（认证绑定、多用户方案隔离与 UI 安全） |
 | `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
+| `python -m pytest tests/web -q` | 84 passed（Web API、认证/权限、SSE、SSRF、证据、韧性、审核与 generation） |
+| `npm test` / `npm run build`（`frontend/`） | 5/5；生产构建成功，主入口 448.19 kB，无 chunk 警告 |
+| `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、浅深主题、桌面/移动 Web 工作台验收 |
+| `python scripts/verify_web_load.py` | 100 条在线 SSE、30 个并发回答、有界队列与 `503 RUN_BUSY` |
 | `python scripts/qa_consistency.py` / `qa_new_docs.py` | 需 LLM；最近一次已确认基线 12/12 · 10/10 |
 | 全模块 UI 问答实测 | 19 问 18 直接通过 + 1 断言误判（答案正确），见 docs/e2e_full_module_test.png |
 
@@ -104,6 +112,8 @@ streamlit run app.py
 
 - 评课数据为 icourse.club 抓取快照（重爬 SOP：`scripts/refresh_course_db.py`）；样本量过少的课程/教师评分仅供参考
 - 真实 CAS 登录部署需 service 白名单；本地开发用 `app_test.py` 离线路径
+- 当前没有可信 HTTPS 域名，正式个人能力与 production 管理发布保持关闭；比赛只展示明确标识的合成 demo 数据
+- 联网能力只有在服务器部署并核验 sidecar 后才启用；sidecar 不持有 CAS Cookie、校内凭证或用户私密上下文
 - YOUNG_TOKEN 约 7 天有效期，失效后活动功能自动回退本地快照（来源如实标注）
 - 教师对比样本量差异大（1~553 条）；推荐排序已做小样本收缩，原始均分和样本量仍会同时展示
 - 课程推荐不会自动应用早八、晚课、星期或个人课表冲突过滤；确定候选后需单独运行课表冲突检查

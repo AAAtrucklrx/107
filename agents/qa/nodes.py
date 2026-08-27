@@ -280,12 +280,23 @@ def embedding_parse(state: QaState) -> dict:
     # 候选召回（向量+BM25 混合检索）
     # top_k=12：多义字段/组合问法（如"退学联系谁"需学籍文档+教秘名单组合，
     # "住宿费/学费/贷款"等多篇争夺）时保证含答案文档进入候选（2026-08-16 补录）
-    candidates, found = [], False
+    candidates = list(state.get("candidates") or [])
+    found = bool(state.get("candidates_found"))
     try:
         from knowledge.vector_store import FAQVectorStore
         res = FAQVectorStore().search(query, top_k=12)
-        candidates = res.get("results") or []
-        found = res.get("found", False)
+        seen = {
+            str(candidate.get("id") or candidate.get("chunk_id") or "")
+            for candidate in candidates
+        }
+        for candidate in res.get("results") or []:
+            identity = str(candidate.get("id") or candidate.get("chunk_id") or "")
+            if identity and identity in seen:
+                continue
+            candidates.append(candidate)
+            if identity:
+                seen.add(identity)
+        found = bool(res.get("found", False) or found)
     except Exception as e:
         log.warning(f"候选召回失败: {e}")
 

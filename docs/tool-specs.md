@@ -1071,3 +1071,66 @@ TOOL_REGISTRY = {
 - **`services/activity_profile.py`**：画像（平台标签冷启动 + 模块学时 d德z智t体m美l劳 + 行为权重 90 天窗口）；`personal_score` 三路命中（行为/标签词/均衡补短板，缺口≥20% 计分封顶 0.85，最高模块不加持）。
 - **`services/activity_recommender.py`**：四因子 urgency0.30/freetime0.25/personal0.30/hotness0.15（无画像退回三因子）+ MMR；FreeTimeMatcher 已改 schedule_parse 解析。
 - **`scripts/crawl_young.py`**：个人快照（`scripts/data/young_personal/young_snapshot.json`）。
+
+## 2026-08-27 增补（v3.0：Web API、联网证据与审核发布）
+
+> 本节描述 `xiaowo_web/` 的公开契约。它不会增加 LangGraph 注册 Tool 数量，也不得改变上文已经确认的课程推荐、独立冲突检查和个人身份边界。完整产品规格见 `docs/小蜗_Web应用与联网RAG技术规格.md`。
+
+### Web 运行模式
+
+- `XIAOWO_AUTH_MODE` 只能为 `anonymous`、`demo`、`cas`，模式互斥。
+- demo 身份固定为 `PB25111691 / 测试 / 人工智能 / 2025级`；demo 管理员只操作 `namespace=demo`，不能发布 production。
+- HTTP production 只允许 anonymous，个人学业与审核 API 固定拒绝访问。
+- CAS 模式只在精确可信的 HTTPS `XIAOWO_PUBLIC_ORIGIN` 下启用；专业、年级、成绩、课表和培养方案只取当前认证学号的数据。
+
+### API 与 SSE 契约
+
+所有接口使用 `/api/v1`。稳定表面包括：
+
+| 模块 | 端点 |
+|---|---|
+| 系统 | `GET /health/live`、`GET /health/ready`、`GET /config/public` |
+| 认证 | `GET /auth/session`、`POST /auth/demo`、CAS login/callback、`POST /auth/logout` |
+| 历史 | `GET/POST /conversations`、删除单条、删除全部 |
+| 回答 | `POST /chat/runs`、`GET /chat/runs/{id}/events`、`POST /chat/runs/{id}/cancel` |
+| 学业 | `GET /academic/overview`、`/program`、`/courses`、`/schedule` |
+| 校园 | `GET /campus/services`、`GET /campus/activities` |
+| 反馈 | `POST /answers/{id}/feedback` |
+| 审核 | 审核条目、版本、逐块批准、拒绝、撤回、复抓、发布重试、generation、来源规则建议 |
+
+SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。
+
+### 本地 QA 适配
+
+- `LegacyQaRunner` 通过有界执行器复用 `agents/qa/graph.py::run_qa`，不把同步 LangGraph 工作阻塞在 FastAPI 事件循环。
+- 工具结果、来源、限制和已有课程卡片转换为公开 SSE 事件；转换不得篡改数值或伪造来源。
+- `ApprovedKnowledgeRetriever` 只读取当前 principal 命名空间在 `review.db` 标记为 active 且完整性有效的 generation；demo、anonymous/CAS 索引严格隔离。
+- 推荐侧永久不接收 `schedule_constraints`、`force_calls` 或 `pending_force_calls`；复合“推荐且不冲突”仍只推荐并提示未查课表，独立 `check_course_conflict` 保留。
+
+### 联网证据保底
+
+联网门控在本地 `found=false`、权威证据低于阈值、问题明确要求最新信息或用户本轮选择“联网”时触发；用户选择“本地”时永久禁止该轮联网。
+
+1. `SearchPrivacyGuard` 先确定性清除或拒绝外发学号、姓名、成绩、课表、培养方案、画像、CAS 信息和私密上下文。
+2. `SearxngClient` 在 4 秒预算内搜索；科大问题同时走审核白名单通道和全网通道。
+3. `Crawl4AiClient` 只调用私有 adapter，Top 3 并行抓取；URL、DNS 和每跳重定向均执行 SSRF 防护与 robots/限速约束。
+4. `SourceTrustStore` 按精确 host/path 白名单分级。未知 `*.ustc.edu.cn` 只能获得 `ustc_domain` 标签，不能自动成为 `official_primary`。
+5. 一个有效官方一手来源，或两个相互独立且一致的可靠来源，才能支撑确定结论。证据冲突时单列“信息存在分歧”；不足时固定说明“暂未找到足够可靠的联网证据”并展示不足来源。
+
+整个 run 从创建起计算 20 秒硬上限：搜索 4 秒、证据 12 秒、生成到第 18 秒，最后 2 秒用于确定性收尾。达到证据门槛立即取消低优先级抓取。
+
+### 异步反哺与审核
+
+- 当前回答完成后只把实际引用过的公开快照、片段、脱敏主题、证据关系和抓取元数据写入持久队列；不保存原始问题、账号、个人资料、私密上下文或完整回答。
+- `python -m xiaowo_web.worker` 独立执行清洗、近重复检查、复抓和发布；worker 停止不影响聊天完成。
+- 审核者查看不可变原文、模型稿、人工版本、diff 和分块，只能逐块批准。模型不得自动批准、认定官方或解决冲突。
+- 默认有效期：公告 7 天、动态办事信息 30 天、政策 90 天、稳定通识 180 天；到期退出有效检索但保留历史。
+- 来源白名单建议只导出 Git diff；实际等级变更必须修改 `config/source_trust.yaml`，经测试和 Git 审查后部署。
+
+### Generation 发布约束
+
+批准内容构建新的不可变 Chroma/BM25 generation。两边写入与校验都成功后，`review.db` 才原子切换 active 指针；部分失败不得改变当前检索结果。
+
+回滚 API `POST /api/v1/admin/generations/rollback` 只切换到上一完整 generation。切换前同时验证 manifest、BM25 文件、Chroma collection 名称、generation 元数据、文档数以及 `(document_id, content_hash)` 指纹；任何失败返回 `GENERATION_INTEGRITY_INVALID` 并保持 active 指针不变。
+
+运行与迁移步骤见 `docs/Web部署与数据迁移.md`。

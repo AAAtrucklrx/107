@@ -81,7 +81,9 @@ def _ensure_services():
 
 def run_qa(query: str, module_signal: str = "自动判断",
            student_id: str = None, user_profile: dict = None,
-           chat_history: list[dict] = None) -> dict:
+           chat_history: list[dict] = None,
+           supplemental_candidates: list[dict] = None,
+           supplemental_candidates_found: bool = False) -> dict:
     """
     统一问答入口（替换原 router/agent 分发）。
 
@@ -91,6 +93,8 @@ def run_qa(query: str, module_signal: str = "自动判断",
         student_id: 学号（登录用户；未登录为空）
         user_profile: 用户信息（姓名/专业/年级等）
         chat_history: 最近对话历史 [{role, content}, ...]（多轮指代理解）
+        supplemental_candidates: 已通过人工审核的 active generation 候选
+        supplemental_candidates_found: 补充候选是否达到独立检索阈值
 
     Returns:
         {"answer": str, "clarify_question": str, "intent": str, "decision": str,
@@ -106,8 +110,8 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "module_signal": module_signal or "自动判断",
                 "intent": "",
                 "intent_top3": [],
-                "candidates": [],
-                "candidates_found": False,
+                "candidates": list(supplemental_candidates or []),
+                "candidates_found": bool(supplemental_candidates_found and supplemental_candidates),
                 "student_id": student_id or "",
                 "user_profile": user_profile or {},
                 "chat_history": chat_history or [],
@@ -135,8 +139,8 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "module_signal": module_signal or "自动判断",
             "intent": "",
             "intent_top3": [],
-            "candidates": [],
-            "candidates_found": False,
+            "candidates": list(supplemental_candidates or []),
+            "candidates_found": bool(supplemental_candidates_found and supplemental_candidates),
             "student_id": student_id or "",
             "user_profile": user_profile or {},
             "chat_history": chat_history or [],

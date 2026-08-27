@@ -2,7 +2,7 @@
 
 > 读者：部署在 114.214.241.119（东风云 Windows VM）内的 DeepSeek Harness（DSH）AI 代理。
 > 用途：AI 在 VM 中接管小蜗开发/运维前的**事实基线**。人用文档见 `docs/会话交接摘要.md`（唯一起点）与 `docs/接手日志.md`。
-> 维护：随代码同步更新；快照基准 **2026-08-25**。
+> 维护：随代码同步更新；快照基准 **2026-08-27**。
 
 ---
 
@@ -10,7 +10,7 @@
 
 **小蜗**：面向中国科学技术大学师生的校园智能助手（“107 杯”比赛项目）。基于科大 LLM 平台（`api.llm.ustc.edu.cn`）构建。
 
-- 前端：Streamlit（`app.py` 正式版 / `app_test.py` 测试版，8501/8502 端口）
+- 主 Web：React + Vite + TypeScript 四工作区前端，FastAPI `/api/v1` 后端与 SSE；Streamlit 只在迁移后一个版本内作为回退入口
 - 智能体：LangGraph 统一 QA——`embedding_parse → think（≤4 轮，THINK 规则 1-22）→ act（工具执行）→ compose（合成回答）`，含确定性路由兜底与双层熔断（P3-2）
 - 知识库：ChromaDB 混合检索（向量 + BM25 降级），80 篇权威文档 → 769 分块
 - 数据：SQLite 双库（`database/xiaowo.db` 主库 + `data/course_data.db` 评课库）+ 青春科大个人快照
@@ -19,14 +19,14 @@
 
 能力面（功能模块）：智能问答 RAG / 课业助手（成绩·GPA·课表·空教室·考试）/ 选课顾问（均分推荐·同课多师·冲突检测·退补选压力）/ 培养方案（总览·学期规划·进度）/ 日程管理（自然语言时间·课表导入）/ 活动推荐（四因子：紧迫度·空闲·个性化·热度 + 均衡补短板）/ 官方入口链接（render_link + 校园导航页 19 条）/ 生态工具。
 
-## 2. 当前状态快照（2026-08-25 实测）
+## 2. 当前状态快照（2026-08-27 实测）
 
 | 项 | 值 |
 |---|---|
 | HEAD | `28e53f7` fix: harden auth, scheduling, and Streamlit flows（2026-08-24） |
 | 分支/远端 | main ↔ https://github.com/AAAtrucklrx/107.git |
 | 上个里程碑 | P5-1 `34e8858`、P5-2 `199449d` 已完成；`a88f6a8` P5-3 三联动已被当前工作区永久回滚 |
-| 工作区 | **有未提交改动**（推荐语义、认证档案/方案隔离、P5-3 回滚、测试与文档）；禁止擅自提交/还原 |
+| 工作区 | **有未提交改动**（原推荐/身份/P5-3 收敛 + React/FastAPI、联网证据、审核发布、测试与文档）；禁止擅自提交/还原 |
 
 ### 2.1 未提交改动明细（用户已确认 Q1-Q12）
 
@@ -42,7 +42,7 @@
 | `ui/chat.py` / `ui/program_page.py` | 侧栏显示年级；登录/登出清理匿名方案选择和个人方案缓存；登录用户缺专业/年级时停止且不猜；页头显示身份、专业、年级、档案来源和方案来源；通用回退醒目标注“专业通用参考，不是个人培养方案” |
 | `docs/选课顾问三联动_问题清单与修复对照.md` | 已删除（随回滚） |
 
-### 2.2 验证现状（本机 2026-08-25 新鲜结果）
+### 2.2 验证现状（本机 2026-08-27 新鲜结果）
 
 | 套件 | 结果 | 备注 |
 |---|---|---|
@@ -52,9 +52,22 @@
 | `verify_nodes.py` | ✅ 53/53 | 含复合推荐/独立冲突边界与工具签名 |
 | `verify_profile.py` | ✅ 11/11 | |
 | `verify_security_ui.py` | ✅ 20/20 | 含认证绑定、双用户方案树/缓存隔离、匿名状态清理 |
-| `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-25 已重跑 |
+| `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-27 已重跑 |
 | `e2e_program_identity.py` | ✅ 通过 | 桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与横向溢出 |
+| `pytest tests/web -q` | ✅ 84 passed | 认证/权限、SSE、SSRF、证据、韧性、worker、审核与 generation 完整性 |
+| `frontend: npm test / npm run build` | ✅ 5/5 / 成功 | Markdown/来源按需块 158.61 kB，主入口 448.19 kB，无 500 kB chunk 警告 |
+| `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、个人方案、审核治理、浅深主题；1440×1000 / 390×844 |
+| `verify_web_load.py` | ✅ 通过 | 100 条在线 SSE、回答并发峰值 30、超限 503、100 条完整结束 |
 | 需 LLM：`qa_consistency` 12/12 · `qa_new_docs` 10/10 | 本轮未运行 | 脚本会向外部 LLM 发送学号/画像，未获明确授权；左侧为最近一次基线 |
+
+### 2.3 Web vNext 已落地边界
+
+- 运行模式只有 `anonymous`、`demo`、`cas`。唯一 demo 身份为 `PB25111691 / 测试 / 人工智能 / 2025级`；demo 管理员只能操作 demo 审核库与 demo 索引。
+- 当前没有可信 HTTPS 域名：比赛使用 `competition + demo`；无 HTTPS 的公开 production 只能 anonymous，个人区和管理区关闭；真实 CAS 只保留 Provider/API，等待域名和白名单。
+- 本地资料不足、权威性不足或问题要求最新信息时才进入联网门控；搜索前永久禁止外发个人数据。确定结论要求一个审核官方一手来源或两个独立一致的可靠来源。
+- SearXNG/Crawl4AI 只提供服务器 sidecar 模板，当前开发机未安装或启动。adapter 未完成 runtime attestation 时 readiness 不放行联网。
+- 回答完成后异步入审核队列；逐块批准后构建不可变 Chroma/BM25 generation。回滚前验证 manifest、两套索引、元数据、数量和内容指纹。
+- 完整技术契约见 `docs/小蜗_Web应用与联网RAG技术规格.md`，部署/迁移/回滚见 `docs/Web部署与数据迁移.md`。
 
 ## 3. 架构速览
 
@@ -69,6 +82,10 @@
 ```
 agents/qa/       图/节点/意图（核心）
 agents/tool_registry.py   注册表门面
+frontend/        React/Vite/TypeScript 四工作区与组件测试
+xiaowo_web/      FastAPI、认证、聊天/SSE、证据、审核、发布与 worker
+tests/web/       Web API、安全、权限、发布与集成回归
+deploy/          SearXNG/Crawl4AI sidecar 安全模板
 tools/           课程/选课顾问/方案/日程/官方入口/活动/生态 ecosystem/
 services/        young/活动推荐/画像/CAS/LLM 熔断/容器
 knowledge/       data/ 80 篇 md + chroma_db（向量库，不入 git）
@@ -113,12 +130,15 @@ docs/            会话交接摘要（人用）/接手日志/总纲方案/tool-s
 **VM 部署进行中清单**（交接状态）：
 - [x] RDP 远程登录打通
 - [ ] 安装 Python 3.14（未装；`python` 命中 Store 假别名——用 `winget install Python.Python.3.14` 或官网安装器）
+- [ ] 安装受支持的 Node.js/npm，用于 `frontend/` 的可重复构建
 - [ ] 代码上机：`git clone https://github.com/AAAtrucklrx/107.git C:\xiaowo`（GitHub 可达性待测；不通则 RDP 拖 zip）
-- [ ] 数据上机：拷贝 `xiaowo_deploy_data.zip` + `requirements.lock.txt`（RDP 驱动器重定向 `\\tsclient\F\小蜗\...`）→ `Expand-Archive` 到 C:\xiaowo
-- [ ] `.env`：从本机复制（LLM_API_KEY/LLM_MODEL=deepseek-v4-flash/LLM_EMBEDDING_MODEL=qwen3-embedding/CAS_SERVICE_URL=http://114.214.241.119:8850/YOUNG_TOKEN），不进 git
+- [ ] 数据上机：旧 `xiaowo_deploy_data.zip` 可恢复基础四项；新增审核库/网页快照/批准 generation 必须按 `docs/Web部署与数据迁移.md` 生成带 SHA-256 manifest 的加密包
+- [ ] `.env`：比赛使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_ADMIN_IDS=PB25111691`、实际 HTTP public origin；当前不配置/启用 CAS，不进 git
 - [ ] `python -m venv .venv` + `pip install -r requirements.lock.txt` + `python init_check.py`
-- [ ] 启动 Streamlit（8501）+ NSSM 注册服务（开机自启/崩溃重启）
-- [ ] 平台端口转发：源端口 8850 → 云主机 8501（**校内网址** http://114.214.241.119:8850）
+- [ ] `frontend/` 执行 `npm ci` 与 `npm run build`，启动 FastAPI（建议 VM 内 8000）并注册 NSSM 服务
+- [ ] 比赛配置 `competition + demo`，平台端口转发源端口 8850 → FastAPI 端口；持续显示演示数据标识
+- [ ] 在服务器按 `deploy/sidecars/README.md` 部署并核验 sidecar；未通过 attestation 前保持联网关闭
+- [ ] 单独注册 `python -m xiaowo_web.worker` 服务；确认与 Web 使用同一审核库和 generation 路径
 - [ ] 「出校」申请（公网访问，用户决定晚点提交；审批周期不可控）
 - [ ] CAS 白名单 P3-1（登记 service URL；外部申请）
 - [ ] **DSH AI 部署（本交接目的）**：`npx @deepseek-ai/dsh web`（Node ≥22.19，官方包）→ Web UI 3080；**官方 DeepSeek key 由用户自行配置**（api.deepseek.com）；形态 = Web UI + 端口转发（DSH 配置存 VM 用户目录 ~/.dsh）
@@ -127,9 +147,14 @@ docs/            会话交接摘要（人用）/接手日志/总纲方案/tool-s
 
 ```powershell
 # 全量验证（见 AGENTS.md “必备命令”）
-# 启动演示/正式（VM 上无沙箱，直接）
+# 构建并启动主 Web（构建后的 SPA 由 FastAPI 同源托管）
+cd frontend
+npm ci
+npm run build
+cd ..
+python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000
+# 迁移期回退入口
 python -m streamlit run app_test.py --server.port 8502 --server.headless true
-python -m streamlit run app.py --server.port 8501 --server.headless true
 # 评课库一键重爬 SOP（选课季前）
 python scripts/refresh_course_db.py --dry-run      # 看命令链；--check-only 快速校验
 # young 快照刷新（换 YOUNG_TOKEN 后）
@@ -145,9 +170,10 @@ python init_check.py
 3. **itemized（个人已报名历史）接口未攻克**（headless 渲染不出，需用户真实浏览器抓包）
 4. **平台越权接口已停用**（scExperience/list 不调用不存储；向校团委反馈待做）
 5. **8-1 LLM 熔断窗 600s**（进程级全局，多用户 A 断网连累 B；建议缩至 60-300s——架构观察项，用户未拍板）
-6. **出校申请**（公网访问网址关键路径，用户安排晚点提交）
+6. **出校申请 / 可信 HTTPS 域名**（真实 CAS、个人区和 production 管理区的硬前置）
 7. **P6-1 流水线未完整纳入验证集**：`scripts/dev_pipeline/config.py` 仍只配置部分测试脚本。
-8. **P6-3 剩余文档审定**：核心运行文档已在本轮同步；`项目交接报告.md` 的历史总览仍需独立决定是否重写。
+8. **服务器 Web 部署**：代码侧已完成；VM 仍需 Node/Python、构建、隔离 demo、sidecar attestation、worker 和端口转发实测。
+9. **P6-3 剩余历史文档审定**：Web 核心运行文档已同步；`项目交接报告.md` 等历史总览仍需独立决定是否重写。
 
 ## 9. 密钥纪律
 
@@ -160,4 +186,5 @@ python init_check.py
 1. 通读本文档 + `AGENTS.md`（DSH 自动加载）+（人用参考）`docs/会话交接摘要.md`。
 2. `git status` + `git diff` 确认工作区；保留并理解未提交的推荐/身份/P5-3 回滚改动。
 3. 跑全量验证（§2.2），记录实际结果，不沿用旧计数。
-4. 推荐与培养方案语义已经用户确认；不得重新引入推荐侧排课过滤、`force_calls`、三按钮或跨用户身份兜底。后续优先级在 P6-1、VM 部署和外部申请之间另行选择。
+4. 推荐与培养方案语义已经用户确认；不得重新引入推荐侧排课过滤、`force_calls`、三按钮或跨用户身份兜底。
+5. Web 改动先跑 `pytest tests/web -q`、前端测试/构建和 `scripts/e2e_web_workbench.py`；不得把 demo 提升为 production 发布者，也不得在 HTTP production 打开个人区或管理区。

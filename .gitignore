@@ -1,11 +1,13 @@
 # 密钥与敏感配置（不入库）
 .env
+deploy/sidecars/.env
 
 # 运行态数据库
 database/*.db
 data/*.db
 data/young_dialog_log.json
 data/morning_brief_log.json
+data/web_evidence/
 
 # 爬虫原始数据（可重建）
 scripts/data/
@@ -39,3 +41,13 @@ docs/archive/
 
 # 子代理抓取临时产物（可重建，不入库）
 _ustc_scrape/
+
+# 新 Web 前端与测试产物
+frontend/node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+.pytest_cache/

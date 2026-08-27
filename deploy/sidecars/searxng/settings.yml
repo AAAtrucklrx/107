@@ -1,0 +1,46 @@
+use_default_settings: true
+
+general:
+  instance_name: "Xiaowo Private Search"
+  debug: false
+  enable_metrics: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "zh-CN"
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+ui:
+  static_use_hash: true
+  default_theme: simple
+  query_in_title: false
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 4.0
+  pool_connections: 20
+  pool_maxsize: 10
+  enable_http2: true
+
+engines:
+  - name: baidu
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: wikipedia
+    disabled: false

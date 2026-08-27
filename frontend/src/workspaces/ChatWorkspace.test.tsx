@@ -1,0 +1,73 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import { ChatWorkspace } from "./ChatWorkspace";
+import type { PublicConfig, SessionPayload, SseEnvelope } from "../types";
+
+const putLocalConversation = vi.fn((_value: unknown) => Promise.resolve());
+
+vi.mock("../lib/anonymousHistory", () => ({
+  listLocalConversations: vi.fn(() => Promise.resolve([])),
+  putLocalConversation: (value: unknown) => putLocalConversation(value),
+  deleteLocalConversation: vi.fn(() => Promise.resolve()),
+  clearLocalConversations: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("../lib/api", () => ({
+  apiDelete: vi.fn(),
+  apiGet: vi.fn(),
+  apiMutation: vi.fn(() => Promise.resolve({
+    run_id: "run-fixture",
+    conversation_id: null,
+    requested_mode: "auto",
+    effective_mode: "auto",
+    events_url: "/api/v1/chat/runs/run-fixture/events",
+  })),
+  streamRunEvents: vi.fn(async (_path: string, options: { onEvent: (event: SseEnvelope) => void }) => {
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "stage.changed", at: "2026-08-27T00:00:00Z", data: { stage: "evidence_check" } });
+    options.onEvent({ id: 2, run_id: "run-fixture", type: "answer.segment", at: "2026-08-27T00:00:01Z", data: { segment_id: "seg", markdown: "已核验的完整回答。[1]", claim_ids: ["c1"] } });
+    options.onEvent({
+      id: 3,
+      run_id: "run-fixture",
+      type: "answer.completed",
+      at: "2026-08-27T00:00:02Z",
+      data: {
+        answer_id: "answer-fixture",
+        claims: [],
+        sources: [{
+          source_id: "s1", title: "教务处来源", display_url: "https://www.teach.ustc.edu.cn/",
+          institution: "中国科学技术大学教务处", domain: "www.teach.ustc.edu.cn",
+          published_at: null, fetched_at: "2026-08-27T00:00:00Z", level: "official_primary",
+          validity: "valid", citation: 1,
+        }],
+        limitations: [], terminal_reason: "web_evidence_confirmed",
+      },
+    });
+  }),
+}));
+
+const config: PublicConfig = {
+  environment: "development", auth_mode: "anonymous", version: "test",
+  features: { chat: true, web_search: true, personal_workspace: false, review_workspace: false, ingestion_worker: false },
+  time_budget_seconds: { search: 4, evidence: 12, generation: 18, total: 20 },
+};
+
+const session: SessionPayload = {
+  principal: { id: null, auth_mode: "anonymous", authenticated: false, profile: null, is_admin: false, review_namespace: null },
+  capabilities: { public_chat: true, server_history: false, personal_academic: false, knowledge_review: false, production_publish: false },
+  csrf_token: "csrf",
+};
+
+test("chat renders verified complete segments, citations, and saves anonymous history locally", async () => {
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  await user.type(input, "公开校历是什么？");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(screen.getByText("已核验的完整回答。[1]")).toBeInTheDocument());
+  expect(screen.queryByText("核验证据")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /来源 1/ }));
+  expect(screen.getByRole("link", { name: /教务处来源/ })).toBeInTheDocument();
+  expect(putLocalConversation).toHaveBeenCalledTimes(1);
+});

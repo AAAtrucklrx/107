@@ -1,0 +1,9 @@
+<svg width="152" height="48" viewBox="0 0 152 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">小蜗</title>
+  <desc id="desc">小蜗科大学术工作台字标</desc>
+  <path d="M14 29.5C14 21.492 20.492 15 28.5 15C35.404 15 41 20.596 41 27.5C41 33.299 36.299 38 30.5 38C25.806 38 22 34.194 22 29.5C22 25.91 24.91 23 28.5 23C31.538 23 34 25.462 34 28.5C34 30.985 31.985 33 29.5 33" stroke="#099BA8" stroke-width="3" stroke-linecap="round"/>
+  <path d="M9 39H45" stroke="#034EA1" stroke-width="3" stroke-linecap="square"/>
+  <path d="M12 11.5L17.5 16.5M45 11.5L39.5 16.5" stroke="#034EA1" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="53" y="35" fill="#034EA1" font-family="Noto Serif SC, Source Han Serif SC, serif" font-size="29" font-weight="700">小蜗</text>
+  <path d="M126 12H145M126 18H139" stroke="#099BA8" stroke-width="2"/>
+</svg>

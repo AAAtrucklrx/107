@@ -1,0 +1,58 @@
+version: 1
+rules:
+  - scheme: https
+    host: www.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学
+    effective_from: "2026-08-27"
+    rationale: 学校主页及公开栏目
+  - scheme: https
+    host: www.teach.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学教务处
+    effective_from: "2026-08-27"
+    rationale: 教务处公开通知与办事栏目
+  - scheme: https
+    host: grad.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学研究生院
+    effective_from: "2026-08-27"
+    rationale: 研究生培养与学位公开信息
+  - scheme: https
+    host: lib.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学图书馆
+    effective_from: "2026-08-27"
+    rationale: 图书馆公开服务信息
+  - scheme: https
+    host: career.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学就业指导中心
+    effective_from: "2026-08-27"
+    rationale: 就业中心公开信息
+  - scheme: https
+    host: young.ustc.edu.cn
+    path_prefix: /
+    level: official_primary
+    institution: 中国科学技术大学校团委活动平台
+    effective_from: "2026-08-27"
+    rationale: 青春科大公开活动信息
+  - scheme: https
+    host: www.gov.cn
+    path_prefix: /
+    level: reliable_independent
+    institution: 中国政府网
+    effective_from: "2026-08-27"
+    rationale: 国家政务公开信息
+  - scheme: https
+    host: www.moe.gov.cn
+    path_prefix: /
+    level: reliable_independent
+    institution: 中华人民共和国教育部
+    effective_from: "2026-08-27"
+    rationale: 教育主管部门公开信息

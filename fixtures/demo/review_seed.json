@@ -1,0 +1,12 @@
+{
+  "source_id": "demo-review-seed",
+  "normalized_url": "https://demo.xiaowo.invalid/notices/course-service-window",
+  "final_url": "https://demo.xiaowo.invalid/notices/course-service-window",
+  "title": "合成演示：选课服务时段调整通知",
+  "institution": "小蜗演示数据",
+  "level": "reliable_independent",
+  "fetched_at": "2026-08-27T08:00:00Z",
+  "content_type": "text/html",
+  "snapshot_text": "合成演示数据，不代表中国科学技术大学真实通知。\n\n为验证知识审核流程，演示选课服务窗口设为九月一日九时至九月三日十七时。演示期间可查看课程信息并提交模拟申请。\n\n本页面仅用于比赛演示审核、分块批准和失效时间设置，不得作为任何真实办事依据。",
+  "evidence_span_hash": "demo-course-service-window-v1"
+}

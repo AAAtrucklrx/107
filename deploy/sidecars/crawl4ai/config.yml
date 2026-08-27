@@ -1,0 +1,99 @@
+app:
+  title: "Crawl4AI API"
+  version: "1.0.0"
+  host: "0.0.0.0"
+  port: 11235
+  reload: false
+  workers: 1
+  timeout_keep_alive: 30
+
+llm:
+  provider: "openai/gpt-4o-mini"
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: ""
+  task_ttl_seconds: 3600
+  ssl: false
+  ssl_cert_reqs: null
+  ssl_ca_certs: null
+  ssl_certfile: null
+  ssl_keyfile: null
+
+limits:
+  max_body_bytes: 1048576
+  max_pages: 3
+  max_depth: 0
+  wall_clock_s: 8
+  queue:
+    maxsize: 20
+    workers: 3
+    per_principal: 3
+
+rate_limiting:
+  enabled: true
+  default_limit: "30/minute"
+  trusted_proxies: []
+  storage_uri: "memory://"
+
+security:
+  enabled: true
+  jwt_enabled: false
+  api_token: ""
+  https_redirect: false
+  trusted_hosts: ["crawl4ai-upstream", "localhost", "127.0.0.1"]
+  cors_allow_origins: []
+  headers:
+    x_content_type_options: "nosniff"
+    x_frame_options: "DENY"
+    content_security_policy: "default-src 'none'"
+    strict_transport_security: "max-age=63072000; includeSubDomains"
+
+crawler:
+  base_config:
+    simulate_user: false
+    check_robots_txt: true
+  memory_threshold_percent: 85.0
+  rate_limiter:
+    enabled: true
+    base_delay: [1.0, 2.0]
+  timeouts:
+    stream_init: 8.0
+    batch_process: 8.0
+  pool:
+    max_pages: 3
+    idle_ttl_sec: 120
+  browser:
+    kwargs:
+      headless: true
+      text_mode: true
+    extra_args:
+      - "--no-sandbox"
+      - "--disable-dev-shm-usage"
+      - "--disable-gpu"
+      - "--disable-software-rasterizer"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+observability:
+  prometheus:
+    enabled: false
+    endpoint: "/metrics"
+  health_check:
+    endpoint: "/health"
+
+webhooks:
+  enabled: false
+  default_url: null
+  data_in_payload: false
+  retry:
+    max_attempts: 1
+    initial_delay_ms: 1000
+    max_delay_ms: 1000
+    timeout_ms: 1000
+  headers:
+    User-Agent: "Crawl4AI-Webhook/1.0"

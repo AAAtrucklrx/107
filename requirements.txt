@@ -11,8 +11,14 @@ sentence-transformers>=2.7.0
 # 前端
 streamlit>=1.57.0
 
+# Web API
+fastapi>=0.116.0
+uvicorn[standard]>=0.35.0
+httpx>=0.28.1
+
 # 数据处理
 pandas>=2.0.0
+PyYAML>=6.0
 
 # 爬虫 & 网络
 requests>=2.31.0
@@ -21,3 +27,6 @@ pycryptodome>=3.19.0
 
 # 工具
 python-dotenv>=1.0.0
+
+# 测试
+pytest>=8.4.0
