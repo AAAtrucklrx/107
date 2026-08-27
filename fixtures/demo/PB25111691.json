@@ -5,44 +5,808 @@
   "user": {
     "id": "PB25111691",
     "name": "测试",
-    "major": "人工智能",
+    "major": "计算机科学与技术",
     "grade": "2025级"
   },
   "grades": [
-    {"semester": "2025年秋季学期", "course_name": "数学分析(B1)", "credits": 6.0, "score": 85, "grade_point": 3.7},
-    {"semester": "2025年秋季学期", "course_name": "线性代数(B1)", "credits": 4.0, "score": 83, "grade_point": 3.3},
-    {"semester": "2025年秋季学期", "course_name": "计算机程序设计(L)", "credits": 3.0, "score": 79, "grade_point": 3.0},
-    {"semester": "2026年春季学期", "course_name": "数据结构A", "credits": 4.0, "score": 86, "grade_point": 3.7},
-    {"semester": "2026年春季学期", "course_name": "数学分析(B2)", "credits": 6.0, "score": 82, "grade_point": 3.3},
-    {"semester": "2026年春季学期", "course_name": "面向科学问题求解的编程实践", "credits": 2.0, "score": 90, "grade_point": 4.0}
+    {
+      "semester": "2025年秋季学期",
+      "course_name": "数学分析(B1)",
+      "credits": 6.0,
+      "score": 85,
+      "grade_point": 3.7
+    },
+    {
+      "semester": "2025年秋季学期",
+      "course_name": "线性代数(B1)",
+      "credits": 4.0,
+      "score": 83,
+      "grade_point": 3.3
+    },
+    {
+      "semester": "2025年秋季学期",
+      "course_name": "计算机程序设计(L)",
+      "credits": 3.0,
+      "score": 79,
+      "grade_point": 3.0
+    },
+    {
+      "semester": "2026年春季学期",
+      "course_name": "数据结构A",
+      "credits": 4.0,
+      "score": 86,
+      "grade_point": 3.7
+    },
+    {
+      "semester": "2026年春季学期",
+      "course_name": "数学分析(B2)",
+      "credits": 6.0,
+      "score": 82,
+      "grade_point": 3.3
+    },
+    {
+      "semester": "2026年春季学期",
+      "course_name": "面向科学问题求解的编程实践",
+      "credits": 2.0,
+      "score": 90,
+      "grade_point": 4.0
+    }
   ],
   "courses": [
-    {"course_code": "MATH1007", "course_name": "数学分析(B2)", "teacher": "演示教师", "credits": 6.0, "time": "周一 第3,4节", "location": "3C202", "semester": "2026年春季学期"},
-    {"course_code": "CS2502A", "course_name": "数据结构A", "teacher": "演示教师", "credits": 4.0, "time": "周二 第8,9节", "location": "3A313", "semester": "2026年春季学期"},
-    {"course_code": "CS4024", "course_name": "面向科学问题求解的编程实践", "teacher": "演示教师", "credits": 2.0, "time": "周三 第6,7节", "location": "3C101", "semester": "2026年春季学期"},
-    {"course_code": "PHYS1001B", "course_name": "力学B", "teacher": "演示教师", "credits": 2.5, "time": "周四 第3,4节", "location": "3A112", "semester": "2026年春季学期"}
+    {
+      "course_code": "MATH1007",
+      "course_name": "数学分析(B2)",
+      "teacher": "演示教师",
+      "credits": 6.0,
+      "time": "周一 第3,4节",
+      "location": "3C202",
+      "semester": "2026年春季学期"
+    },
+    {
+      "course_code": "CS2502A",
+      "course_name": "数据结构A",
+      "teacher": "演示教师",
+      "credits": 4.0,
+      "time": "周二 第8,9节",
+      "location": "3A313",
+      "semester": "2026年春季学期"
+    },
+    {
+      "course_code": "CS4024",
+      "course_name": "面向科学问题求解的编程实践",
+      "teacher": "演示教师",
+      "credits": 2.0,
+      "time": "周三 第6,7节",
+      "location": "3C101",
+      "semester": "2026年春季学期"
+    },
+    {
+      "course_code": "PHYS1001B",
+      "course_name": "力学B",
+      "teacher": "演示教师",
+      "credits": 2.5,
+      "time": "周四 第3,4节",
+      "location": "3A112",
+      "semester": "2026年春季学期"
+    }
   ],
   "program": {
-    "program_id": "demo-ai-2025",
-    "name": "人工智能专业培养方案（演示）",
-    "college": "人工智能与数据科学学院",
+    "program_id": 3011,
+    "name": "计算机科学与技术专业培养方案",
+    "college": "215计算机科学与技术学院",
     "grade": "2025级",
-    "personal": true,
-    "source": "demo_personal",
+    "personal": false,
+    "source": "generic",
     "fallback_from_personal": false,
-    "totalCredits": 160.0,
+    "totalCredits": 228.5,
     "modules": [
-      {"category": "通识基础", "required_credits": 40.0, "course_count": 12},
-      {"category": "学科基础", "required_credits": 52.0, "course_count": 15},
-      {"category": "专业核心", "required_credits": 36.0, "course_count": 10},
-      {"category": "实践与拓展", "required_credits": 32.0, "course_count": 8}
+      {
+        "category": "专业基础课程",
+        "required_credits": 18.5,
+        "course_count": 7
+      },
+      {
+        "category": "专业核心课程",
+        "required_credits": 30.0,
+        "course_count": 8
+      },
+      {
+        "category": "专业选修课程",
+        "required_credits": 109.5,
+        "course_count": 43
+      },
+      {
+        "category": "毕业论文",
+        "required_credits": 8.0,
+        "course_count": 1
+      },
+      {
+        "category": "通修课程",
+        "required_credits": 62.5,
+        "course_count": 26
+      }
     ],
     "courses": [
-      {"code": "MATH1007", "name": "数学分析(B2)", "required": "必修", "credit": 6.0, "term": "1春", "category": "学科基础"},
-      {"code": "CS2502A", "name": "数据结构A", "required": "必修", "credit": 4.0, "term": "1春", "category": "学科基础"},
-      {"code": "AI2001", "name": "人工智能导论", "required": "必修", "credit": 3.0, "term": "2秋", "category": "专业核心"},
-      {"code": "AI3002", "name": "机器学习", "required": "必修", "credit": 3.5, "term": "3秋", "category": "专业核心"},
-      {"code": "AI3010", "name": "深度学习", "required": "选修", "credit": 3.0, "term": "3春", "category": "专业核心"}
+      {
+        "code": "011103",
+        "name": "代数结构",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "1春",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "CS2003",
+        "name": "系统程序设计基础",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "1春",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "CS2002",
+        "name": "数理逻辑基础",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "2春",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "STAT2002",
+        "name": "概率论与数理统计",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "2春",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "011040",
+        "name": "图论",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "2秋",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "011152",
+        "name": "模拟与数字电路实验",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "2秋",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "EE2506A",
+        "name": "模拟与数字电路A",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "2秋",
+        "category": "专业基础课程"
+      },
+      {
+        "code": "011145",
+        "name": "计算机组成原理",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "2春",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011174",
+        "name": "操作系统原理与设计",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "2春",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "CS2502A",
+        "name": "数据结构A",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "2秋",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011119",
+        "name": "人工智能基础",
+        "required": "必修",
+        "credit": 3.5,
+        "term": "3春",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011147",
+        "name": "数据库系统及应用",
+        "required": "必修",
+        "credit": 3.5,
+        "term": "3春",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011144",
+        "name": "计算机网络",
+        "required": "必修",
+        "credit": 3.5,
+        "term": "3秋",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011146",
+        "name": "算法基础",
+        "required": "必修",
+        "credit": 3.5,
+        "term": "3秋",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "011163",
+        "name": "编译原理和技术",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "3秋",
+        "category": "专业核心课程"
+      },
+      {
+        "code": "001549",
+        "name": "数理方程B",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "2春",
+        "category": "专业选修课程/选修"
+      },
+      {
+        "code": "001548",
+        "name": "复变函数B",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "2秋",
+        "category": "专业选修课程/选修"
+      },
+      {
+        "code": "MATH2001",
+        "name": "计算方法",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修"
+      },
+      {
+        "code": "017144",
+        "name": "随机过程B",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3秋",
+        "category": "专业选修课程/选修"
+      },
+      {
+        "code": "CS4009",
+        "name": "程序设计进阶与实践",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "1春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4024",
+        "name": "面向科学问题求解的编程实践",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "1春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4029",
+        "name": "国产算力平台创新实践",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "2夏",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4012",
+        "name": "运筹学基础",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "2春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4032",
+        "name": "面向对象程序设计",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "2春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4023",
+        "name": "数据科学导论",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "2秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011044",
+        "name": "计算机导论",
+        "required": "选修",
+        "credit": 1.0,
+        "term": "2秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "010009",
+        "name": "模式识别导论",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "210712",
+        "name": "自然语言处理",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4001",
+        "name": "数字图像处理与分析",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4028",
+        "name": "深度学习原理与实践",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "EE3502",
+        "name": "机器学习B",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "EE4005",
+        "name": "知识工程",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011186",
+        "name": "大数据算法",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "COMP5001P",
+        "name": "程序语言设计与程序分析",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS2001",
+        "name": "软件工程导论",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4005",
+        "name": "形式化方法导引",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4017",
+        "name": "最优化导论",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011184",
+        "name": "信息安全导论",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4004",
+        "name": "区块链技术与应用",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4026",
+        "name": "计算机安全原理与实践",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4027",
+        "name": "人工智能安全",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4014",
+        "name": "计算机体系结构",
+        "required": "选修",
+        "credit": 4.0,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4025",
+        "name": "并行计算A",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4033",
+        "name": "网络系统实验",
+        "required": "选修",
+        "credit": 1.5,
+        "term": "3春",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011179",
+        "name": "Web信息处理与应用",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "210706",
+        "name": "脑与认知科学导论",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4002",
+        "name": "计算机图形学理论和应用",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4010",
+        "name": "数理逻辑进阶与应用",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011187",
+        "name": "数据隐私的方法伦理和实践",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4030",
+        "name": "智能计算系统导论",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4031",
+        "name": "智能计算软件优化",
+        "required": "选修",
+        "credit": 3.0,
+        "term": "3秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "006196",
+        "name": "多媒体技术基础",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "EE3004",
+        "name": "人工智能实践",
+        "required": "选修",
+        "credit": 1.0,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4008",
+        "name": "软件工程实践",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4011",
+        "name": "算法博弈论",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4018",
+        "name": "量子计算与机器学习",
+        "required": "选修",
+        "credit": 3.5,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "011182",
+        "name": "嵌入式系统设计方法",
+        "required": "选修",
+        "credit": 2.5,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "CS4019",
+        "name": "计算系统综合实践",
+        "required": "选修",
+        "credit": 2.0,
+        "term": "4秋",
+        "category": "专业选修课程/选修/课程分组"
+      },
+      {
+        "code": "THESIS",
+        "name": "毕业论文",
+        "required": "必修",
+        "credit": 8.0,
+        "term": "空",
+        "category": "毕业论文"
+      },
+      {
+        "code": "PE00001",
+        "name": "基础体育",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "",
+        "category": "通修课程/体育通修/必修"
+      },
+      {
+        "code": "MIL1001",
+        "name": "军事理论",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "1秋",
+        "category": "通修课程/军事教育"
+      },
+      {
+        "code": "MIL1002",
+        "name": "军事技能",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "1秋",
+        "category": "通修课程/军事教育"
+      },
+      {
+        "code": "EDUS1001",
+        "name": "劳动教育",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "3秋",
+        "category": "通修课程/劳动教育"
+      },
+      {
+        "code": "MARX1010",
+        "name": "中国近现代史纲要",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "1春",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1012",
+        "name": "思想道德与法治",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "1秋",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1014",
+        "name": "习近平新时代中国特色社会主义思想概论",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "1秋",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1013",
+        "name": "毛泽东思想和中国特色社会主义理论体系概论",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "2春",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1011",
+        "name": "马克思主义基本原理",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "2秋",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1005",
+        "name": "思想政治理论课实践",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "3秋",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MARX1006",
+        "name": "形势与政策(讲座)",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "3秋",
+        "category": "通修课程/政治通修"
+      },
+      {
+        "code": "MATH1007",
+        "name": "数学分析(B2)",
+        "required": "必修",
+        "credit": 6.0,
+        "term": "1春",
+        "category": "通修课程/数学通修"
+      },
+      {
+        "code": "MATH1006",
+        "name": "数学分析(B1)",
+        "required": "必修",
+        "credit": 6.0,
+        "term": "1秋",
+        "category": "通修课程/数学通修"
+      },
+      {
+        "code": "MATH1009",
+        "name": "线性代数(B1)",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "1秋",
+        "category": "通修课程/数学通修"
+      },
+      {
+        "code": "HS1580M",
+        "name": "大学生国家安全教育",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "1秋",
+        "category": "通修课程/核心通识课程/核心通识必修课/安全教育"
+      },
+      {
+        "code": "HS1531",
+        "name": "大学生心理学",
+        "required": "必修",
+        "credit": 2.0,
+        "term": "1秋,1春",
+        "category": "通修课程/核心通识课程/核心通识必修课/心理健康"
+      },
+      {
+        "code": "FS1001",
+        "name": "“科学与社会”研讨课",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "1秋",
+        "category": "通修课程/核心通识课程/核心通识必修课/研讨课程"
+      },
+      {
+        "code": "HS1003",
+        "name": "艺术实践",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "3秋",
+        "category": "通修课程/核心通识课程/核心通识必修课/艺术实践"
+      },
+      {
+        "code": "PHYS1001B",
+        "name": "力学B",
+        "required": "必修",
+        "credit": 2.5,
+        "term": "1春",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "PHYS1002B",
+        "name": "热学B",
+        "required": "必修",
+        "credit": 1.5,
+        "term": "1春",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "PHYS1008B",
+        "name": "大学物理-基础实验B",
+        "required": "必修",
+        "credit": 1.0,
+        "term": "1春",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "PHYS1010",
+        "name": "量子物理",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "2春",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "PHYS1004C",
+        "name": "电磁学C",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "2秋",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "PHYS1009B",
+        "name": "大学物理-综合实验B",
+        "required": "必修",
+        "credit": 0.5,
+        "term": "2秋",
+        "category": "通修课程/物理通修"
+      },
+      {
+        "code": "CS1003",
+        "name": "计算机程序设计",
+        "required": "必修",
+        "credit": 3.0,
+        "term": "1秋",
+        "category": "通修课程/计算机通修"
+      },
+      {
+        "code": "CS1002A",
+        "name": "计算系统概论A",
+        "required": "必修",
+        "credit": 4.0,
+        "term": "2秋",
+        "category": "通修课程/计算机通修"
+      }
     ]
   }
 }

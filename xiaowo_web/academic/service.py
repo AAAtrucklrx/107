@@ -42,18 +42,29 @@ class AcademicService:
         if principal.auth_mode == "demo":
             fixture = self._load_demo()
             grades = fixture.get("grades") or []
-            weighted = sum(float(row.get("grade_point") or 0) * float(row.get("credits") or 0) for row in grades)
-            total_credits = sum(float(row.get("credits") or 0) for row in grades)
-            current_credits = sum(float(row.get("credits") or 0) for row in fixture.get("courses") or [])
-            return {
-                "identity": profile,
-                "metrics": {
+            acad = fixture.get("academic_overview") or {}
+            if acad.get("gpa") is not None:
+                # 教务口径优先(与成绩单一致);无则按成绩加权计算
+                metrics = {
+                    "gpa": float(acad["gpa"]),
+                    "completed_credits": float(acad.get("passed_credits") or 0),
+                    "current_credits": round(sum(float(row.get("credits") or 0) for row in fixture.get("courses") or []), 1),
+                    "grade_count": len(grades),
+                }
+            else:
+                weighted = sum(float(row.get("grade_point") or 0) * float(row.get("credits") or 0) for row in grades)
+                total_credits = sum(float(row.get("credits") or 0) for row in grades)
+                metrics = {
                     "gpa": round(weighted / total_credits, 2) if total_credits else None,
                     "completed_credits": round(total_credits, 1),
-                    "current_credits": round(current_credits, 1),
+                    "current_credits": round(sum(float(row.get("credits") or 0) for row in fixture.get("courses") or []), 1),
                     "grade_count": len(grades),
-                },
+                }
+            return {
+                "identity": profile,
+                "metrics": metrics,
                 "recent_grades": grades[-5:][::-1],
+                "grades": grades[::-1],
                 "source": self._demo_source(),
                 "limitations": ["所有个人数据均为合成演示数据，不代表真实教务记录。"],
             }
@@ -173,6 +184,7 @@ class AcademicService:
                 "grade_count": len(grade_rows),
             },
             "recent_grades": grade_rows[-5:][::-1],
+            "grades": grade_rows[::-1],
             "source": self._combined_source(gpa, grades, schedule),
             "limitations": [
                 value for value in (gpa.get("message"), grades.get("message"), schedule.get("message")) if value

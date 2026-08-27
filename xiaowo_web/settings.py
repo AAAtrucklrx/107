@@ -192,6 +192,10 @@ class WebSettings:
                 max_concurrent_runs=int(source.get("XIAOWO_MAX_CONCURRENT_RUNS", "30")),
                 max_queued_runs=int(source.get("XIAOWO_MAX_QUEUED_RUNS", "30")),
                 local_relevance_min=float(source.get("XIAOWO_LOCAL_RELEVANCE_MIN", "0.60")),
+                search_timeout_seconds=float(source.get("XIAOWO_SEARCH_TIMEOUT_SECONDS", "4.0")),
+                evidence_timeout_seconds=float(source.get("XIAOWO_EVIDENCE_TIMEOUT_SECONDS", "12.0")),
+                generation_timeout_seconds=float(source.get("XIAOWO_GENERATION_TIMEOUT_SECONDS", "18.0")),
+                run_timeout_seconds=float(source.get("XIAOWO_RUN_TIMEOUT_SECONDS", "20.0")),
             )
         except ValueError as exc:
             if isinstance(exc, SettingsError):

@@ -8,6 +8,8 @@ import type {
   AcademicOverview,
   AcademicProgram,
   AcademicSchedule,
+  GradeRecord,
+  ProgramCourse,
   SessionPayload,
 } from "../types";
 
@@ -27,22 +29,74 @@ function valueOrDash(value: unknown): string {
   return value === null || value === undefined || value === "" ? "--" : String(value);
 }
 
+// ── 学期/建议学期分组排序:先秋季后春季(夏为小学期,介于秋春之间),年份/年级升序 ──
+function semesterSortKey(semester: string): [number, number] | null {
+  const match = /^(\d{4})年(秋|春)季学期$/.exec((semester || "").trim());
+  if (!match) return null;
+  return [parseInt(match[1], 10), match[2] === "秋" ? 0 : 1];
+}
+
+function termSortKey(term: string): [number, number] | null {
+  const match = /^(\d+)([春秋夏])$/.exec((term || "").trim());
+  if (!match) return null;
+  const season = match[2] === "秋" ? 0 : match[2] === "夏" ? 1 : 2;
+  return [parseInt(match[1], 10), season];
+}
+
+const TERM_GRADE_NAMES = ["大一", "大二", "大三", "大四", "大五", "大六"];
+
+function termLabel(term: string): string {
+  const key = termSortKey(term);
+  if (key) {
+    const grade = TERM_GRADE_NAMES[key[0] - 1] ?? `${key[0]}年级`;
+    const season = key[1] === 0 ? "秋季" : key[1] === 1 ? "夏季" : "春季";
+    return `${grade}·${season}（${term}）`;
+  }
+  return term || "未标注";
+}
+
+function sortGroups<T>(entries: [string, T[]][], keyFn: (s: string) => [number, number] | null): [string, T[]][] {
+  return entries.sort((a, b) => {
+    const ka = keyFn(a[0]);
+    const kb = keyFn(b[0]);
+    if (ka && kb) return ka[0] - kb[0] || ka[1] - kb[1];
+    if (ka) return -1;
+    if (kb) return 1;
+    return a[0].localeCompare(b[0], "zh-Hans-CN");
+  });
+}
+
 function GradeTable({ rows }: { rows: AcademicCourses["grades"] }) {
+  const groups = new Map<string, GradeRecord[]>();
+  for (const row of rows) {
+    const key = row.semester || "未标注学期";
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const ordered = sortGroups([...groups.entries()], semesterSortKey);
   return (
-    <div className="data-table-wrap">
-      <table className="data-table">
-        <thead><tr><th>课程</th><th>学期</th><th>学分</th><th>成绩</th><th>绩点</th><th aria-label="操作" /></tr></thead>
-        <tbody>{rows.map((row, index) => (
-          <tr key={`${row.course_name}-${row.semester}-${index}`}>
-            <td><strong>{valueOrDash(row.course_name)}</strong></td>
-            <td>{valueOrDash(row.semester)}</td>
-            <td>{valueOrDash(row.credits)}</td>
-            <td>{valueOrDash(row.score)}</td>
-            <td>{valueOrDash(row.grade_point)}</td>
-            <td />
-          </tr>
-        ))}</tbody>
-      </table>
+    <div className="grade-by-semester">
+      {ordered.map(([semester, list]) => (
+        <section className="semester-group" key={semester}>
+          <div className="semester-heading">
+            <div><span className="eyebrow">学期</span><h3>{semester}</h3></div>
+            <em>{list.length} 门</em>
+          </div>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead><tr><th>课程</th><th>学分</th><th>成绩</th><th>绩点</th><th aria-label="操作" /></tr></thead>
+              <tbody>{list.map((row, index) => (
+                <tr key={`${row.course_name}-${row.semester}-${index}`}>
+                  <td><strong>{valueOrDash(row.course_name)}</strong></td>
+                  <td>{valueOrDash(row.credits)}</td>
+                  <td>{valueOrDash(row.score)}</td>
+                  <td>{valueOrDash(row.grade_point)}</td>
+                  <td />
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -59,8 +113,8 @@ function OverviewView({ data, onAsk }: { data: AcademicOverview; onAsk: (questio
         {metrics.map((metric) => <div className="metric-card" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></div>)}
       </div>
       <section className="content-section">
-        <div className="section-heading"><div><span className="eyebrow">最近更新</span><h2>近期成绩</h2></div><AskXiaowoButton question="分析我的近期成绩和学习趋势" onAsk={onAsk} /></div>
-        <GradeTable rows={data.recent_grades} />
+        <div className="section-heading"><div><span className="eyebrow">成绩记录</span><h2>全部成绩</h2></div><AskXiaowoButton question="分析我的近期成绩和学习趋势" onAsk={onAsk} /></div>
+        <GradeTable rows={data.grades ?? data.recent_grades} />
       </section>
       <Limitations items={data.limitations} />
     </div>
@@ -88,19 +142,32 @@ function ProgramView({ data, onAsk }: { data: AcademicProgram; onAsk: (question:
         ))}
       </div>
       <section className="content-section">
-        <div className="section-heading"><div><span className="eyebrow">课程结构</span><h2>方案课程</h2></div></div>
-        <div className="data-table-wrap">
-          <table className="data-table">
-            <thead><tr><th>课程</th><th>类别</th><th>性质</th><th>建议学期</th><th>学分</th><th aria-label="操作" /></tr></thead>
-            <tbody>{courses.map((course, index) => (
-              <tr key={`${course.code}-${index}`}>
-                <td><strong>{course.name || "未命名课程"}</strong><small className="cell-subtitle">{course.code || ""}</small></td>
-                <td>{valueOrDash(course.category)}</td><td>{valueOrDash(course.required)}</td><td>{valueOrDash(course.term)}</td><td>{valueOrDash(course.credit)}</td>
-                <td><AskXiaowoButton compact question={`点评培养方案中的课程“${course.name || course.code}”`} onAsk={onAsk} /></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
+        <div className="section-heading"><div><span className="eyebrow">课程结构</span><h2>方案课程（按学期）</h2></div></div>
+        {(() => {
+          const groups = new Map<string, ProgramCourse[]>();
+          for (const course of courses) {
+            const key = course.term || "未标注";
+            groups.set(key, [...(groups.get(key) ?? []), course]);
+          }
+          const ordered = sortGroups([...groups.entries()], termSortKey);
+          return ordered.map(([term, list]) => (
+            <div className="term-group" key={term}>
+              <div className="term-heading"><strong>{termLabel(term)}</strong><em>{list.length} 门</em></div>
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>课程</th><th>类别</th><th>性质</th><th>学分</th><th aria-label="操作" /></tr></thead>
+                  <tbody>{list.map((course, index) => (
+                    <tr key={`${course.code}-${index}`}>
+                      <td><strong>{course.name || "未命名课程"}</strong><small className="cell-subtitle">{course.code || ""}</small></td>
+                      <td>{valueOrDash(course.category)}</td><td>{valueOrDash(course.required)}</td><td>{valueOrDash(course.credit)}</td>
+                      <td><AskXiaowoButton compact question={`点评培养方案中的课程“${course.name || course.code}”`} onAsk={onAsk} /></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          ));
+        })()}
       </section>
       <Limitations items={data.limitations} />
     </div>

@@ -117,7 +117,8 @@ class AuthService:
 
     @staticmethod
     def _load_demo_profile() -> dict[str, str]:
-        fixture = PROJECT_ROOT / "scripts" / "data" / "xiaowo_personal" / "data.json"
+        # 与 AcademicService 同源:演示学业数据统一来自 fixtures/demo/PB25111691.json
+        fixture = PROJECT_ROOT / "fixtures" / "demo" / f"{DEMO_STUDENT_ID}.json"
         if not fixture.exists():
             return dict(DEMO_PROFILE_FALLBACK)
         try:

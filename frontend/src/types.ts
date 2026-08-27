@@ -167,6 +167,7 @@ export interface AcademicOverview {
     grade_count: number;
   };
   recent_grades: GradeRecord[];
+  grades?: GradeRecord[];
   source: DataSource;
   limitations: string[];
 }

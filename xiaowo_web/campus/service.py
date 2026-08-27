@@ -52,7 +52,7 @@ class CampusService:
                 category=category,
                 time_window="",
                 limit=limit,
-                student_id=None,
+                student_id="",
             )
         else:
             from tools.activity_tools import query_activities
@@ -62,7 +62,7 @@ class CampusService:
                 "category": category,
                 "time_window": "",
                 "limit": limit,
-                "student_id": None,
+                "student_id": "",
             })
         if result.get("error"):
             return {
@@ -90,3 +90,4 @@ class CampusService:
             links = payload.get("links") or []
             self._links = [dict(item) for item in links if isinstance(item, dict)]
         return self._links
+

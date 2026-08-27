@@ -64,7 +64,7 @@ def test_demo_login_sse_history_and_cross_session_isolation(tmp_path) -> None:
         assert login.status_code == 200
         login_payload = login.json()
         assert login_payload["principal"]["id"] == "PB25111691"
-        assert login_payload["principal"]["profile"]["major"] == "人工智能"
+        assert login_payload["principal"]["profile"]["major"] == "计算机科学与技术"
         assert login_payload["principal"]["profile"]["grade"] == "2025级"
         assert login_payload["principal"]["review_namespace"] == "demo"
         assert login_payload["capabilities"]["production_publish"] is False

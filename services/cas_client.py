@@ -553,6 +553,25 @@ class CASClient:
         except Exception:
             pass
 
+        # 2026-08-27:旧接口 /for-std/student/home/student-info 已 404,
+        # 用档案页 /for-std/student-info/info/{dataId} 解析兜底(含所在学院/院系/专业)
+        if not self._student_profile.get("major") or not self._student_profile.get("grade"):
+            page = self.get_student_info_page()
+            if isinstance(page, dict) and page.get("profile"):
+                prof = page["profile"]
+                major = prof.get("所修专业") or prof.get("所在专业") or ""
+                if major:
+                    major = re.sub(r"^\d+", "", major)  # "01101计算机科学与技术" -> "计算机科学与技术"
+                merged = {
+                    "name": prof.get("姓名") or "",
+                    "major": major,
+                    "grade": _normalize_grade(prof.get("年级") or ""),
+                    "college": prof.get("所在学院") or "",
+                    "department": prof.get("学生所在院系") or "",
+                }
+                merged = {key: value for key, value in merged.items() if value}
+                self._merge_student_profile(merged, "cas_student_info_page")
+
         if not self._student_profile.get("major") or not self._student_profile.get("grade"):
             self._fetch_grade_profile()
         info.update(self._student_profile)
@@ -641,13 +660,94 @@ class CASClient:
         path = f"/for-std/grade/sheet/getGradeList?trainTypeId=1&semesterIds={ids_str}"
         return self.get_json(path)
 
-    def get_course_selection(self, semester_id: int) -> dict | list:
+    def get_course_selection(self, semester_id: int, data_id: int = None) -> dict | list:
         """
         获取选课结果。
         GET /for-std/course-take-query/semester/{semId}/search
+        参数(2026-08-27 实测):bizTypeAssoc=2&studentAssoc={dataId}&courseTakeStatusSetVal=1
+        返回 data[]: courseName/credits/courseCategoryName/openDepartmentName/teacherAssignmentList/dateTimePlacePersonText/courseTakeStatus...
         """
-        path = f"/for-std/course-take-query/semester/{semester_id}/search"
+        if not self._logged_in:
+            return {"error": "未登录"}
+        did = data_id or self._student_data_id
+        if not did:
+            return {"error": "缺少 student_data_id，请先登录或手动指定"}
+        path = (
+            f"/for-std/course-take-query/semester/{semester_id}/search"
+            f"?bizTypeAssoc=2&studentAssoc={did}&courseCodeLike=&courseNameZhLike="
+            f"&courseCategoryAssoc=&courseTakeStatusSetVal=1"
+        )
         return self.get_json(path)
+
+    # ── 2026-08-27 实测新接口(旧 student/home/student-info 已 404) ──
+
+    def get_student_info_page(self, data_id: int = None) -> dict:
+        """
+        学生档案页解析(GET /for-std/student-info/info/{dataId})。
+        现行档案来源,含所在学院/院系/所修专业/行政班级/学籍状态等 139 个 dt/dd 字段。
+        """
+        if not self._logged_in:
+            return {"error": "未登录"}
+        did = data_id or self._student_data_id
+        if not did:
+            return {"error": "缺少 student_data_id，请先登录或手动指定"}
+        try:
+            resp = self._session.get(
+                f"{self.JW_BASE}/for-std/student-info/info/{did}", timeout=self.TIMEOUT)
+            if resp.status_code != 200:
+                return {"error": f"档案页返回 {resp.status_code}"}
+            html = resp.text
+        except Exception as exc:
+            return {"error": str(exc)[:120]}
+        pairs = re.findall(r"<dt>([^<]+)</dt>\s*<dd>([^<]*)</dd>", html)
+        profile = {key.strip(): value.strip() for key, value in pairs if key.strip()}
+        return {"profile": profile, "fields": len(profile)}
+
+    def get_sport_grades(self) -> dict | list:
+        """体育成绩(GET /for-std/sport-grade/list)。
+        返回 list:schoolYear/score/state/appraisingReachStandard(达标)/updateDate"""
+        if not self._logged_in:
+            return {"error": "未登录"}
+        return self.get_json("/for-std/sport-grade/list")
+
+    def get_exam_arrange(self, data_id: int = None) -> dict:
+        """
+        考试安排页解析(GET /for-std/exam-arrange/info/{dataId})。
+        #exams 表:课堂号/考试类型/课程名称/日期时间/考场/教学楼/考场所在校区/考试说明
+        """
+        if not self._logged_in:
+            return {"error": "未登录"}
+        did = data_id or self._student_data_id
+        if not did:
+            return {"error": "缺少 student_data_id，请先登录或手动指定"}
+        try:
+            resp = self._session.get(
+                f"{self.JW_BASE}/for-std/exam-arrange/info/{did}", timeout=self.TIMEOUT)
+            if resp.status_code != 200:
+                return {"error": f"考试页返回 {resp.status_code}"}
+            html = resp.text
+        except Exception as exc:
+            return {"error": str(exc)[:120]}
+        match = re.search(r"<table[^>]*id=[\"']exams[\"'][^>]*>(.*?)</table>", html, re.S)
+        if not match:
+            return {"exams": [], "count": 0, "note": "无考试安排表格"}
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", match.group(1), re.S)
+        exams = []
+        for row in rows[1:]:  # 跳过表头
+            cells = [re.sub(r"<[^>]+>", "", cell).strip()
+                     for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+            if cells and any(cells):
+                exams.append({
+                    "lesson_code": cells[0] if len(cells) > 0 else "",
+                    "exam_type": cells[1] if len(cells) > 1 else "",
+                    "course_name": cells[2] if len(cells) > 2 else "",
+                    "datetime": cells[3] if len(cells) > 3 else "",
+                    "room": cells[4] if len(cells) > 4 else "",
+                    "building": cells[5] if len(cells) > 5 else "",
+                    "campus": cells[6] if len(cells) > 6 else "",
+                    "note": cells[7] if len(cells) > 7 else "",
+                })
+        return {"exams": exams, "count": len(exams)}
 
     def get_program_modules(self, module_id: int = None) -> dict | list:
         """
