@@ -1056,6 +1056,17 @@ button:disabled {
   background: var(--surface);
 }
 
+/* 显式行号:error 条不渲染时(无错误),grid 只有 3 个子元素会错位
+   (message-scroll 落到 auto 行被回答撑高、composer 落到 1fr 行塌缩被挤出视口)。
+   固定行号后无论 error 是否存在,滚动区恒为 1fr 行、输入框恒为 auto 行。 */
+.conversation-pane > .message-scroll {
+  grid-row: 3;
+}
+
+.conversation-pane > .composer {
+  grid-row: 4;
+}
+
 .conversation-header {
   display: flex;
   min-height: 61px;
