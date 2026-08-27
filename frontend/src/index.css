@@ -2677,8 +2677,12 @@ button:disabled {
   padding: 12px;
 }
 
-.review-chunk[data-approved="true"] {
+.review-chunk[data-approval-status="approved"] {
   border-left-color: var(--success);
+}
+
+.review-chunk[data-approval-status="rejected"] {
+  border-left-color: var(--danger);
 }
 
 .review-chunk > div {
@@ -2698,10 +2702,53 @@ button:disabled {
   font-style: normal;
 }
 
+.review-chunk > div em[data-rejected="true"] {
+  color: var(--danger);
+}
+
 .review-chunk p {
   margin: 10px 0;
   font-size: 11px;
   line-height: 1.75;
+}
+
+.chunk-decision {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 300px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.chunk-decision button {
+  min-width: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chunk-decision button:last-child {
+  border-right: 0;
+}
+
+.chunk-decision button[data-active="true"] {
+  background: var(--primary-soft);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.chunk-decision button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .source-proposal {

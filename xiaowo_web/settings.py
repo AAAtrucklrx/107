@@ -113,6 +113,11 @@ class WebSettings:
     searxng_url: str
     crawl4ai_url: str
     ingestion_worker_enabled: bool
+    # Web evidence extraction is capability-gated: a configured model must
+    # pass the runtime probe before the web gate opens.
+    evidence_extractor_enabled: bool = True
+    evidence_extractor_model: str = ""
+    evidence_extractor_probe_timeout_seconds: float = 4.0
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -124,6 +129,11 @@ class WebSettings:
     evidence_timeout_seconds: float = 12.0
     generation_timeout_seconds: float = 18.0
     run_timeout_seconds: float = 20.0
+    event_wait_timeout_seconds: float = 1.0
+    job_done_retention_seconds: int = 7 * 24 * 60 * 60
+    job_dead_retention_seconds: int = 90 * 24 * 60 * 60
+    orphan_generation_retention_seconds: int = 7 * 24 * 60 * 60
+    review_cleanup_interval_seconds: int = 5 * 60
     max_question_chars: int = 8_000
     max_concurrent_runs: int = 30
     max_queued_runs: int = 30
@@ -188,6 +198,16 @@ class WebSettings:
                 searxng_url=source.get("XIAOWO_SEARXNG_URL", "http://127.0.0.1:8080").rstrip("/"),
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),
+                evidence_extractor_enabled=_env_bool(
+                    source, "XIAOWO_EVIDENCE_EXTRACTOR_ENABLED", default=True,
+                ),
+                evidence_extractor_model=source.get(
+                    "XIAOWO_EVIDENCE_EXTRACTOR_MODEL",
+                    source.get("LLM_MODEL", "deepseek-v4-flash"),
+                ).strip(),
+                evidence_extractor_probe_timeout_seconds=float(source.get(
+                    "XIAOWO_EVIDENCE_EXTRACTOR_PROBE_TIMEOUT_SECONDS", "4",
+                )),
                 max_question_chars=int(source.get("XIAOWO_MAX_QUESTION_CHARS", "8000")),
                 max_concurrent_runs=int(source.get("XIAOWO_MAX_CONCURRENT_RUNS", "30")),
                 max_queued_runs=int(source.get("XIAOWO_MAX_QUEUED_RUNS", "30")),
@@ -196,6 +216,24 @@ class WebSettings:
                 evidence_timeout_seconds=float(source.get("XIAOWO_EVIDENCE_TIMEOUT_SECONDS", "12.0")),
                 generation_timeout_seconds=float(source.get("XIAOWO_GENERATION_TIMEOUT_SECONDS", "18.0")),
                 run_timeout_seconds=float(source.get("XIAOWO_RUN_TIMEOUT_SECONDS", "20.0")),
+                run_event_retention_seconds=int(source.get(
+                    "XIAOWO_RUN_EVENT_RETENTION_SECONDS", str(60 * 60),
+                )),
+                event_wait_timeout_seconds=float(source.get(
+                    "XIAOWO_EVENT_WAIT_TIMEOUT_SECONDS", "1",
+                )),
+                job_done_retention_seconds=int(source.get(
+                    "XIAOWO_JOB_DONE_RETENTION_SECONDS", str(7 * 24 * 60 * 60),
+                )),
+                job_dead_retention_seconds=int(source.get(
+                    "XIAOWO_JOB_DEAD_RETENTION_SECONDS", str(90 * 24 * 60 * 60),
+                )),
+                orphan_generation_retention_seconds=int(source.get(
+                    "XIAOWO_ORPHAN_GENERATION_RETENTION_SECONDS", str(7 * 24 * 60 * 60),
+                )),
+                review_cleanup_interval_seconds=int(source.get(
+                    "XIAOWO_REVIEW_CLEANUP_INTERVAL_SECONDS", str(5 * 60),
+                )),
             )
         except ValueError as exc:
             if isinstance(exc, SettingsError):
@@ -241,6 +279,20 @@ class WebSettings:
             raise SettingsError("XIAOWO_MAX_CONCURRENT_RUNS 必须在 1 到 500 之间")
         if self.max_queued_runs < 0 or self.max_queued_runs > 1000:
             raise SettingsError("XIAOWO_MAX_QUEUED_RUNS 必须在 0 到 1000 之间")
+        if self.evidence_extractor_probe_timeout_seconds <= 0 or self.evidence_extractor_probe_timeout_seconds > 30:
+            raise SettingsError("XIAOWO_EVIDENCE_EXTRACTOR_PROBE_TIMEOUT_SECONDS 必须在 (0, 30] 范围内")
+        if self.run_event_retention_seconds < 5 * 60 or self.run_event_retention_seconds > 7 * 24 * 60 * 60:
+            raise SettingsError("XIAOWO_RUN_EVENT_RETENTION_SECONDS 必须在 300 到 604800 秒之间")
+        if self.event_wait_timeout_seconds <= 0 or self.event_wait_timeout_seconds > 10:
+            raise SettingsError("XIAOWO_EVENT_WAIT_TIMEOUT_SECONDS 必须在 (0, 10] 范围内")
+        if self.job_done_retention_seconds < 24 * 60 * 60:
+            raise SettingsError("XIAOWO_JOB_DONE_RETENTION_SECONDS 不能少于 1 天")
+        if self.job_dead_retention_seconds < self.job_done_retention_seconds:
+            raise SettingsError("dead 任务保留期不能短于 done 任务保留期")
+        if self.orphan_generation_retention_seconds < 24 * 60 * 60:
+            raise SettingsError("孤儿 generation 保留期不能少于 1 天")
+        if self.review_cleanup_interval_seconds < 30:
+            raise SettingsError("XIAOWO_REVIEW_CLEANUP_INTERVAL_SECONDS 不能少于 30 秒")
         if self.web_search_enabled:
             self._validate_sidecar_url(self.searxng_url, "XIAOWO_SEARXNG_URL")
             self._validate_sidecar_url(self.crawl4ai_url, "XIAOWO_CRAWL4AI_URL")

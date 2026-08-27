@@ -145,12 +145,18 @@ async def approve_chunk(
             payload.approved,
             principal.principal_id,
             _request_id(request_id),
+            approval_status=payload.approval_status,
         )
     except KeyError as exc:
         raise ApiError(404, "REVIEW_CHUNK_NOT_FOUND", "没有找到当前版本中的分块。") from exc
     except ValueError as exc:
         raise ApiError(409, "REVIEW_STATE_INVALID", "当前状态不能修改分块审核。") from exc
-    return {"chunk_id": chunk_id, "approved": payload.approved}
+    resolved_status = payload.approval_status or ("approved" if payload.approved else "pending")
+    return {
+        "chunk_id": chunk_id,
+        "approval_status": resolved_status,
+        "approved": resolved_status == "approved",
+    }
 
 
 @router.post("/{item_id}/approve")
@@ -173,8 +179,12 @@ async def approve_item(
     except KeyError as exc:
         raise ApiError(404, "REVIEW_ITEM_NOT_FOUND", "没有找到该审核条目。") from exc
     except ValueError as exc:
-        raise ApiError(409, "REVIEW_APPROVAL_INVALID", "请先逐块批准，并使用分类允许的有效期。") from exc
-    return {"item_id": item_id, "status": "pending_publish"}
+        raise ApiError(
+            409,
+            "REVIEW_APPROVAL_INVALID",
+            "请先逐块完成批准或排除，并使用分类允许的有效期。",
+        ) from exc
+    return {"item_id": item_id, "status": "approved"}
 
 
 @router.post("/{item_id}/reject")

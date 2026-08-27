@@ -46,6 +46,8 @@ XIAOWO_PUBLIC_ORIGIN=http://服务器实际地址:端口
 XIAOWO_ADMIN_IDS=PB25111691
 XIAOWO_WEB_SEARCH_ENABLED=false
 XIAOWO_INGESTION_WORKER_ENABLED=false
+XIAOWO_EVIDENCE_EXTRACTOR_ENABLED=true
+# XIAOWO_EVIDENCE_EXTRACTOR_MODEL=默认复用 LLM_MODEL
 ```
 
 正式 CAS 还必须配置：
@@ -83,8 +85,9 @@ readiness 失败时不要绕过检查开放联网；liveness 可继续承载本�
 1. 只把 SearXNG 与 Crawl4AI adapter 绑定到服务器回环地址或批准的容器私网。
 2. 不向 Crawl4AI 传递 CAS Cookie、浏览器 Cookie、Authorization、校内凭证或用户私密上下文。
 3. 固定 Crawl4AI `v0.9.2` 的 registry digest；镜像变更后重新核验。
-4. 在 adapter 内运行 `verify_runtime.py`。只有版本、robots、云元数据 SSRF 阻断、peer IP 校验和公开页抓取全部通过后，才将 sidecar `.env` 的 `XIAOWO_CRAWL4AI_RUNTIME_ATTESTED` 改为 `true`。
-5. 至少验证三个 SearXNG 引擎可用，再启用 `XIAOWO_WEB_SEARCH_ENABLED=true`。
+4. 确认 tracked Crawl4AI profile 的 LLM extraction 为 disabled，Redis 密码仅由 sidecar `.env` 注入，配置中没有模型名或明文密码 fallback。
+5. 在 adapter 内运行 `verify_runtime.py`。只有版本、robots、云元数据 SSRF 阻断、peer IP 校验和公开页抓取全部通过后，才将 sidecar `.env` 的 `XIAOWO_CRAWL4AI_RUNTIME_ATTESTED` 改为 `true`。
+6. 至少验证三个 SearXNG 引擎可用，并确认 `/api/v1/health/ready` 的 `evidence_extractor=true`，再启用 `XIAOWO_WEB_SEARCH_ENABLED=true`。
 
 联网健康后，独立启动持久 worker：
 
@@ -93,7 +96,7 @@ $env:XIAOWO_INGESTION_WORKER_ENABLED = 'true'
 & $py -m xiaowo_web.worker
 ```
 
-Web 进程和 worker 使用同一 `XIAOWO_REVIEW_DB_PATH`、`XIAOWO_WEB_EVIDENCE_DIR`、`XIAOWO_PUBLISHED_CHROMA_DIR` 与 `XIAOWO_PUBLISHED_BM25_DIR`。worker 停止只会积压任务，不应拖慢当前聊天回答。
+Web 进程和 worker 使用同一 `XIAOWO_REVIEW_DB_PATH`、`XIAOWO_WEB_EVIDENCE_DIR`、`XIAOWO_PUBLISHED_CHROMA_DIR` 与 `XIAOWO_PUBLISHED_BM25_DIR`。worker 停止只会积压任务，不应拖慢当前聊天回答。默认每 5 分钟检查一次保留策略：done 任务 7 天、dead 任务 90 天、孤儿 generation 从标记为 orphan 时起保留 7 天；审核审计和 ingestion 内容哈希墓碑长期保留。
 
 ## 4. 数据包迁移
 
@@ -135,13 +138,13 @@ demo 与 production 数据包分开生成、分开命名、分开恢复。密钥
 
 ## 5. Generation 发布与回滚
 
-审核发布会构建新的不可变 `generation_id`。Chroma 与 BM25 都写入、校验成功后，`review.db` 才在单个事务中切换 active 指针；过期、撤回和重新批准也通过下一完整 generation 生效，不在 active 索引上原地修改。
+审核发布会构建新的不可变 `generation_id`。Chroma 与 BM25 都写入、校验成功后，`review.db` 才在单个事务中切换 active 指针；过期、撤回和重新批准也通过下一完整 generation 生效，不在 active 索引上原地修改。同 namespace 尚未领取的发布任务会合并，未变化正文的 embedding 从持久缓存复用。
 
 ### 5.1 正常发布失败
 
 - 条目停留在 `publish_failed` 或 `pending_publish` 时，active generation 不变。
 - 修复基础设施后，在审核工作区使用“重试发布”，不要手工修改 SQLite 指针或索引文件。
-- worker 用幂等键恢复任务；切换前留下的孤儿 generation 不可检索，保留 7 天后清理。
+- worker 用幂等键恢复任务；发布失败只影响任务关联条目。切换前留下的孤儿及超出 active/previous 窗口的旧 generation 不可检索，保留 7 天后清理。
 
 ### 5.2 回滚上一完整 generation
 

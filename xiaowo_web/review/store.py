@@ -30,6 +30,10 @@ def _digest(value: str | bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+class PublishSnapshotStale(RuntimeError):
+    """The materialized generation no longer matches live review state."""
+
+
 @dataclass(frozen=True, slots=True)
 class IngestionJob:
     job_id: str
@@ -76,6 +80,7 @@ class ReviewStore:
         self.schema_path = Path(settings.schema_review_path)
         self.data_dir = Path(settings.web_evidence_dir)
         self._write_lock = threading.RLock()
+        self._last_cleanup_at = 0.0
 
     def initialize(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,7 +89,115 @@ class ReviewStore:
         schema = self.schema_path.read_text(encoding="utf-8")
         with self._connect() as conn:
             conn.executescript(schema)
+            self._migrate_schema(conn)
             conn.commit()
+
+    @staticmethod
+    def _migrate_schema(conn: sqlite3.Connection) -> None:
+        """Apply additive migrations to databases created by older builds."""
+        columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(review_chunks)").fetchall()
+        }
+        added_approval_status = "approval_status" not in columns
+        if added_approval_status:
+            conn.execute(
+                "ALTER TABLE review_chunks ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'pending'"
+            )
+        if "approved" not in columns:
+            conn.execute(
+                "ALTER TABLE review_chunks ADD COLUMN approved INTEGER NOT NULL DEFAULT 0"
+            )
+        if added_approval_status:
+            conn.execute(
+                """
+                UPDATE review_chunks
+                SET approval_status = CASE WHEN approved = 1 THEN 'approved' ELSE 'pending' END
+                """
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE review_chunks
+                SET approval_status = CASE WHEN approved = 1 THEN 'approved' ELSE approval_status END
+                WHERE approval_status IS NULL OR approval_status NOT IN ('pending', 'approved', 'rejected')
+                """
+            )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_review_chunks_approval
+            ON review_chunks(item_id, version_id, approval_status, position)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS publish_job_items (
+                job_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (job_id, item_id),
+                FOREIGN KEY (job_id) REFERENCES publish_jobs(job_id) ON DELETE CASCADE,
+                FOREIGN KEY (item_id) REFERENCES review_items(item_id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_publish_job_items_item
+            ON publish_job_items(item_id, job_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_tombstones (
+                idempotency_key TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+                snapshot_hash TEXT NOT NULL,
+                evidence_span_hash TEXT NOT NULL,
+                terminal_status TEXT NOT NULL CHECK (terminal_status IN ('done', 'dead')),
+                completed_at REAL NOT NULL
+            )
+            """
+        )
+        generation_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(publish_generations)").fetchall()
+        }
+        if "orphaned_at" not in generation_columns:
+            conn.execute("ALTER TABLE publish_generations ADD COLUMN orphaned_at REAL")
+        # Recover exact targets from legacy item-specific reasons first. A broad
+        # fallback is safe only when one live job owns the namespace.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO publish_job_items(job_id, item_id, created_at)
+            SELECT pj.job_id, ri.item_id, ri.updated_at
+            FROM publish_jobs pj
+            JOIN review_items ri ON ri.namespace = pj.namespace
+            WHERE pj.status IN ('queued', 'leased', 'retry')
+              AND ri.status IN ('pending_publish', 'publish_failed')
+              AND instr(pj.reason, ri.item_id) > 0
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO publish_job_items(job_id, item_id, created_at)
+            SELECT pj.job_id, ri.item_id, ri.updated_at
+            FROM publish_jobs pj
+            JOIN review_items ri ON ri.namespace = pj.namespace
+            WHERE pj.status IN ('queued', 'leased', 'retry')
+              AND ri.status IN ('pending_publish', 'publish_failed')
+              AND NOT EXISTS (
+                SELECT 1 FROM publish_job_items existing
+                WHERE existing.job_id = pj.job_id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM publish_jobs other
+                WHERE other.namespace = pj.namespace
+                  AND other.status IN ('queued', 'leased', 'retry')
+                  AND other.job_id != pj.job_id
+              )
+            """
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10)
@@ -144,6 +257,7 @@ class ReviewStore:
                     tuple(snapshot_ids),
                 )
             conn.execute("DELETE FROM ingestion_jobs WHERE namespace = 'demo'")
+            conn.execute("DELETE FROM ingestion_tombstones WHERE namespace = 'demo'")
             conn.commit()
 
     # Queue --------------------------------------------------------------------
@@ -393,6 +507,20 @@ class ReviewStore:
             if existing is not None:
                 conn.commit()
                 return {"job_id": existing["job_id"], "status": existing["status"], "created": False}
+            tombstone = conn.execute(
+                """
+                SELECT terminal_status FROM ingestion_tombstones
+                WHERE idempotency_key = ?
+                """,
+                (idempotency_key,),
+            ).fetchone()
+            if tombstone is not None:
+                conn.commit()
+                return {
+                    "job_id": f"tombstone-{idempotency_key[:24]}",
+                    "status": str(tombstone["terminal_status"]),
+                    "created": False,
+                }
             rejected = conn.execute(
                 """
                 SELECT ri.item_id
@@ -664,7 +792,7 @@ class ReviewStore:
             chunks = conn.execute(
                 """
                 SELECT chunk_id, version_id, position, content_text, content_hash,
-                       approved, approved_by, approved_at, expires_at
+                       approval_status, approved, approved_by, approved_at, expires_at
                 FROM review_chunks WHERE item_id = ?
                 ORDER BY position ASC
                 """,
@@ -735,10 +863,22 @@ class ReviewStore:
         namespace: str,
         item_id: str,
         chunk_id: str,
-        approved: bool,
+        approved: bool | None,
         actor_key: str,
         request_id: str,
+        *,
+        approval_status: str | None = None,
     ) -> None:
+        if approval_status is None:
+            if approved is None:
+                raise ValueError("chunk approval status is required")
+            # The legacy boolean API treated false as "unapprove". Preserve
+            # that behavior as pending; explicit rejected is now available to
+            # distinguish a reviewed negative decision.
+            approval_status = "approved" if approved else "pending"
+        if approval_status not in {"pending", "approved", "rejected"}:
+            raise ValueError("invalid chunk approval status")
+        approved_value = approval_status == "approved"
         now = time.time()
         with self._write_lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -760,20 +900,26 @@ class ReviewStore:
             conn.execute(
                 """
                 UPDATE review_chunks
-                SET approved = ?, approved_by = ?, approved_at = ?
+                SET approval_status = ?, approved = ?, approved_by = ?, approved_at = ?
                 WHERE chunk_id = ?
                 """,
-                (int(approved), actor_key if approved else None, now if approved else None, chunk_id),
+                (
+                    approval_status,
+                    int(approved_value),
+                    actor_key if approval_status != "pending" else None,
+                    now if approval_status != "pending" else None,
+                    chunk_id,
+                ),
             )
             conn.execute("UPDATE review_items SET status = 'in_review', updated_at = ? WHERE item_id = ?", (now, item_id))
             self._audit(
                 conn,
                 namespace=namespace,
                 actor_key=actor_key,
-                action="chunk_approved" if approved else "chunk_unapproved",
+                action=f"chunk_{approval_status}",
                 object_type="review_chunk",
                 object_id=chunk_id,
-                after_hash=str(int(approved)),
+                after_hash=approval_status,
                 request_id=request_id,
                 now=now,
             )
@@ -802,18 +948,23 @@ class ReviewStore:
                 raise ValueError("item cannot be approved in current state")
             rows = conn.execute(
                 """
-                SELECT rc.chunk_id, rc.content_text
+                SELECT rc.chunk_id, rc.content_text, rc.approval_status
                 FROM review_chunks rc
                 JOIN review_versions rv ON rv.version_id = rc.version_id
-                WHERE rc.item_id = ? AND rv.version_number = ? AND rc.approved = 1
+                WHERE rc.item_id = ? AND rv.version_number = ?
                 ORDER BY rc.position
                 """,
                 (item_id, item["current_version"]),
             ).fetchall()
-            if not rows:
+            approved_rows = [row for row in rows if row["approval_status"] == "approved"]
+            pending_rows = [row for row in rows if row["approval_status"] == "pending"]
+            if pending_rows:
+                conn.rollback()
+                raise ValueError("all current chunks must be reviewed before approval")
+            if not approved_rows:
                 conn.rollback()
                 raise ValueError("at least one current chunk must be approved")
-            approved_text = "\n\n".join(row["content_text"] for row in rows)
+            approved_text = "\n\n".join(row["content_text"] for row in approved_rows)
             self._insert_version(
                 conn,
                 item_id,
@@ -825,14 +976,14 @@ class ReviewStore:
             )
             conn.execute(
                 "UPDATE review_chunks SET expires_at = ? WHERE chunk_id IN ({})".format(
-                    ",".join("?" for _ in rows),
+                    ",".join("?" for _ in approved_rows),
                 ),
-                (expires_at, *(row["chunk_id"] for row in rows)),
+                (expires_at, *(row["chunk_id"] for row in approved_rows)),
             )
             conn.execute(
                 """
                 UPDATE review_items
-                SET status = 'pending_publish', category = ?, ttl_days = ?, updated_at = ?
+                SET status = 'approved', category = ?, ttl_days = ?, updated_at = ?
                 WHERE item_id = ?
                 """,
                 (category, ttl_days, now, item_id),
@@ -842,6 +993,7 @@ class ReviewStore:
                 namespace=namespace,
                 reason=f"item_approved:{item_id}:v{item['current_version']}",
                 now=now,
+                target_item_ids=(item_id,),
             )
             self._audit(
                 conn,
@@ -891,6 +1043,7 @@ class ReviewStore:
                 namespace=namespace,
                 reason=f"item_revoked:{item_id}",
                 now=now,
+                target_item_ids=(item_id,),
             )
             self._audit(
                 conn,
@@ -923,11 +1076,13 @@ class ReviewStore:
                 raise ValueError("item is not in publish_failed state")
             job = conn.execute(
                 """
-                SELECT job_id, status FROM publish_jobs
-                WHERE namespace = ? AND status IN ('retry', 'dead')
-                ORDER BY created_at DESC LIMIT 1
+                SELECT pj.job_id, pj.status FROM publish_jobs pj
+                JOIN publish_job_items pji ON pji.job_id = pj.job_id
+                WHERE pj.namespace = ? AND pji.item_id = ?
+                  AND pj.status IN ('retry', 'dead')
+                ORDER BY pj.created_at DESC LIMIT 1
                 """,
-                (namespace,),
+                (namespace, item_id),
             ).fetchone()
             if job and job["status"] == "retry":
                 conn.execute(
@@ -940,6 +1095,7 @@ class ReviewStore:
                     namespace=namespace,
                     reason=f"manual_publish_retry:{item_id}",
                     now=now,
+                    target_item_ids=(item_id,),
                 )
             conn.execute(
                 "UPDATE review_items SET status = 'pending_publish', updated_at = ? WHERE item_id = ?",
@@ -968,7 +1124,46 @@ class ReviewStore:
         namespace: str,
         reason: str,
         now: float,
+        target_item_ids: tuple[str, ...] = (),
     ) -> PublishJob:
+        normalized_reason = reason[:200]
+        existing = conn.execute(
+            """
+            SELECT * FROM publish_jobs
+            WHERE namespace = ? AND status = 'queued'
+            ORDER BY created_at ASC, job_id ASC LIMIT 1
+            """,
+            (namespace,),
+        ).fetchone()
+        if existing is not None:
+            existing_reason = str(existing["reason"])
+            if normalized_reason not in existing_reason.split(" | "):
+                merged_reason = f"{existing_reason} | {normalized_reason}"[:200]
+                conn.execute(
+                    "UPDATE publish_jobs SET reason = ?, updated_at = ? WHERE job_id = ?",
+                    (merged_reason, now, existing["job_id"]),
+                )
+            else:
+                merged_reason = existing_reason
+            for item_id in dict.fromkeys(target_item_ids):
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO publish_job_items(job_id, item_id, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (existing["job_id"], item_id, now),
+                )
+            return PublishJob(
+                job_id=str(existing["job_id"]),
+                namespace=namespace,
+                generation_id=str(existing["generation_id"]),
+                reason=merged_reason,
+                attempts=int(existing["attempts"]),
+                max_attempts=int(existing["max_attempts"]),
+                lease_owner="",
+                lease_expires_at=0,
+            )
+
         generation_id = "gen-" + secrets.token_urlsafe(16)
         job_id = "pub-" + secrets.token_urlsafe(16)
         conn.execute(
@@ -985,13 +1180,21 @@ class ReviewStore:
                 max_attempts, available_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, 'queued', 0, 5, ?, ?, ?)
             """,
-            (job_id, namespace, generation_id, reason[:200], now, now, now),
+            (job_id, namespace, generation_id, normalized_reason, now, now, now),
         )
+        for item_id in dict.fromkeys(target_item_ids):
+            conn.execute(
+                """
+                INSERT INTO publish_job_items(job_id, item_id, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (job_id, item_id, now),
+            )
         return PublishJob(
             job_id=job_id,
             namespace=namespace,
             generation_id=generation_id,
-            reason=reason[:200],
+            reason=normalized_reason,
             attempts=0,
             max_attempts=5,
             lease_owner="",
@@ -1051,9 +1254,11 @@ class ReviewStore:
             conn.execute(
                 """
                 UPDATE review_items SET status = 'pending_publish', updated_at = ?
-                WHERE namespace = ? AND status = 'publish_failed'
+                WHERE item_id IN (
+                    SELECT item_id FROM publish_job_items WHERE job_id = ?
+                ) AND status IN ('approved', 'publish_failed')
                 """,
-                (timestamp, row["namespace"]),
+                (timestamp, row["job_id"]),
             )
             conn.commit()
         return PublishJob(
@@ -1085,26 +1290,14 @@ class ReviewStore:
                 """,
                 (job.generation_id,),
             ).fetchall()
+            if existing and job.attempts > 1:
+                conn.execute(
+                    "DELETE FROM publish_documents WHERE generation_id = ?",
+                    (job.generation_id,),
+                )
+                existing = []
             if not existing:
-                rows = conn.execute(
-                    """
-                    SELECT ri.item_id, ri.title, ri.scope, ri.category, ri.ttl_days,
-                           ws.normalized_url, ws.fetched_at, rc.chunk_id, rc.content_text,
-                           rc.content_hash, rc.expires_at
-                    FROM review_items ri
-                    JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id
-                    JOIN review_versions rv
-                      ON rv.item_id = ri.item_id AND rv.version_number = ri.current_version
-                     AND rv.kind IN ('model', 'human')
-                    JOIN review_chunks rc
-                      ON rc.version_id = rv.version_id AND rc.approved = 1
-                    WHERE ri.namespace = ?
-                      AND ri.status IN ('active', 'pending_publish', 'publish_failed')
-                      AND rc.expires_at > ?
-                    ORDER BY ri.item_id, rc.position
-                    """,
-                    (job.namespace, timestamp),
-                ).fetchall()
+                rows = self._publish_source_rows(conn, job, timestamp)
                 for row in rows:
                     document_id = f"{row['item_id']}:{row['chunk_id']}"
                     metadata = {
@@ -1175,6 +1368,10 @@ class ReviewStore:
                 "SELECT created_at FROM publish_generations WHERE generation_id = ?",
                 (job.generation_id,),
             ).fetchone()
+            if generation is None:
+                raise RuntimeError("publish generation is missing")
+            if not self._publish_snapshot_is_current(conn, job, timestamp):
+                raise PublishSnapshotStale("publish generation no longer matches review state")
             active = conn.execute(
                 """
                 SELECT ais.generation_id, pg.created_at
@@ -1186,8 +1383,11 @@ class ReviewStore:
             ).fetchone()
             if active and float(active["created_at"]) > float(generation["created_at"]):
                 conn.execute(
-                    "UPDATE publish_generations SET status = 'orphan' WHERE generation_id = ?",
-                    (job.generation_id,),
+                    """
+                    UPDATE publish_generations
+                    SET status = 'orphan', orphaned_at = ? WHERE generation_id = ?
+                    """,
+                    (timestamp, job.generation_id),
                 )
                 conn.execute(
                     "UPDATE publish_jobs SET status = 'done', lease_owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE job_id = ?",
@@ -1198,13 +1398,17 @@ class ReviewStore:
             previous = str(active["generation_id"]) if active else None
             if previous and previous != job.generation_id:
                 conn.execute(
-                    "UPDATE publish_generations SET status = 'verified' WHERE generation_id = ?",
+                    """
+                    UPDATE publish_generations
+                    SET status = 'verified', orphaned_at = NULL WHERE generation_id = ?
+                    """,
                     (previous,),
                 )
             conn.execute(
                 """
                 UPDATE publish_generations
-                SET status = 'active', manifest_path = ?, manifest_hash = ?, activated_at = ?
+                SET status = 'active', manifest_path = ?, manifest_hash = ?,
+                    activated_at = ?, orphaned_at = NULL
                 WHERE generation_id = ?
                 """,
                 (manifest_path, manifest_hash, timestamp, job.generation_id),
@@ -1220,19 +1424,64 @@ class ReviewStore:
                 """,
                 (job.namespace, job.generation_id, previous, timestamp),
             )
+            conn.execute(
+                """
+                UPDATE publish_generations
+                SET status = 'orphan', orphaned_at = ?
+                WHERE namespace = ? AND status = 'verified'
+                  AND generation_id != ?
+                  AND (? IS NULL OR generation_id != ?)
+                """,
+                (timestamp, job.namespace, job.generation_id, previous, previous),
+            )
             included_rows = conn.execute(
                 "SELECT DISTINCT item_id FROM publish_documents WHERE generation_id = ?",
                 (job.generation_id,),
             ).fetchall()
             included = [str(row["item_id"]) for row in included_rows]
-            conn.execute(
-                """
-                UPDATE review_items
-                SET status = 'expired', active_generation_id = NULL, updated_at = ?
-                WHERE namespace = ? AND status IN ('active', 'pending_publish', 'publish_failed')
-                """,
-                (timestamp, job.namespace),
-            )
+            if included:
+                placeholders = ",".join("?" for _ in included)
+                conn.execute(
+                    f"""
+                    UPDATE review_items
+                    SET status = 'expired', active_generation_id = NULL, updated_at = ?
+                    WHERE namespace = ? AND status = 'active'
+                      AND item_id NOT IN ({placeholders})
+                    """,
+                    (timestamp, job.namespace, *included),
+                )
+                conn.execute(
+                    f"""
+                    UPDATE review_items
+                    SET status = 'expired', active_generation_id = NULL, updated_at = ?
+                    WHERE status = 'pending_publish'
+                      AND item_id IN (
+                          SELECT item_id FROM publish_job_items WHERE job_id = ?
+                      )
+                      AND item_id NOT IN ({placeholders})
+                    """,
+                    (timestamp, job.job_id, *included),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE review_items
+                    SET status = 'expired', active_generation_id = NULL, updated_at = ?
+                    WHERE namespace = ? AND status = 'active'
+                    """,
+                    (timestamp, job.namespace),
+                )
+                conn.execute(
+                    """
+                    UPDATE review_items
+                    SET status = 'expired', active_generation_id = NULL, updated_at = ?
+                    WHERE status = 'pending_publish'
+                      AND item_id IN (
+                          SELECT item_id FROM publish_job_items WHERE job_id = ?
+                      )
+                    """,
+                    (timestamp, job.job_id),
+                )
             if included:
                 placeholders = ",".join("?" for _ in included)
                 conn.execute(
@@ -1240,6 +1489,7 @@ class ReviewStore:
                     UPDATE review_items
                     SET status = 'active', active_generation_id = ?, updated_at = ?
                     WHERE namespace = ? AND item_id IN ({placeholders})
+                      AND status IN ('active', 'pending_publish')
                     """,
                     (job.generation_id, timestamp, job.namespace, *included),
                 )
@@ -1279,18 +1529,209 @@ class ReviewStore:
                 (status, timestamp + delay, error_code[:80], timestamp, job.job_id),
             )
             conn.execute(
-                "UPDATE publish_generations SET status = 'failed' WHERE generation_id = ?",
-                (job.generation_id,),
+                """
+                UPDATE publish_generations
+                SET status = ?, orphaned_at = ? WHERE generation_id = ?
+                """,
+                (
+                    "orphan" if permanent else "failed",
+                    timestamp if permanent else None,
+                    job.generation_id,
+                ),
             )
             conn.execute(
                 """
                 UPDATE review_items SET status = 'publish_failed', updated_at = ?
-                WHERE namespace = ? AND status = 'pending_publish'
+                WHERE status = 'pending_publish'
+                  AND item_id IN (
+                      SELECT item_id FROM publish_job_items WHERE job_id = ?
+                  )
                 """,
-                (timestamp, job.namespace),
+                (timestamp, job.job_id),
             )
             conn.commit()
         return status
+
+    def retry_stale_publish_job(
+        self,
+        job: PublishJob,
+        *,
+        now: float | None = None,
+    ) -> str:
+        """Discard a stale materialization without activating or mislabeling items."""
+        timestamp = time.time() if now is None else now
+        permanent = job.attempts >= job.max_attempts
+        status = "dead" if permanent else "retry"
+        with self._write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._assert_publish_lease(conn, job)
+            conn.execute(
+                """
+                UPDATE publish_jobs
+                SET status = ?, available_at = ?, lease_owner = NULL,
+                    lease_expires_at = NULL, last_error_code = 'PUBLISH_SNAPSHOT_STALE',
+                    updated_at = ?
+                WHERE job_id = ?
+                """,
+                (status, timestamp, timestamp, job.job_id),
+            )
+            conn.execute(
+                """
+                UPDATE publish_generations
+                SET status = ?, orphaned_at = ? WHERE generation_id = ?
+                """,
+                (
+                    "orphan" if permanent else "failed",
+                    timestamp if permanent else None,
+                    job.generation_id,
+                ),
+            )
+            if permanent:
+                conn.execute(
+                    """
+                    UPDATE review_items SET status = 'publish_failed', updated_at = ?
+                    WHERE status = 'pending_publish'
+                      AND item_id IN (
+                          SELECT item_id FROM publish_job_items WHERE job_id = ?
+                      )
+                    """,
+                    (timestamp, job.job_id),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM publish_documents WHERE generation_id = ?",
+                    (job.generation_id,),
+                )
+            conn.commit()
+        return status
+
+    def cleanup_retained_state(
+        self,
+        *,
+        now: float | None = None,
+        force: bool = False,
+    ) -> dict[str, int | bool]:
+        """Compact terminal queues and remove unreferenced generation artifacts."""
+        timestamp = time.time() if now is None else now
+        with self._write_lock:
+            if (
+                not force
+                and self._last_cleanup_at
+                and timestamp - self._last_cleanup_at < self.settings.review_cleanup_interval_seconds
+            ):
+                return {"skipped": True, "jobs": 0, "generations": 0, "artifact_errors": 0}
+
+            done_cutoff = timestamp - self.settings.job_done_retention_seconds
+            dead_cutoff = timestamp - self.settings.job_dead_retention_seconds
+            orphan_cutoff = timestamp - self.settings.orphan_generation_retention_seconds
+            removed_jobs = 0
+            removed_generations = 0
+            artifact_errors = 0
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO ingestion_tombstones(
+                        idempotency_key, namespace, snapshot_hash, evidence_span_hash,
+                        terminal_status, completed_at
+                    )
+                    SELECT idempotency_key, namespace, snapshot_hash, evidence_span_hash,
+                           status, updated_at
+                    FROM ingestion_jobs
+                    WHERE (status = 'done' AND updated_at <= ?)
+                       OR (status = 'dead' AND updated_at <= ?)
+                    """,
+                    (done_cutoff, dead_cutoff),
+                )
+                for table in ("ingestion_jobs", "refetch_jobs", "publish_jobs"):
+                    removed_jobs += conn.execute(
+                        f"""
+                        DELETE FROM {table}
+                        WHERE (status = 'done' AND updated_at <= ?)
+                           OR (status = 'dead' AND updated_at <= ?)
+                        """,
+                        (done_cutoff, dead_cutoff),
+                    ).rowcount
+                orphan_rows = conn.execute(
+                    """
+                    SELECT pg.generation_id, pg.namespace
+                    FROM publish_generations pg
+                    WHERE pg.status = 'orphan'
+                      AND COALESCE(pg.orphaned_at, pg.created_at) <= ?
+                      AND NOT EXISTS (
+                        SELECT 1 FROM active_index_state ais
+                        WHERE ais.generation_id = pg.generation_id
+                           OR ais.previous_generation_id = pg.generation_id
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1 FROM publish_jobs pj
+                        WHERE pj.generation_id = pg.generation_id
+                      )
+                      AND NOT EXISTS (
+                        SELECT 1 FROM review_items ri
+                        WHERE ri.active_generation_id = pg.generation_id
+                      )
+                    ORDER BY COALESCE(pg.orphaned_at, pg.created_at), pg.generation_id
+                    """,
+                    (orphan_cutoff,),
+                ).fetchall()
+                for row in orphan_rows:
+                    generation_id = str(row["generation_id"])
+                    namespace = str(row["namespace"])
+                    if self._delete_generation_artifacts(namespace, generation_id):
+                        conn.execute(
+                            "DELETE FROM publish_documents WHERE generation_id = ?",
+                            (generation_id,),
+                        )
+                        removed_generations += conn.execute(
+                            "DELETE FROM publish_generations WHERE generation_id = ?",
+                            (generation_id,),
+                        ).rowcount
+                    else:
+                        artifact_errors += 1
+                conn.commit()
+
+            self._last_cleanup_at = timestamp
+        return {
+            "skipped": False,
+            "jobs": removed_jobs,
+            "generations": removed_generations,
+            "artifact_errors": artifact_errors,
+        }
+
+    def _delete_generation_artifacts(self, namespace: str, generation_id: str) -> bool:
+        if namespace not in _NAMESPACES or not generation_id.startswith("gen-"):
+            return False
+        manifest_root = (self.data_dir / "approved" / "manifests" / namespace).resolve()
+        bm25_root = (Path(self.settings.published_bm25_dir) / namespace).resolve()
+        paths = (
+            (manifest_root / f"{generation_id}.json").resolve(),
+            (bm25_root / f"{generation_id}.json").resolve(),
+        )
+        if not paths[0].is_relative_to(manifest_root) or not paths[1].is_relative_to(bm25_root):
+            return False
+        try:
+            for path in paths:
+                path.unlink(missing_ok=True)
+            chroma_root = Path(self.settings.published_chroma_dir)
+            if chroma_root.exists():
+                import chromadb
+                from chromadb.config import Settings as ChromaSettings
+
+                client = chromadb.PersistentClient(
+                    path=str(chroma_root),
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
+                collection_name = (
+                    f"xw-{namespace}-"
+                    f"{hashlib.sha256(generation_id.encode('utf-8')).hexdigest()[:24]}"
+                )
+                existing = {collection.name for collection in client.list_collections()}
+                if collection_name in existing:
+                    client.delete_collection(collection_name)
+        except Exception:
+            return False
+        return True
 
     def expire_due_chunks(self, *, now: float | None = None) -> int:
         timestamp = time.time() if now is None else now
@@ -1298,20 +1739,34 @@ class ReviewStore:
             conn.execute("BEGIN IMMEDIATE")
             namespaces: list[str] = []
             for namespace in sorted(_NAMESPACES):
+                expired_ids = [
+                    str(row["item_id"])
+                    for row in conn.execute(
+                        """
+                        SELECT item_id FROM review_items
+                        WHERE namespace = ?
+                          AND status IN ('active', 'approved', 'pending_publish', 'publish_failed')
+                          AND NOT EXISTS (
+                            SELECT 1 FROM review_chunks rc
+                            JOIN review_versions rv ON rv.version_id = rc.version_id
+                            WHERE rc.item_id = review_items.item_id
+                              AND rv.version_number = review_items.current_version
+                              AND rc.approval_status = 'approved' AND rc.expires_at > ?
+                          )
+                        """,
+                        (namespace, timestamp),
+                    ).fetchall()
+                ]
+                if not expired_ids:
+                    continue
+                placeholders = ",".join("?" for _ in expired_ids)
                 changed = conn.execute(
                     """
                     UPDATE review_items
                     SET status = 'expired', active_generation_id = NULL, updated_at = ?
-                    WHERE namespace = ? AND status IN ('active', 'pending_publish', 'publish_failed')
-                      AND NOT EXISTS (
-                        SELECT 1 FROM review_chunks rc
-                        JOIN review_versions rv ON rv.version_id = rc.version_id
-                        WHERE rc.item_id = review_items.item_id
-                          AND rv.version_number = review_items.current_version
-                          AND rc.approved = 1 AND rc.expires_at > ?
-                      )
-                    """,
-                    (timestamp, namespace, timestamp),
+                    WHERE item_id IN ({})
+                    """.format(placeholders),
+                    (timestamp, *expired_ids),
                 ).rowcount
                 if changed:
                     namespaces.append(namespace)
@@ -1320,6 +1775,7 @@ class ReviewStore:
                         namespace=namespace,
                         reason="approved_chunks_expired",
                         now=timestamp,
+                        target_item_ids=tuple(expired_ids),
                     )
             conn.commit()
         return len(namespaces)
@@ -1454,11 +1910,18 @@ class ReviewStore:
                 ).fetchall()
             ]
             conn.execute(
-                "UPDATE publish_generations SET status = 'verified' WHERE generation_id = ?",
+                """
+                UPDATE publish_generations
+                SET status = 'verified', orphaned_at = NULL WHERE generation_id = ?
+                """,
                 (current_id,),
             )
             conn.execute(
-                "UPDATE publish_generations SET status = 'active', activated_at = ? WHERE generation_id = ?",
+                """
+                UPDATE publish_generations
+                SET status = 'active', activated_at = ?, orphaned_at = NULL
+                WHERE generation_id = ?
+                """,
                 (timestamp, previous_id),
             )
             conn.execute(
@@ -1625,6 +2088,77 @@ class ReviewStore:
         ).fetchone()
         if row is None or row["status"] != "leased" or row["lease_owner"] != job.lease_owner:
             raise ValueError("publish job lease is no longer owned")
+
+    @staticmethod
+    def _publish_source_rows(
+        conn: sqlite3.Connection,
+        job: PublishJob,
+        timestamp: float,
+    ) -> list[sqlite3.Row]:
+        return conn.execute(
+            """
+            SELECT ri.item_id, ri.title, ri.scope, ri.category, ri.ttl_days,
+                   ws.normalized_url, ws.fetched_at, rc.chunk_id, rc.content_text,
+                   rc.content_hash, rc.expires_at
+            FROM review_items ri
+            JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id
+            JOIN review_versions rv
+              ON rv.item_id = ri.item_id AND rv.version_number = ri.current_version
+             AND rv.kind IN ('model', 'human')
+            JOIN review_chunks rc
+              ON rc.version_id = rv.version_id
+             AND rc.approval_status = 'approved'
+            WHERE ri.namespace = ?
+              AND (
+                ri.status = 'active'
+                OR (
+                  ri.status = 'pending_publish'
+                  AND EXISTS (
+                    SELECT 1 FROM publish_job_items pji
+                    WHERE pji.job_id = ? AND pji.item_id = ri.item_id
+                  )
+                )
+              )
+              AND rc.expires_at > ?
+            ORDER BY ri.item_id, rc.position
+            """,
+            (job.namespace, job.job_id, timestamp),
+        ).fetchall()
+
+    @classmethod
+    def _publish_snapshot_is_current(
+        cls,
+        conn: sqlite3.Connection,
+        job: PublishJob,
+        timestamp: float,
+    ) -> bool:
+        expected = sorted(
+            (
+                str(row["item_id"]),
+                str(row["chunk_id"]),
+                str(row["content_hash"]),
+                float(row["expires_at"]),
+            )
+            for row in cls._publish_source_rows(conn, job, timestamp)
+        )
+        materialized = [
+            (
+                str(row["item_id"]),
+                str(row["chunk_id"]),
+                str(row["content_hash"]),
+                float(row["expires_at"]),
+            )
+            for row in conn.execute(
+                """
+                SELECT item_id, chunk_id, content_hash, expires_at
+                FROM publish_documents
+                WHERE generation_id = ?
+                ORDER BY item_id, chunk_id
+                """,
+                (job.generation_id,),
+            ).fetchall()
+        ]
+        return expected == materialized
 
     # Snapshot and helpers ------------------------------------------------------
 

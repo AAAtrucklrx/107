@@ -12,6 +12,9 @@ import httpx
 EXPECTED_VERSION = "0.9.2"
 UPSTREAM = os.environ.get("CRAWL4AI_UPSTREAM_URL", "http://crawl4ai-upstream:11235").rstrip("/")
 TOKEN = os.environ.get("CRAWL4AI_UPSTREAM_TOKEN", "").strip()
+REDIS_PASSWORD_CONFIGURED = os.environ.get(
+    "CRAWL4AI_REDIS_PASSWORD_CONFIGURED", "false",
+).strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _request(url: str) -> dict:
@@ -36,6 +39,9 @@ def _request(url: str) -> dict:
 async def main() -> int:
     if not TOKEN:
         print("CRAWL4AI_UPSTREAM_TOKEN is required", file=sys.stderr)
+        return 2
+    if not REDIS_PASSWORD_CONFIGURED:
+        print("CRAWL4AI_REDIS_PASSWORD_CONFIGURED must be true", file=sys.stderr)
         return 2
     headers = {"Authorization": f"Bearer {TOKEN}"}
     async with httpx.AsyncClient(

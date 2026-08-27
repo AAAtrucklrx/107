@@ -65,7 +65,12 @@ def test_unhealthy_sidecars_fail_readiness_without_disabling_liveness(tmp_path) 
     assert ready.status_code == 503
     assert ready.json() == {
         "status": "not_ready",
-        "checks": {"database": True, "review_database": True, "web_evidence": False},
+        "checks": {
+            "database": True,
+            "review_database": True,
+            "web_evidence": False,
+            "evidence_extractor": False,
+        },
     }
 
 

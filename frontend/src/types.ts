@@ -297,6 +297,7 @@ export interface ReviewChunk {
   version_id: string;
   position: number;
   content_text: string;
+  approval_status?: "pending" | "approved" | "rejected";
   approved: number | boolean;
   expires_at: number | null;
 }

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
 
-from deploy.sidecars.crawl4ai_adapter.app import AdapterSettings, create_app
+from deploy.sidecars.crawl4ai_adapter.app import (
+    AdapterSettings,
+    _profile_is_hardened,
+    create_app,
+)
 
 
 def _profile(tmp_path):
@@ -16,6 +21,15 @@ def _profile(tmp_path):
         """
 limits:
   wall_clock_s: 8
+llm:
+  enabled: false
+  provider: disabled
+  allowed_providers: []
+  api_key: null
+  base_url: null
+redis:
+  password: null
+  password_env: REDIS_PASSWORD
 security:
   enabled: true
   cors_allow_origins: []
@@ -38,7 +52,15 @@ def _settings(tmp_path, *, attested: bool) -> AdapterSettings:
         upstream_token="fixture-token",
         runtime_attested=attested,
         profile_path=_profile(tmp_path),
+        redis_password_configured=True,
     )
+
+
+def test_tracked_crawl4ai_profile_has_no_llm_or_redis_secret_fallback() -> None:
+    profile = Path(__file__).parents[2] / "deploy" / "sidecars" / "crawl4ai" / "config.yml"
+    text = profile.read_text(encoding="utf-8")
+    assert "gpt-4o-mini" not in text
+    assert _profile_is_hardened(profile, redis_password_configured=True) is True
 
 
 def test_health_fails_closed_until_runtime_is_attested(tmp_path) -> None:
@@ -53,6 +75,9 @@ def test_health_fails_closed_until_runtime_is_attested(tmp_path) -> None:
     assert payload["status"] == "degraded"
     assert payload["egress_protection"] is False
     assert payload["runtime_attested"] is False
+    assert payload["profile_valid"] is True
+    assert payload["llm_disabled"] is True
+    assert payload["redis_password_configured"] is True
 
 
 def test_crawl_translates_upstream_contract_without_credentials(tmp_path) -> None:

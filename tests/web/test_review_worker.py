@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.web.helpers import ImmediateRunner, bootstrap, make_settings, mutation_headers
@@ -162,7 +163,79 @@ def test_demo_reviewer_is_fixed_to_demo_namespace_and_can_approve_chunks(tmp_pat
             headers=mutation_headers(csrf),
         )
         assert approved_item.status_code == 200
-        assert approved_item.json()["status"] == "pending_publish"
+        assert approved_item.json()["status"] == "approved"
+
+
+def test_item_requires_every_chunk_to_be_approved_or_rejected(tmp_path) -> None:
+    store = ReviewStore(make_settings(tmp_path))
+    store.initialize()
+    store.enqueue_candidate(
+        "production",
+        _candidate(
+            "https://example.com/reviewed-chunks",
+            "第一段公开内容用于批准。\n\n第二段公开内容经人工核验后应排除。",
+        ),
+    )
+    assert IngestionWorker(store, worker_id="worker-three-state").run_once() == "done"
+    item = store.list_items("production")[0]
+    item_id = str(item["item_id"])
+    store.start_review("production", item_id, "reviewer", "start-three-state")
+    store.edit_item(
+        "production",
+        item_id,
+        content="第一段公开内容用于批准。\n\n第二段公开内容经人工核验后应排除。",
+        chunks=["第一段公开内容用于批准。", "第二段公开内容经人工核验后应排除。"],
+        actor_key="reviewer",
+        request_id="split-three-state",
+    )
+    detail = store.get_item("production", item_id)
+    assert detail is not None
+    current_versions = {
+        version["version_id"]
+        for version in detail["versions"]
+        if version["version_number"] == detail["current_version"]
+    }
+    chunks = [chunk for chunk in detail["chunks"] if chunk["version_id"] in current_versions]
+    assert len(chunks) == 2
+    store.set_chunk_approval(
+        "production", item_id, chunks[0]["chunk_id"], True, "reviewer", "approve-first",
+    )
+    with pytest.raises(ValueError, match="must be reviewed"):
+        store.approve_item(
+            "production",
+            item_id,
+            category="announcement",
+            ttl_days=7,
+            actor_key="reviewer",
+            request_id="premature-approval",
+        )
+    store.set_chunk_approval(
+        "production",
+        item_id,
+        chunks[1]["chunk_id"],
+        None,
+        "reviewer",
+        "reject-second",
+        approval_status="rejected",
+    )
+    store.approve_item(
+        "production",
+        item_id,
+        category="announcement",
+        ttl_days=7,
+        actor_key="reviewer",
+        request_id="complete-approval",
+    )
+    approved = store.get_item("production", item_id)
+    assert approved is not None
+    assert approved["status"] == "approved"
+    approved_chunks = [
+        chunk for chunk in approved["chunks"] if chunk["version_id"] in current_versions
+    ]
+    assert [chunk["approval_status"] for chunk in approved_chunks] == [
+        "approved",
+        "rejected",
+    ]
 
 
 def test_demo_admin_starts_with_a_synthetic_review_item_and_reset_restores_it(tmp_path) -> None:

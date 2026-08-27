@@ -25,6 +25,7 @@ async def _run() -> None:
     refetch = RefetchWorker(store, crawler)
     try:
         while True:
+            await asyncio.to_thread(store.cleanup_retained_state)
             result = await asyncio.to_thread(ingestion.run_once)
             if result is None:
                 result = await refetch.run_once()

@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
 CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_claim
     ON ingestion_jobs(status, available_at, lease_expires_at, created_at);
 
+-- Terminal ingestion jobs can be compacted without losing the content-hash
+-- idempotency boundary. Tombstones are intentionally retained indefinitely.
+CREATE TABLE IF NOT EXISTS ingestion_tombstones (
+    idempotency_key TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+    snapshot_hash TEXT NOT NULL,
+    evidence_span_hash TEXT NOT NULL,
+    terminal_status TEXT NOT NULL CHECK (terminal_status IN ('done', 'dead')),
+    completed_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS refetch_jobs (
     job_id TEXT PRIMARY KEY,
     namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
@@ -100,6 +111,9 @@ CREATE TABLE IF NOT EXISTS review_chunks (
     position INTEGER NOT NULL,
     content_text TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    approval_status TEXT NOT NULL DEFAULT 'pending' CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+    -- Compatibility projection kept for older readers; new code uses
+    -- approval_status and always keeps this value in sync.
     approved INTEGER NOT NULL DEFAULT 0 CHECK (approved IN (0, 1)),
     approved_by TEXT,
     approved_at REAL,
@@ -135,7 +149,8 @@ CREATE TABLE IF NOT EXISTS publish_generations (
     manifest_path TEXT,
     manifest_hash TEXT,
     created_at REAL NOT NULL,
-    activated_at REAL
+    activated_at REAL,
+    orphaned_at REAL
 );
 
 CREATE TABLE IF NOT EXISTS publish_jobs (
@@ -157,6 +172,18 @@ CREATE TABLE IF NOT EXISTS publish_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_publish_jobs_claim
     ON publish_jobs(status, available_at, lease_expires_at, created_at);
+
+CREATE TABLE IF NOT EXISTS publish_job_items (
+    job_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (job_id, item_id),
+    FOREIGN KEY (job_id) REFERENCES publish_jobs(job_id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES review_items(item_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_publish_job_items_item
+    ON publish_job_items(item_id, job_id);
 
 CREATE TABLE IF NOT EXISTS publish_documents (
     generation_id TEXT NOT NULL,

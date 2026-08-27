@@ -24,13 +24,31 @@ class RecordingWriter:
         return IndexArtifact(self.kind, f"fixture://{self.kind}/{generation_id}", len(documents), f"{self.kind}-hash")
 
 
+class MutatingWriter(RecordingWriter):
+    def __init__(self, kind: str, callback) -> None:
+        super().__init__(kind)
+        self.callback = callback
+        self.called = False
+
+    def write(self, namespace: str, generation_id: str, documents: list[dict]) -> IndexArtifact:
+        result = super().write(namespace, generation_id, documents)
+        if not self.called:
+            self.called = True
+            self.callback()
+        return result
+
+
 class _EmbeddingMatrix(list):
     def tolist(self) -> list[list[float]]:
         return list(self)
 
 
 class DeterministicEmbedding:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def encode(self, texts: list[str]) -> _EmbeddingMatrix:
+        self.calls += 1
         return _EmbeddingMatrix([
             [float(len(text)), float(sum(ord(char) for char in text) % 997), 1.0]
             for text in texts
@@ -126,14 +144,76 @@ def test_partial_publish_failure_never_changes_active_pointer_and_retries(tmp_pa
     assert store.get_item("demo", item_id)["status"] == "active"
 
 
+def test_publish_failure_only_marks_items_linked_to_that_job(tmp_path) -> None:
+    settings = make_settings(tmp_path, mode="demo")
+    store = ReviewStore(settings)
+    store.initialize()
+    linked_item = _approved_item(store, suffix="linked-failure")
+    job = store.claim_publish_job("publisher-linked")
+    assert job is not None
+
+    unrelated_item = _approved_item(store, suffix="unrelated-failure")
+    with sqlite3.connect(settings.review_db_path) as conn:
+        conn.execute(
+            "UPDATE review_items SET status = 'pending_publish' WHERE item_id = ?",
+            (unrelated_item,),
+        )
+        conn.commit()
+
+    assert store.fail_publish_job(job, "FIXTURE_FAILURE") == "retry"
+    assert store.get_item("demo", linked_item)["status"] == "publish_failed"
+    assert store.get_item("demo", unrelated_item)["status"] == "pending_publish"
+
+
+def test_generation_changed_during_build_is_retried_without_activation(tmp_path) -> None:
+    settings = make_settings(tmp_path, mode="demo")
+    store = ReviewStore(settings)
+    store.initialize()
+    item_id = _approved_item(store, suffix="stale-during-build")
+    vector = MutatingWriter(
+        "chroma",
+        lambda: store.revoke_item(
+            "demo", item_id, "reviewer", "revoke-during-publication",
+        ),
+    )
+    worker = PublicationWorker(
+        store,
+        settings,
+        vector_writer=vector,
+        bm25_writer=RecordingWriter("bm25"),
+        worker_id="publisher-stale",
+    )
+
+    assert worker.run_once() == "retry"
+    assert store.get_active_generation("demo") is None
+    assert store.get_item("demo", item_id)["status"] == "revoked"
+    with sqlite3.connect(settings.review_db_path) as conn:
+        stale_job = conn.execute(
+            """
+            SELECT status, last_error_code FROM publish_jobs
+            WHERE last_error_code = 'PUBLISH_SNAPSHOT_STALE'
+            """
+        ).fetchone()
+        stale_documents = conn.execute(
+            """
+            SELECT COUNT(*) FROM publish_documents pd
+            JOIN publish_jobs pj ON pj.generation_id = pd.generation_id
+            WHERE pj.last_error_code = 'PUBLISH_SNAPSHOT_STALE'
+            """
+        ).fetchone()[0]
+    assert stale_job == ("retry", "PUBLISH_SNAPSHOT_STALE")
+    assert stale_documents == 0
+
+
 def test_real_chroma_writer_rebuilds_and_verifies_generation_collection(tmp_path) -> None:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
 
     persist_dir = tmp_path / "published-chroma"
+    embedding = DeterministicEmbedding()
     writer = ChromaGenerationWriter(
         persist_dir,
-        embedding_model=DeterministicEmbedding(),
+        embedding_model=embedding,
     )
     generation_id = "gen-chroma-fixture"
     first_documents = [
@@ -160,6 +240,7 @@ def test_real_chroma_writer_rebuilds_and_verifies_generation_collection(tmp_path
     assert replacement.locator == first.locator
     assert replacement.document_count == 1
     assert replacement.content_hash != first.content_hash
+    assert embedding.calls == 1
 
     client = chromadb.PersistentClient(
         path=str(persist_dir),
@@ -172,6 +253,73 @@ def test_real_chroma_writer_rebuilds_and_verifies_generation_collection(tmp_path
     assert stored["documents"] == ["第二份人工审核公开资料。"]
     assert stored["metadatas"][0]["content_hash"] == "hash-two"
     assert stored["metadatas"][0]["expires_at"] == 9999999999.0
+
+    fresh_embedding = DeterministicEmbedding()
+    fresh_writer = ChromaGenerationWriter(
+        persist_dir,
+        embedding_model=fresh_embedding,
+    )
+    cached = fresh_writer.write("demo", "gen-chroma-cached", [first_documents[1]])
+    assert cached.document_count == 1
+    assert fresh_embedding.calls == 0
+
+
+def test_queued_publications_merge_before_the_worker_claims_them(tmp_path) -> None:
+    settings = make_settings(tmp_path, mode="demo")
+    store = ReviewStore(settings)
+    store.initialize()
+    first_item = _approved_item(store, suffix="merge-one")
+    second_item = _approved_item(store, suffix="merge-two")
+
+    with sqlite3.connect(settings.review_db_path) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM publish_jobs WHERE status = 'queued'"
+        ).fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM publish_generations").fetchone()[0] == 1
+        targets = {
+            row[0] for row in conn.execute("SELECT item_id FROM publish_job_items")
+        }
+    assert targets == {first_item, second_item}
+
+    vector = RecordingWriter("chroma")
+    worker = PublicationWorker(
+        store,
+        settings,
+        vector_writer=vector,
+        bm25_writer=RecordingWriter("bm25"),
+        worker_id="publisher-merged",
+    )
+    assert worker.run_once() == "active"
+    assert {document["item_id"] for document in vector.calls[0][2]} == {
+        first_item,
+        second_item,
+    }
+
+
+def test_only_active_and_previous_generations_remain_rollback_candidates(tmp_path) -> None:
+    settings = make_settings(tmp_path, mode="demo")
+    store = ReviewStore(settings)
+    store.initialize()
+    generations: list[str] = []
+    for suffix in ("history-one", "history-two", "history-three"):
+        _approved_item(store, suffix=suffix)
+        worker = PublicationWorker(
+            store,
+            settings,
+            vector_writer=RecordingWriter("chroma"),
+            bm25_writer=RecordingWriter("bm25"),
+            worker_id=f"publisher-{suffix}",
+        )
+        assert worker.run_once() == "active"
+        generations.append(str(store.get_active_generation("demo")["generation_id"]))
+
+    with sqlite3.connect(settings.review_db_path) as conn:
+        statuses = dict(conn.execute(
+            "SELECT generation_id, status FROM publish_generations"
+        ).fetchall())
+    assert statuses[generations[0]] == "orphan"
+    assert statuses[generations[1]] == "verified"
+    assert statuses[generations[2]] == "active"
 
 
 def test_expiry_builds_a_new_empty_generation_instead_of_mutating_active(tmp_path) -> None:

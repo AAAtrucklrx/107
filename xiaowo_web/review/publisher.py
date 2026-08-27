@@ -7,11 +7,12 @@ import json
 import os
 import re
 import secrets
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from xiaowo_web.review.store import PublishJob, ReviewStore
+from xiaowo_web.review.store import PublishJob, PublishSnapshotStale, ReviewStore
 from xiaowo_web.settings import WebSettings
 
 
@@ -100,14 +101,150 @@ class Bm25GenerationWriter:
 
 
 class ChromaGenerationWriter:
-    def __init__(self, persist_dir: Path, *, embedding_model: Any | None = None) -> None:
+    _embedding_cache_lock = threading.RLock()
+
+    def __init__(
+        self,
+        persist_dir: Path,
+        *,
+        embedding_model: Any | None = None,
+        embedding_model_identity: str | None = None,
+    ) -> None:
         self.persist_dir = Path(persist_dir)
         self._injected_embedding_model = embedding_model
+        self._configured_embedding_identity = (embedding_model_identity or "").strip()
 
     @staticmethod
     def collection_name(namespace: str, generation_id: str) -> str:
         suffix = hashlib.sha256(generation_id.encode("utf-8")).hexdigest()[:24]
         return f"xw-{namespace}-{suffix}"
+
+    def _model_identity(self, embedding_model: Any) -> str:
+        if self._configured_embedding_identity:
+            raw_identity = self._configured_embedding_identity
+        else:
+            model_type = type(embedding_model)
+            parts = [f"{model_type.__module__}.{model_type.__qualname__}"]
+            candidates = (embedding_model, getattr(embedding_model, "_ef", None))
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                for attribute in (
+                    "model_name",
+                    "_model_name",
+                    "model_name_or_path",
+                    "name_or_path",
+                ):
+                    value = getattr(candidate, attribute, None)
+                    if isinstance(value, str) and value.strip():
+                        parts.append(f"{attribute}={value.strip()}")
+            raw_identity = "|".join(parts)
+        return hashlib.sha256(raw_identity.encode("utf-8")).hexdigest()
+
+    def _load_embedding_cache(self) -> dict[str, dict[str, Any]]:
+        path = self.persist_dir / ".embedding-cache.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return {}
+            if payload.get("schema_version") != 1 or not isinstance(payload.get("entries"), dict):
+                return {}
+            return {
+                str(key): value
+                for key, value in payload["entries"].items()
+                if isinstance(value, dict)
+            }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return {}
+
+    def _embeddings_for(
+        self,
+        embedding_model: Any,
+        documents: list[dict[str, Any]],
+    ) -> list[list[float]]:
+        identity = self._model_identity(embedding_model)
+        with self._embedding_cache_lock:
+            entries = {
+                key: value
+                for key, value in self._load_embedding_cache().items()
+                if key.startswith(f"{identity}:")
+            }
+            ordered: list[list[float] | None] = [None] * len(documents)
+            missing_indexes: list[int] = []
+            missing_contents: list[str] = []
+            for index, document in enumerate(documents):
+                content = str(document["content"])
+                content_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                key = f"{identity}:{document['content_hash']}"
+                cached = entries.get(key)
+                vector = cached.get("vector") if cached else None
+                if (
+                    cached
+                    and cached.get("content_digest") == content_digest
+                    and isinstance(vector, list)
+                    and vector
+                    and all(isinstance(value, (int, float)) for value in vector)
+                    and cached.get("vector_hash") == _digest(_canonical_bytes(vector))
+                ):
+                    ordered[index] = [float(value) for value in vector]
+                    continue
+                missing_indexes.append(index)
+                missing_contents.append(content)
+
+            if missing_contents:
+                encoded = embedding_model.encode(missing_contents)
+                rows = encoded.tolist() if hasattr(encoded, "tolist") else encoded
+                if not isinstance(rows, list) or len(rows) != len(missing_contents):
+                    raise RuntimeError("embedding model returned an invalid batch")
+                for index, content, row in zip(
+                    missing_indexes,
+                    missing_contents,
+                    rows,
+                    strict=True,
+                ):
+                    if not isinstance(row, (list, tuple)) or not row:
+                        raise RuntimeError("embedding model returned an invalid vector")
+                    vector = [float(value) for value in row]
+                    ordered[index] = vector
+                    document = documents[index]
+                    content_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                    entries[f"{identity}:{document['content_hash']}"] = {
+                        "content_digest": content_digest,
+                        "vector": vector,
+                        "vector_hash": _digest(_canonical_bytes(vector)),
+                    }
+                _atomic_json(
+                    self.persist_dir / ".embedding-cache.json",
+                    {"schema_version": 1, "entries": entries},
+                )
+
+            vectors = [vector for vector in ordered if vector is not None]
+            if len(vectors) != len(documents):
+                raise RuntimeError("embedding cache did not resolve every document")
+            if len({len(vector) for vector in vectors}) > 1:
+                encoded = embedding_model.encode([str(item["content"]) for item in documents])
+                rows = encoded.tolist() if hasattr(encoded, "tolist") else encoded
+                if not isinstance(rows, list) or len(rows) != len(documents):
+                    raise RuntimeError("embedding model returned an invalid recovery batch")
+                vectors = []
+                for document, row in zip(documents, rows, strict=True):
+                    if not isinstance(row, (list, tuple)) or not row:
+                        raise RuntimeError("embedding model returned an invalid recovery vector")
+                    vector = [float(value) for value in row]
+                    vectors.append(vector)
+                    content = str(document["content"])
+                    entries[f"{identity}:{document['content_hash']}"] = {
+                        "content_digest": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                        "vector": vector,
+                        "vector_hash": _digest(_canonical_bytes(vector)),
+                    }
+                if len({len(vector) for vector in vectors}) > 1:
+                    raise RuntimeError("embedding model returned inconsistent dimensions")
+                _atomic_json(
+                    self.persist_dir / ".embedding-cache.json",
+                    {"schema_version": 1, "entries": entries},
+                )
+            return vectors
 
     def write(
         self,
@@ -132,13 +269,13 @@ class ChromaGenerationWriter:
             metadata={"hnsw:space": "cosine", "xiaowo_generation": generation_id},
         )
         if documents:
-            contents = [str(item["content"]) for item in documents]
             embedding_model = self._injected_embedding_model
             if embedding_model is None:
                 from knowledge.vector_store import FAQVectorStore
 
                 embedding_model = FAQVectorStore().embedding_model
-            embeddings = embedding_model.encode(contents).tolist()
+            contents = [str(item["content"]) for item in documents]
+            embeddings = self._embeddings_for(embedding_model, documents)
             metadatas = []
             for item in documents:
                 metadata = {
@@ -186,6 +323,7 @@ class PublicationWorker:
         self.worker_id = worker_id or f"publisher-{secrets.token_urlsafe(8)}"
 
     def run_once(self, *, now: float | None = None) -> str | None:
+        self.store.cleanup_retained_state(now=now)
         self.store.expire_due_chunks(now=now)
         job = self.store.claim_publish_job(self.worker_id, now=now)
         if job is None:
@@ -234,5 +372,7 @@ class PublicationWorker:
                 now=now,
             )
             return "active" if activated else "orphan"
+        except PublishSnapshotStale:
+            return self.store.retry_stale_publish_job(job, now=now)
         except Exception:
             return self.store.fail_publish_job(job, "PUBLISH_FAILED", now=now)

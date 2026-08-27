@@ -38,17 +38,6 @@ class ClaimExtractor(Protocol):
     ) -> list[ExtractedClaim]: ...
 
 
-class NoopClaimExtractor:
-    """Fail-closed default until a tested structured extraction model is configured."""
-
-    async def extract(
-        self,
-        _question: str,
-        _pages: list[tuple[str, CrawledPage]],
-    ) -> list[ExtractedClaim]:
-        return []
-
-
 @dataclass(frozen=True, slots=True)
 class _PageRecord:
     source_id: str
@@ -67,14 +56,14 @@ class EvidencePipeline:
         *,
         url_guard: UrlGuard | None = None,
         trust_store: SourceTrustStore | None = None,
-        extractor: ClaimExtractor | None = None,
+        extractor: ClaimExtractor,
     ) -> None:
         self.settings = settings
         self.search = search
         self.crawler = crawler
         self.url_guard = url_guard or UrlGuard()
         self.trust_store = trust_store or SourceTrustStore()
-        self.extractor = extractor or NoopClaimExtractor()
+        self.extractor = extractor
 
     async def answer(
         self,
@@ -147,6 +136,15 @@ class EvidencePipeline:
         except Exception:
             extracted = []
             limitations.append("结构化证据提取暂不可用，未输出未经核验的结论。")
+        extractor_code = getattr(self.extractor, "last_error_code", None)
+        if extractor_code and not any("结构化证据提取" in item for item in limitations):
+            messages = {
+                "EXTRACTOR_NOT_CONFIGURED": "结构化证据提取未配置经过验证的模型。",
+                "EXTRACTOR_INVALID_RESPONSE": "结构化证据模型返回格式未通过校验。",
+                "EXTRACTOR_CALL_FAILED": "结构化证据模型调用失败。",
+                "EXTRACTOR_PROBE_FAILED": "结构化证据模型能力探针失败。",
+            }
+            limitations.append(messages.get(extractor_code, "结构化证据提取暂不可用。"))
         claims, confirmed_lines, conflict_lines, ingestion_spans = self._verify_claims(extracted, pages)
         public_sources = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
         if not confirmed_lines and not conflict_lines:

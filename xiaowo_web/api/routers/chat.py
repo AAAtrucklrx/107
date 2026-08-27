@@ -67,13 +67,19 @@ async def _event_stream(request: Request, run_id: str, after_sequence: int) -> A
             cursor = int(event["id"])
             yield _encode_sse(event)
         run = store.get_run(run_id)
-        if run is None or (run.status in _TERMINAL_STATES and not events):
+        if run is None or run.status in _TERMINAL_STATES:
             return
         now = time.monotonic()
         if now - last_keepalive >= 15:
             yield ": keep-alive\n\n"
             last_keepalive = now
-        await asyncio.sleep(0.1)
+        until_keepalive = max(0.05, 15 - (time.monotonic() - last_keepalive))
+        await asyncio.to_thread(
+            store.wait_for_event,
+            run_id,
+            cursor,
+            min(request.app.state.settings.event_wait_timeout_seconds, until_keepalive),
+        )
 
 
 @router.get("/{run_id}/events")

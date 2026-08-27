@@ -23,12 +23,12 @@
 
 | 项 | 值 |
 |---|---|
-| HEAD | `28e53f7` fix: harden auth, scheduling, and Streamlit flows（2026-08-24） |
+| 本轮基线 HEAD | `d5431db` feat: add secure web workbench and evidence pipeline（2026-08-27） |
 | 分支/远端 | main ↔ https://github.com/AAAtrucklrx/107.git |
 | 上个里程碑 | P5-1 `34e8858`、P5-2 `199449d` 已完成；`a88f6a8` P5-3 三联动已被当前工作区永久回滚 |
-| 工作区 | **有未提交改动**（原推荐/身份/P5-3 收敛 + React/FastAPI、联网证据、审核发布、测试与文档）；禁止擅自提交/还原 |
+| 当前交付 | Web vNext + 联网提取、SSE 通知、审核三态、队列保留和 generation 发布 hardening；实际最新提交以 `git log -1` 为准 |
 
-### 2.1 未提交改动明细（用户已确认 Q1-Q12）
+### 2.1 已完成的推荐与身份边界（用户已确认 Q1-Q12）
 
 | 文件 | 改动要点 |
 |---|---|
@@ -54,9 +54,9 @@
 | `verify_security_ui.py` | ✅ 20/20 | 含认证绑定、双用户方案树/缓存隔离、匿名状态清理 |
 | `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-27 已重跑 |
 | `e2e_program_identity.py` | ✅ 通过 | 桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与横向溢出 |
-| `pytest tests/web -q` | ✅ 84 passed | 认证/权限、SSE、SSRF、证据、韧性、worker、审核与 generation 完整性 |
-| `frontend: npm test / npm run build` | ✅ 5/5 / 成功 | Markdown/来源按需块 158.61 kB，主入口 448.19 kB，无 500 kB chunk 警告 |
-| `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、个人方案、审核治理、浅深主题；1440×1000 / 390×844 |
+| `pytest tests/web -q` | ✅ 99 passed | 认证/权限、通知驱动 SSE、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
+| `frontend: npm test / npm run build` | ✅ 6/6 / 成功 | Markdown/来源按需块 158.61 kB，主入口 448.19 kB，无 500 kB chunk 警告 |
+| `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、个人方案、审核治理、三态分块、浅深主题；1440×1000 / 390×844 |
 | `verify_web_load.py` | ✅ 通过 | 100 条在线 SSE、回答并发峰值 30、超限 503、100 条完整结束 |
 | 需 LLM：`qa_consistency` 12/12 · `qa_new_docs` 10/10 | 本轮未运行 | 脚本会向外部 LLM 发送学号/画像，未获明确授权；左侧为最近一次基线 |
 
@@ -65,8 +65,11 @@
 - 运行模式只有 `anonymous`、`demo`、`cas`。唯一 demo 身份为 `PB25111691 / 测试 / 人工智能 / 2025级`；demo 管理员只能操作 demo 审核库与 demo 索引。
 - 当前没有可信 HTTPS 域名：比赛使用 `competition + demo`；无 HTTPS 的公开 production 只能 anonymous，个人区和管理区关闭；真实 CAS 只保留 Provider/API，等待域名和白名单。
 - 本地资料不足、权威性不足或问题要求最新信息时才进入联网门控；搜索前永久禁止外发个人数据。确定结论要求一个审核官方一手来源或两个独立一致的可靠来源。
-- SearXNG/Crawl4AI 只提供服务器 sidecar 模板，当前开发机未安装或启动。adapter 未完成 runtime attestation 时 readiness 不放行联网。
-- 回答完成后异步入审核队列；逐块批准后构建不可变 Chroma/BM25 generation。回滚前验证 manifest、两套索引、元数据、数量和内容指纹。
+- SearXNG/Crawl4AI 只提供服务器 sidecar 模板，当前开发机未安装或启动。adapter、Redis/LLM 禁用契约或结构化提取能力探针未通过时，readiness 不放行联网。
+- SSE 以 SQLite 为持久事实源，提交后通过进程内通知立即唤醒；1 秒读取作为跨进程兜底，事件窗口默认 1 小时且可配置。
+- 回答完成后异步入审核队列；每块必须明确批准或排除且至少批准一块，worker 领取后才从 `approved` 转 `pending_publish`。
+- 发布任务关联具体条目并合并尚未领取的同 namespace 任务；失败不波及无关条目，激活前重验实时审核状态。Chroma 完整 generation 复用按模型与内容哈希校验的 embedding 缓存。
+- done/dead 任务默认保留 7/90 天；orphan generation 从成为 orphan 起保留 7 天后清理，哈希墓碑和审核历史保留。回滚前验证 manifest、两套索引、元数据、数量和内容指纹。
 - 完整技术契约见 `docs/小蜗_Web应用与联网RAG技术规格.md`，部署/迁移/回滚见 `docs/Web部署与数据迁移.md`。
 
 ## 3. 架构速览

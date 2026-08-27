@@ -3,9 +3,39 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 from tests.web.helpers import make_settings
 from xiaowo_web.storage import WebStore
+
+
+def test_run_event_waiter_is_notified_after_the_sqlite_commit(tmp_path) -> None:
+    settings = make_settings(tmp_path)
+    store = WebStore(settings)
+    store.initialize()
+    _, owner = store.create_session(
+        principal_id="anon:waiter",
+        auth_mode="anonymous",
+        profile={},
+        is_admin=False,
+    )
+    run = store.create_run(owner.session_key, "auto")
+    entered = threading.Event()
+    result: list[bool] = []
+
+    def wait() -> None:
+        entered.set()
+        result.append(store.wait_for_event(run.run_id, 0, timeout=1.0))
+
+    waiter = threading.Thread(target=wait, daemon=True)
+    waiter.start()
+    assert entered.wait(timeout=1.0)
+    event = store.append_event(run.run_id, "stage.changed", {"stage": "local"})
+    waiter.join(timeout=1.0)
+
+    assert result == [True]
+    assert store.list_events(run.run_id, 0) == [event]
+    assert store.wait_for_event(run.run_id, event["id"], timeout=0.01) is False
 
 
 def test_run_events_are_owned_and_expiry_becomes_tombstone(tmp_path) -> None:

@@ -143,7 +143,7 @@ tests/web/                 API、契约、安全和集成测试
 | `answer.completed` | 最终引用、限制和结束原因 |
 | `run.failed` | 稳定错误码及可操作提示，不返回堆栈 |
 
-禁止通过事件发送 `thought_log`、模型 reasoning、内部工具选择理由、提示词或凭证。SSE 事件至少保留 1 小时以支持 `Last-Event-ID` 续传。
+禁止通过事件发送 `thought_log`、模型 reasoning、内部工具选择理由、提示词或凭证。SSE 事件至少保留 1 小时以支持 `Last-Event-ID` 续传。事件提交 SQLite 后以进程内通知立即唤醒同进程 SSE，SQLite 约 1 秒查询作为多进程与漏通知兜底；15 秒发送一次空闲心跳。
 
 ### 6.2 时间预算
 
@@ -183,6 +183,7 @@ tests/web/                 API、契约、安全和集成测试
 - HTML 正文上限 2 MB；PDF 上限 20 MB、200 页，只处理可直接提取文本的 PDF。
 - 图片只保留引用；扫描件、加密、超限或无法解析的文档只记录失败原因，不进入审核库。
 - 页面正文视为不可信数据，不能改变系统指令、触发工具调用或授权操作。
+- Crawl4AI sidecar 只抽取公开文本，配置中显式关闭 LLM extraction；Redis 密码只从部署环境的 `REDIS_PASSWORD` 注入，tracked YAML 不保存密码或模型 fallback。
 
 ### 7.4 来源等级
 
@@ -216,13 +217,13 @@ tests/web/                 API、契约、安全和集成测试
 
 ### 8.2 Worker
 
-首期使用 SQLite 持久队列和独立 Python worker，不引入 Redis/Celery。任务必须支持原子领取、租约、幂等键、指数退避、最大重试和死信状态。聊天服务故障或 worker 停止时，任务持久保留且不阻塞回答。
+首期使用 SQLite 持久队列和独立 Python worker，不引入 Redis/Celery。任务必须支持原子领取、租约、幂等键、指数退避、最大重试和死信状态。聊天服务故障或 worker 停止时，任务持久保留且不阻塞回答。完成任务保留 7 天、死信保留 90 天；清理 ingestion job 前写入永久内容哈希墓碑，审核审计不清理。
 
 清洗模型通过独立适配器配置，默认复用科大 LLM。它只能去噪、提取原子事实、生成标题/关键词/分类和分块草稿；禁止补充事实、自动认定官方、合并冲突或自动批准。
 
 ### 8.3 审核与版本
 
-审核者必须能查看原文、模型清洗稿、差异和分块，可编辑并逐块批准。禁止批量批准，只允许批量标记重复或拒绝。
+审核者必须能查看原文、模型清洗稿、差异和分块，可编辑并逐块标记“批准”或“排除”。当前版本仍有待定块时禁止发布，且至少一个分块必须批准。禁止批量批准，只允许批量标记重复或拒绝。
 
 原始快照、模型稿、人工稿和批准分块分别版本化且不可覆盖。编辑创建新版本；撤回或过期只改变有效状态，历史继续保留。
 
@@ -407,6 +408,12 @@ XIAOWO_SEARXNG_URL=http://127.0.0.1:8080
 XIAOWO_CRAWL4AI_URL=http://127.0.0.1:11235
 XIAOWO_WEB_SEARCH_ENABLED=false
 XIAOWO_INGESTION_WORKER_ENABLED=false
+XIAOWO_EVIDENCE_EXTRACTOR_ENABLED=true
+# XIAOWO_EVIDENCE_EXTRACTOR_MODEL=默认复用 LLM_MODEL
+XIAOWO_RUN_EVENT_RETENTION_SECONDS=3600
+XIAOWO_JOB_DONE_RETENTION_SECONDS=604800
+XIAOWO_JOB_DEAD_RETENTION_SECONDS=7776000
+XIAOWO_ORPHAN_GENERATION_RETENTION_SECONDS=604800
 XIAOWO_SESSION_SECRET=replace-with-at-least-32-random-bytes
 # XIAOWO_TRUSTED_PROXY_CIDRS=
 ```
@@ -598,11 +605,11 @@ active -> expired | revoked
 
 发布使用不可变 `generation_id`。Chroma 先写入带 generation/version 元数据的非 active 文档；BM25 写入新的 generation 文件并以临时文件原子重命名。两边校验完成后，在 review.db 单事务中切换 active generation。检索以 review.db 的 active 清单为权威，不能读到仅写入一边的版本。
 
-worker 恢复 `pending_publish`/`publish_failed`，使用幂等键避免重复。回滚只切回上一完整 generation，不在原索引上做部分逆操作。
+worker 恢复 `pending_publish`/`publish_failed`，发布任务用关联表记录具体受影响条目，失败不得粗暴改写同 namespace 的其他条目。领取前合并尚未执行的 queued 任务；回滚只切回上一完整 generation，不在原索引上做部分逆操作。
 
-BM25 generation 文件和 manifest 在原子重命名前必须写入并 fsync 文件及父目录；Chroma 写入后校验文档数和内容哈希。若 SQLite 切换前崩溃，该 generation 视为孤儿且不可检索，恢复任务可复用校验通过的产物；切换后崩溃则以 SQLite active 指针和 manifest 校验恢复。孤儿 generation 保留 7 天后清理。
+BM25 generation 文件和 manifest 在原子重命名前必须写入并 fsync 文件及父目录；Chroma 写入后校验文档数和内容哈希。若 SQLite 切换前崩溃，该 generation 视为孤儿且不可检索，恢复任务可复用校验通过的产物；切换后崩溃则以 SQLite active 指针和 manifest 校验恢复。只保留 active 与 previous 作为有效/回滚版本，更早版本转为孤儿，7 天后连同限定目录内的 BM25、manifest 和 Chroma collection 清理。
 
-单个分块过期、撤回或重新批准都通过构建下一完整 generation 生效，不在 active generation 上原地删除，从而保持 Chroma/BM25 一致。
+单个分块过期、撤回或重新批准都通过构建下一完整 generation 生效，不在 active generation 上原地删除，从而保持 Chroma/BM25 一致。为控制完整重建成本，embedding 按“模型身份 + 内容哈希”保存在 gitignore 数据目录并原子更新；缓存损坏时重新编码，不降低完整性门槛。
 
 ### 18.10 缓存、反馈和保留
 

@@ -1098,7 +1098,7 @@ TOOL_REGISTRY = {
 | 反馈 | `POST /answers/{id}/feedback` |
 | 审核 | 审核条目、版本、逐块批准、拒绝、撤回、复抓、发布重试、generation、来源规则建议 |
 
-SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。
+SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。事件提交 SQLite 后通过进程内通知立即唤醒 SSE；每 1 秒读取 SQLite 作为多进程和漏通知兜底，不再以 0.1 秒固定轮询。
 
 ### 本地 QA 适配
 
@@ -1116,6 +1116,7 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 3. `Crawl4AiClient` 只调用私有 adapter，Top 3 并行抓取；URL、DNS 和每跳重定向均执行 SSRF 防护与 robots/限速约束。
 4. `SourceTrustStore` 按精确 host/path 白名单分级。未知 `*.ustc.edu.cn` 只能获得 `ustc_domain` 标签，不能自动成为 `official_primary`。
 5. 一个有效官方一手来源，或两个相互独立且一致的可靠来源，才能支撑确定结论。证据冲突时单列“信息存在分歧”；不足时固定说明“暂未找到足够可靠的联网证据”并展示不足来源。
+6. `StructuredClaimExtractor` 默认复用 `LLM_MODEL`，也可由 `XIAOWO_EVIDENCE_EXTRACTOR_MODEL` 独立指定。联网 readiness 必须先通过合成公开文本的结构化输出与逐字引用探针；未配置、超时或格式不合格时保持 fail-closed，并返回可诊断的证据不足原因。
 
 整个 run 从创建起计算 20 秒硬上限：搜索 4 秒、证据 12 秒、生成到第 18 秒，最后 2 秒用于确定性收尾。达到证据门槛立即取消低优先级抓取。
 
@@ -1123,13 +1124,14 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 
 - 当前回答完成后只把实际引用过的公开快照、片段、脱敏主题、证据关系和抓取元数据写入持久队列；不保存原始问题、账号、个人资料、私密上下文或完整回答。
 - `python -m xiaowo_web.worker` 独立执行清洗、近重复检查、复抓和发布；worker 停止不影响聊天完成。
-- 审核者查看不可变原文、模型稿、人工版本、diff 和分块，只能逐块批准。模型不得自动批准、认定官方或解决冲突。
+- 审核者查看不可变原文、模型稿、人工版本、diff 和分块；每块必须明确为 `approved` 或 `rejected`，不能在仍有 `pending` 时发布，且至少一块为 `approved`。模型不得自动批准、认定官方或解决冲突。
 - 默认有效期：公告 7 天、动态办事信息 30 天、政策 90 天、稳定通识 180 天；到期退出有效检索但保留历史。
 - 来源白名单建议只导出 Git diff；实际等级变更必须修改 `config/source_trust.yaml`，经测试和 Git 审查后部署。
+- `approved` 是实际持久状态；发布 worker 领取关联任务后才转为 `pending_publish`。发布任务记录具体条目，失败只回写本任务目标。完成任务保留 7 天、死信保留 90 天，入队内容哈希墓碑和审核审计长期保留。
 
 ### Generation 发布约束
 
-批准内容构建新的不可变 Chroma/BM25 generation。两边写入与校验都成功后，`review.db` 才原子切换 active 指针；部分失败不得改变当前检索结果。
+批准内容构建新的不可变 Chroma/BM25 generation。两边写入与校验都成功后，`review.db` 才原子切换 active 指针；部分失败不得改变当前检索结果。worker 领取前合并同 namespace 的 queued 发布任务；Chroma embedding 按“模型身份 + 内容哈希”持久复用，仍完整构建不可变 generation。只保留 active、previous 和 7 天清理窗内的孤儿版本。
 
 回滚 API `POST /api/v1/admin/generations/rollback` 只切换到上一完整 generation。切换前同时验证 manifest、BM25 文件、Chroma collection 名称、generation 元数据、文档数以及 `(document_id, content_hash)` 指纹；任何失败返回 `GENERATION_INTEGRITY_INVALID` 并保持 active 指针不变。
 

@@ -64,3 +64,51 @@ def test_extractor_rejects_prompt_control_text_and_invalid_schema() -> None:
 
     invalid = StructuredClaimExtractor(lambda _prompt: {"claims": [{"text": "缺少证据字段"}]})
     assert asyncio.run(invalid.extract("公开问题", [("s-one", _page("公开正文内容足够长以便测试。"))])) == []
+
+
+def test_extractor_unwraps_message_content_blocks() -> None:
+    text = "公开页面逐字说明该服务仅在工作日开放办理。"
+
+    class Message:
+        content = [{
+            "type": "text",
+            "text": (
+                '{"claims":[{"text":"服务仅在工作日开放办理。","evidence":['
+                f'{{"source_id":"s-one","relation":"supports","quote":"{text}"}}]}}]}}'
+            ),
+        }]
+
+    extractor = StructuredClaimExtractor(lambda _prompt: Message())
+    claims = asyncio.run(extractor.extract("何时开放", [("s-one", _page(text))]))
+    assert [claim.text for claim in claims] == ["服务仅在工作日开放办理。"]
+
+
+def test_configured_default_model_path_passes_the_capability_probe(monkeypatch) -> None:
+    class StructuredModel:
+        def invoke(self, _prompt: str) -> dict:
+            quote = "公开探针文本：办理时间为九月一日。"
+            return {
+                "claims": [{
+                    "text": "办理时间为九月一日。",
+                    "evidence": [{
+                        "source_id": "probe-source",
+                        "relation": "supports",
+                        "quote": quote,
+                    }],
+                }],
+            }
+
+    class Model:
+        def with_structured_output(self, _schema, *, method: str):
+            assert method == "json_mode"
+            return StructuredModel()
+
+    def create_llm(*, temperature: int, model: str):
+        assert temperature == 0
+        assert model == "fixture-structured-model"
+        return Model()
+
+    monkeypatch.setattr("utils.llm_client.create_llm", create_llm)
+    extractor = StructuredClaimExtractor(model_name="fixture-structured-model")
+    assert asyncio.run(extractor.ready()) is True
+    assert extractor.last_error_code is None

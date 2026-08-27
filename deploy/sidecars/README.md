@@ -7,12 +7,12 @@
 - SearXNG 和小蜗 Crawl4AI adapter 只绑定服务器回环地址。
 - Crawl4AI 上游不发布宿主机端口，不接收浏览器、CAS 或校内凭证。
 - adapter 固定核验 Crawl4AI `v0.9.2`，并只发送由模板生成的安全配置。
-- `XIAOWO_CRAWL4AI_RUNTIME_ATTESTED` 默认是 `false`。未完成运行探针时 adapter 健康状态为 `degraded`，小蜗 readiness 不会放行联网。
+- `XIAOWO_CRAWL4AI_RUNTIME_ATTESTED` 默认是 `false`。未完成运行探针时 adapter 健康状态为 `degraded`，小蜗 readiness 不会放行联网。Crawl4AI LLM extraction 在本 sidecar profile 中显式禁用；结构化声明提取由小蜗单独配置和探测。
 - 正式部署应把镜像标签解析并固定为相同版本的 registry digest；变更镜像后重新探针。
 
 ## 服务器部署
 
-1. 将 `.env.example` 复制为本目录 `.env`，分别生成三个独立随机密钥。
+1. 将 `.env.example` 复制为本目录 `.env`，分别生成三个独立随机密钥；`CRAWL4AI_REDIS_PASSWORD` 是唯一 Redis 密码来源，compose 会将它映射为上游要求的 `REDIS_PASSWORD`。
 2. 检查 `compose.yml` 中镜像版本和回环端口；不要把 `8080`、`11235` 改成公网绑定。
 3. 在服务器运行 `docker compose --env-file .env -f compose.yml config`，先检查展开后的配置。
 4. 启动 sidecar 后，在 adapter 容器内运行：
@@ -29,7 +29,7 @@ Invoke-RestMethod http://127.0.0.1:8080/search?q=USTC&format=json
 Invoke-RestMethod http://127.0.0.1:11235/health
 ```
 
-adapter 健康响应必须同时包含 `egress_protection=true`、`robots=true`、`allow_internal_urls=false`、`peer_ip_verification=true` 和 `upstream_version=0.9.2`。随后才可在小蜗 `.env` 中启用：
+adapter 健康响应必须同时包含 `egress_protection=true`、`robots=true`、`allow_internal_urls=false`、`peer_ip_verification=true`、`llm_disabled=true` 和 `upstream_version=0.9.2`。随后才可在小蜗 `.env` 中启用：
 
 ```text
 XIAOWO_WEB_SEARCH_ENABLED=true

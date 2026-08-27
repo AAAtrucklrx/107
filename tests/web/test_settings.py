@@ -77,3 +77,17 @@ def test_invalid_proxy_and_unapproved_sidecar_are_rejected() -> None:
 def test_numeric_configuration_errors_are_stable() -> None:
     with pytest.raises(SettingsError):
         WebSettings.from_env(_base(XIAOWO_MAX_CONCURRENT_RUNS="many"))
+
+
+def test_evidence_extractor_reuses_the_configured_llm_unless_overridden() -> None:
+    defaulted = WebSettings.from_env(_base())
+    assert defaulted.evidence_extractor_model == "deepseek-v4-flash"
+
+    inherited = WebSettings.from_env(_base(LLM_MODEL="fixture-chat-model"))
+    assert inherited.evidence_extractor_model == "fixture-chat-model"
+
+    overridden = WebSettings.from_env(_base(
+        LLM_MODEL="fixture-chat-model",
+        XIAOWO_EVIDENCE_EXTRACTOR_MODEL="fixture-evidence-model",
+    ))
+    assert overridden.evidence_extractor_model == "fixture-evidence-model"

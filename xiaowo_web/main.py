@@ -73,7 +73,11 @@ def create_app(
                 resolved_settings,
                 search_client,
                 crawl_client,
-                extractor=StructuredClaimExtractor(),
+                extractor=StructuredClaimExtractor(
+                    model_name=resolved_settings.evidence_extractor_model,
+                    enabled=resolved_settings.evidence_extractor_enabled,
+                    probe_timeout_seconds=resolved_settings.evidence_extractor_probe_timeout_seconds,
+                ),
             )
             resolved_runner = EvidenceAwareRunner(local_runner, evidence_pipeline)
             if resolved_health_provider is None:

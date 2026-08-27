@@ -24,6 +24,10 @@ async def ready(request: Request) -> JSONResponse:
     if settings.web_search_enabled:
         provider = request.app.state.sidecar_health_provider
         checks["web_evidence"] = bool(provider and await provider.ready())
+        pipeline = request.app.state.evidence_pipeline
+        checks["evidence_extractor"] = bool(
+            pipeline is not None and await pipeline.extractor.ready()
+        )
     status = "ready" if all(checks.values()) else "not_ready"
     return JSONResponse(
         status_code=200 if status == "ready" else 503,

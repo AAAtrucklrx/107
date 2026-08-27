@@ -54,6 +54,8 @@ class WebStore:
         self.db_path = Path(settings.app_db_path)
         self.schema_path = Path(settings.schema_web_path)
         self._write_lock = threading.RLock()
+        self._event_condition = threading.Condition()
+        self._event_sequences: dict[str, int] = {}
         self._cipher = FieldCipher(settings.data_key)
 
     def initialize(self) -> None:
@@ -345,6 +347,7 @@ class WebStore:
             sequence = self._next_sequence(conn, run_id)
             self._insert_event(conn, run_id, sequence, event_type, payload, timestamp)
             conn.commit()
+        self._notify_event(run_id, sequence)
         return self._event_envelope(run_id, sequence, event_type, payload, timestamp)
 
     def finish_run(
@@ -379,7 +382,34 @@ class WebStore:
                 (status, error_code, timestamp, run_id),
             )
             conn.commit()
+        self._notify_event(run_id, sequence)
         return self._event_envelope(run_id, sequence, event_type, payload, timestamp)
+
+    def _notify_event(self, run_id: str, sequence: int) -> None:
+        with self._event_condition:
+            self._event_sequences[run_id] = max(
+                sequence,
+                self._event_sequences.get(run_id, 0),
+            )
+            self._event_condition.notify_all()
+
+    def wait_for_event(
+        self,
+        run_id: str,
+        after_sequence: int,
+        timeout: float | None = None,
+    ) -> bool:
+        """Wait for an in-process event; timeout provides the SQLite fallback."""
+        wait_seconds = (
+            self.settings.event_wait_timeout_seconds
+            if timeout is None
+            else max(0.0, timeout)
+        )
+        with self._event_condition:
+            return self._event_condition.wait_for(
+                lambda: self._event_sequences.get(run_id, 0) > after_sequence,
+                timeout=wait_seconds,
+            )
 
     @staticmethod
     def _next_sequence(conn: sqlite3.Connection, run_id: str) -> int:
@@ -802,6 +832,7 @@ class WebStore:
 
     def prune_expired(self, *, now: float | None = None) -> None:
         timestamp = time.time() if now is None else now
+        expired_run_ids: list[str] = []
         with self._write_lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute(
@@ -817,8 +848,19 @@ class WebStore:
                 """,
                 (timestamp, timestamp + RUN_TOMBSTONE_RETENTION_SECONDS, timestamp),
             )
+            expired_run_ids = [
+                str(row["run_id"])
+                for row in conn.execute(
+                    "SELECT run_id FROM web_chat_runs WHERE expires_at <= ?",
+                    (timestamp,),
+                ).fetchall()
+            ]
             conn.execute("DELETE FROM web_chat_runs WHERE expires_at <= ?", (timestamp,))
             conn.execute("DELETE FROM web_run_tombstones WHERE purge_at <= ?", (timestamp,))
             conn.execute("DELETE FROM web_conversations WHERE expires_at <= ?", (timestamp,))
             conn.execute("DELETE FROM answer_feedback WHERE expires_at <= ?", (timestamp,))
             conn.commit()
+        if expired_run_ids:
+            with self._event_condition:
+                for run_id in expired_run_ids:
+                    self._event_sequences.pop(run_id, None)

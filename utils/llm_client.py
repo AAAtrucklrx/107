@@ -43,7 +43,7 @@ class LLMUnavailableError(ConnectionError):
     """熔断窗内快速失败（区别于真实网络异常，供调用方直接走降级）。"""
 
 
-def create_llm(temperature: float = None) -> ChatOpenAI:
+def create_llm(temperature: float = None, model: str | None = None) -> ChatOpenAI:
     """
     创建 LLM 实例，对接校内平台。
 
@@ -56,7 +56,7 @@ def create_llm(temperature: float = None) -> ChatOpenAI:
     return ChatOpenAI(
         base_url=LLM_CONFIG["base_url"],
         api_key=LLM_CONFIG["api_key"],
-        model=LLM_CONFIG["model"],
+        model=model or LLM_CONFIG["model"],
         temperature=temp,
         max_tokens=LLM_CONFIG["max_tokens"],
         # connect 单独 5s：防火墙丢包型故障快速失败；读超时保持全局配置

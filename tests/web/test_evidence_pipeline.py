@@ -110,6 +110,7 @@ def test_found_general_source_stays_insufficient_and_is_listed(tmp_path) -> None
         FakeSearch([SearchHit("一般来源", url)], partial=True),
         FakeCrawler({url: _page(url, markdown)}),
         url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
     )
     answer = asyncio.run(pipeline.answer("查询公开背景信息"))
     assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
@@ -126,6 +127,7 @@ def test_private_redirect_target_is_discarded(tmp_path) -> None:
         FakeSearch([SearchHit("重定向", url)]),
         FakeCrawler({url: _page(url, "公开页面正文足够长。", final_url="http://127.0.0.1/admin")}),
         url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
     )
     answer = asyncio.run(pipeline.answer("查询公开重定向信息"))
     assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
@@ -140,6 +142,7 @@ def test_sensitive_query_never_reaches_search(tmp_path) -> None:
         search,
         FakeCrawler({}),
         url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
     )
     answer = asyncio.run(pipeline.answer("帮我查我的成绩"))
     assert answer.terminal_reason == "PERSONAL_QUERY"

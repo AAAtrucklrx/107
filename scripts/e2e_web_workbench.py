@@ -125,6 +125,14 @@ def check_demo(browser) -> None:
 
     page.get_by_role("tab", name="内容队列").click()
     page.locator(".review-queue-item").first.click()
+    page.get_by_role("tab", name=re.compile(r"分块 \d+")).click()
+    decision = page.get_by_role("group", name=re.compile(r"分块 \d+ 审核决定")).first
+    expect(decision.get_by_role("button", name="待定")).to_be_visible()
+    expect(decision.get_by_role("button", name="批准")).to_be_visible()
+    expect(decision.get_by_role("button", name="排除")).to_be_visible()
+    assert_layout(page)
+    page.screenshot(path=str(SCREENSHOTS / "demo-review-chunks-desktop-light.png"), full_page=False)
+
     expect(page.get_by_role("tab", name="来源治理")).to_be_visible()
     page.get_by_role("tab", name="来源治理").click()
     expect(page.get_by_role("heading", name="来源规则建议")).to_be_visible()
@@ -143,6 +151,14 @@ def check_demo(browser) -> None:
     expect(page.get_by_role("heading", name="来源规则建议")).to_be_visible()
     assert_layout(page)
     page.screenshot(path=str(SCREENSHOTS / "demo-review-source-mobile-dark.png"), full_page=False)
+
+    page.get_by_role("tab", name=re.compile(r"分块 \d+")).click()
+    decision = page.get_by_role("group", name=re.compile(r"分块 \d+ 审核决定")).first
+    expect(decision.get_by_role("button", name="待定")).to_be_visible()
+    expect(decision.get_by_role("button", name="批准")).to_be_visible()
+    expect(decision.get_by_role("button", name="排除")).to_be_visible()
+    assert_layout(page)
+    page.screenshot(path=str(SCREENSHOTS / "demo-review-chunks-mobile-dark.png"), full_page=False)
     assert not errors, errors
     context.close()
 

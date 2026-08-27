@@ -7,7 +7,7 @@ import re
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ChatRunCreate(BaseModel):
@@ -42,7 +42,18 @@ class ReviewEdit(BaseModel):
 class ChunkApproval(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    approved: bool
+    approved: bool | None = None
+    approval_status: Literal["pending", "approved", "rejected"] | None = None
+
+    @model_validator(mode="after")
+    def require_consistent_decision(self) -> "ChunkApproval":
+        if self.approved is None and self.approval_status is None:
+            raise ValueError("chunk approval decision is required")
+        if self.approved is not None and self.approval_status is not None:
+            legacy_status = "approved" if self.approved else "pending"
+            if legacy_status != self.approval_status:
+                raise ValueError("approved and approval_status disagree")
+        return self
 
 
 class ReviewApproval(BaseModel):

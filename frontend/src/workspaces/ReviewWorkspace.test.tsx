@@ -42,6 +42,7 @@ const detail: ReviewItemDetail = {
     version_id: "version-model",
     position: 0,
     content_text: "模型清洗后的公开资料。",
+    approval_status: "pending",
     approved: false,
     expires_at: null,
   }],
@@ -142,4 +143,25 @@ test("generation governance shows isolated pointers and confirms rollback", asyn
     expect.objectContaining({ method: "POST" }),
   ));
   expect(await screen.findByText("已切换到 gen-previous。")).toBeInTheDocument();
+});
+
+test("chunk decisions send an explicit three-state approval value", async () => {
+  const user = userEvent.setup();
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("button", { name: /科大新栏目公开资料/ }));
+  await user.click(screen.getByRole("tab", { name: /分块 1/ }));
+  expect(screen.getByRole("button", { name: "待定" })).toHaveAttribute("data-active", "true");
+
+  await user.click(screen.getByRole("button", { name: "批准" }));
+  await waitFor(() => expect(apiMutationMock).toHaveBeenCalledWith(
+    "/admin/review-items/item-demo/chunks/chunk-one",
+    "csrf-demo",
+    expect.objectContaining({ method: "POST" }),
+  ));
+  const approvalCall = apiMutationMock.mock.calls.find(
+    (call) => call[0] === "/admin/review-items/item-demo/chunks/chunk-one",
+  );
+  expect(JSON.parse(approvalCall?.[2]?.body as string)).toEqual({
+    approval_status: "approved",
+  });
 });

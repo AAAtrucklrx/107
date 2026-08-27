@@ -8,13 +8,22 @@ app:
   timeout_keep_alive: 30
 
 llm:
-  provider: "openai/gpt-4o-mini"
+  # Xiaowo only uses the public-text crawl contract. LLM extraction is
+  # intentionally disabled; claim extraction runs in Xiaowo separately.
+  enabled: false
+  provider: "disabled"
+  allowed_providers: []
+  api_key: null
+  base_url: null
 
 redis:
   host: "localhost"
   port: 6379
   db: 0
-  password: ""
+  # The entrypoint receives REDIS_PASSWORD from compose. Never put the secret
+  # itself in this tracked profile.
+  password: null
+  password_env: "REDIS_PASSWORD"
   task_ttl_seconds: 3600
   ssl: false
   ssl_cert_reqs: null

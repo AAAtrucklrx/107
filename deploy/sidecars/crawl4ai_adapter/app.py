@@ -52,6 +52,7 @@ class AdapterSettings:
     runtime_attested: bool = False
     profile_path: Path = DEFAULT_PROFILE_PATH
     timeout_seconds: float = 9.0
+    redis_password_configured: bool = False
 
     @classmethod
     def from_env(cls) -> "AdapterSettings":
@@ -68,6 +69,7 @@ class AdapterSettings:
                 "XIAOWO_CRAWL4AI_PROFILE_PATH", str(DEFAULT_PROFILE_PATH),
             )),
             timeout_seconds=float(os.environ.get("CRAWL4AI_UPSTREAM_TIMEOUT", "9")),
+            redis_password_configured=_env_bool("CRAWL4AI_REDIS_PASSWORD_CONFIGURED"),
         )
 
 
@@ -117,7 +119,7 @@ def _validate_public_url(value: str) -> str:
     return value
 
 
-def _profile_is_hardened(path: Path) -> bool:
+def _profile_is_hardened(path: Path, *, redis_password_configured: bool = False) -> bool:
     try:
         profile = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         crawler = profile["crawler"]
@@ -125,9 +127,24 @@ def _profile_is_hardened(path: Path) -> bool:
         base_config = crawler["base_config"]
         security = profile["security"]
         limits = profile["limits"]
+        llm = profile["llm"]
+        redis = profile["redis"]
     except (OSError, KeyError, TypeError, yaml.YAMLError):
         return False
     extra_args = {str(item) for item in browser.get("extra_args") or []}
+    provider = str(llm.get("provider") or "").strip().casefold()
+    llm_disabled = bool(
+        llm.get("enabled") is False
+        and provider in {"", "disabled", "none"}
+        and llm.get("allowed_providers") == []
+        and not llm.get("api_key")
+        and not llm.get("base_url")
+    )
+    redis_contract = bool(
+        redis.get("password") in (None, "")
+        and redis.get("password_env") == "REDIS_PASSWORD"
+        and redis_password_configured
+    )
     return bool(
         base_config.get("check_robots_txt") is True
         and crawler.get("rate_limiter", {}).get("enabled") is True
@@ -137,6 +154,25 @@ def _profile_is_hardened(path: Path) -> bool:
         and "--ignore-certificate-errors" not in extra_args
         and "--allow-insecure-localhost" not in extra_args
         and "--disable-web-security" not in extra_args
+        and llm_disabled
+        and redis_contract
+    )
+
+
+def _profile_llm_disabled(path: Path) -> bool:
+    """Report the LLM posture separately without exposing any secret value."""
+    try:
+        profile = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        llm = profile["llm"]
+    except (OSError, KeyError, TypeError, yaml.YAMLError):
+        return False
+    provider = str(llm.get("provider") or "").strip().casefold()
+    return bool(
+        llm.get("enabled") is False
+        and provider in {"", "disabled", "none"}
+        and llm.get("allowed_providers") == []
+        and not llm.get("api_key")
+        and not llm.get("base_url")
     )
 
 
@@ -199,7 +235,10 @@ class Crawl4AiAdapter:
             upstream_ok = payload.get("status") == "ok"
         except (httpx.HTTPError, ValueError, AttributeError):
             upstream_ok = False
-        profile_ok = _profile_is_hardened(self.settings.profile_path)
+        profile_ok = _profile_is_hardened(
+            self.settings.profile_path,
+            redis_password_configured=self.settings.redis_password_configured,
+        )
         ready = bool(
             upstream_ok
             and upstream_version == SUPPORTED_VERSION
@@ -219,6 +258,8 @@ class Crawl4AiAdapter:
             "peer_ip_verification": ready,
             "runtime_attested": self.settings.runtime_attested,
             "profile_valid": profile_ok,
+            "redis_password_configured": self.settings.redis_password_configured,
+            "llm_disabled": _profile_llm_disabled(self.settings.profile_path),
         }
 
     async def crawl(self, request: CrawlRequest) -> dict[str, Any]:

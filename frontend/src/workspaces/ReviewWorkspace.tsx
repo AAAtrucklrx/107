@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   ChevronRight,
+  CircleDashed,
   Clock3,
   Database,
   Download,
@@ -89,6 +90,10 @@ function formatTimestamp(value: number | string | null): string {
 function currentChunks(detail: ReviewItemDetail): ReviewChunk[] {
   const versionIds = new Set(detail.versions.filter((version) => version.version_number === detail.current_version).map((version) => version.version_id));
   return detail.chunks.filter((chunk) => versionIds.has(chunk.version_id));
+}
+
+function chunkApprovalStatus(chunk: ReviewChunk): "pending" | "approved" | "rejected" {
+  return chunk.approval_status ?? (Boolean(chunk.approved) ? "approved" : "pending");
 }
 
 function ReviewQueue({ items, selected, filter, onFilter, onSelect }: {
@@ -305,7 +310,9 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   }, [session.csrf_token]);
 
   const chunks = useMemo(() => detail ? currentChunks(detail) : [], [detail]);
-  const allApproved = chunks.length > 0 && chunks.every((chunk) => Boolean(chunk.approved));
+  const allReviewed = chunks.length > 0 && chunks.every((chunk) => chunkApprovalStatus(chunk) !== "pending");
+  const hasApproved = chunks.some((chunk) => chunkApprovalStatus(chunk) === "approved");
+  const decisionReady = allReviewed && hasApproved;
   const editable = detail?.status === "draft" || detail?.status === "in_review";
   const selectedCategory = categories.find((item) => item.value === category) ?? categories[0];
   const proposalReady = Boolean(
@@ -420,10 +427,20 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                 <Tabs.Content value="chunks">
                   <div className="review-chunks">
                     {chunks.map((chunk) => (
-                      <article className="review-chunk" data-approved={Boolean(chunk.approved)} key={chunk.chunk_id}>
-                        <div><span>分块 {chunk.position + 1}</span>{Boolean(chunk.approved) && <em><Check size={12} />已批准</em>}</div>
+                      <article className="review-chunk" data-approval-status={chunkApprovalStatus(chunk)} key={chunk.chunk_id}>
+                        <div>
+                          <span>分块 {chunk.position + 1}</span>
+                          {chunkApprovalStatus(chunk) === "approved" && <em><Check size={12} />已批准</em>}
+                          {chunkApprovalStatus(chunk) === "rejected" && <em data-rejected="true"><X size={12} />已排除</em>}
+                        </div>
                         <p>{chunk.content_text}</p>
-                        {editable && <button className={chunk.approved ? "secondary-button" : "command-button"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approved: !Boolean(chunk.approved) })}>{chunk.approved ? <><X size={14} />取消批准</> : <><Check size={14} />批准该分块</>}</button>}
+                        {editable && (
+                          <div className="chunk-decision" role="group" aria-label={`分块 ${chunk.position + 1} 审核决定`}>
+                            <button type="button" data-active={chunkApprovalStatus(chunk) === "pending"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "pending" })}><CircleDashed size={14} />待定</button>
+                            <button type="button" data-active={chunkApprovalStatus(chunk) === "approved"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "approved" })}><Check size={14} />批准</button>
+                            <button type="button" data-active={chunkApprovalStatus(chunk) === "rejected"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "rejected" })}><X size={14} />排除</button>
+                          </div>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -458,9 +475,9 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                   <label>有效期<div className="ttl-input"><Clock3 size={14} /><input type="number" min={1} max={selectedCategory.maxTtl} value={ttl} onChange={(event) => setTtl(Number(event.target.value))} /><span>天 / 上限 {selectedCategory.maxTtl}</span></div></label>
                   <div className="review-decision__actions">
                     <button className="secondary-button secondary-button--danger" disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/reject`)}><X size={15} />拒绝</button>
-                    <button className="command-button" disabled={busy || !allApproved || ttl < 1 || ttl > selectedCategory.maxTtl} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/approve`, { category, ttl_days: ttl })}><ShieldCheck size={15} />批准已选分块</button>
+                    <button className="command-button" disabled={busy || !decisionReady || ttl < 1 || ttl > selectedCategory.maxTtl} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/approve`, { category, ttl_days: ttl })}><ShieldCheck size={15} />批准已选分块</button>
                   </div>
-                  {!allApproved && <p className="review-decision__hint">请逐块核验并批准；不提供批量批准。</p>}
+                  {!decisionReady && <p className="review-decision__hint">每个分块都需明确批准或排除，且至少批准一个分块。</p>}
                 </section>
               )}
             </>

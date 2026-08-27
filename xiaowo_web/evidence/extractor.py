@@ -13,6 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from xiaowo_web.evidence.models import CrawledPage, ExtractedClaim, ExtractedEvidence
 
 
+class ClaimExtractionUnavailable(RuntimeError):
+    """The configured structured extractor cannot safely produce evidence."""
+
+
 _CONTROL_TEXT = re.compile(
     r"(?:ignore\s+(?:all\s+)?previous|system\s+prompt|developer\s+message|"
     r"忽略.{0,8}(?:之前|以上).{0,8}(?:指令|提示)|调用.{0,6}(?:工具|function)|"
@@ -50,10 +54,16 @@ class _ExtractionPayload(BaseModel):
 def _coerce_payload(value: Any) -> _ExtractionPayload:
     if isinstance(value, _ExtractionPayload):
         return value
-    if hasattr(value, "model_dump"):
-        value = value.model_dump()
     if hasattr(value, "content"):
         value = value.content
+        if isinstance(value, list):
+            value = "".join(
+                str(block.get("text") or block.get("content") or "")
+                if isinstance(block, dict) else str(block)
+                for block in value
+            )
+    elif hasattr(value, "model_dump"):
+        value = value.model_dump()
     if isinstance(value, str):
         raw = value.strip()
         fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
@@ -74,12 +84,76 @@ class StructuredClaimExtractor:
         self,
         invoke: Callable[[str], Any] | None = None,
         *,
+        model_name: str | None = None,
+        enabled: bool = True,
         max_page_chars: int = 12_000,
         max_total_chars: int = 28_000,
+        probe_timeout_seconds: float = 4.0,
     ) -> None:
         self._invoke = invoke or self._invoke_default_model
+        self._injected = invoke is not None
+        self.model_name = (model_name or "").strip()
+        self.enabled = bool(enabled)
+        self.probe_timeout_seconds = probe_timeout_seconds
         self.max_page_chars = max_page_chars
         self.max_total_chars = max_total_chars
+        self.last_error_code: str | None = None
+        self.last_error_detail: str | None = None
+        self._ready_until = 0.0
+        self._ready_result: bool | None = None
+
+    @property
+    def configured(self) -> bool:
+        # Injected callables are used by tests and controlled deployments.  The
+        # default model path must name a model explicitly.
+        return self.enabled and (self._injected or bool(self.model_name))
+
+    async def ready(self) -> bool:
+        """Run a bounded, synthetic public-text capability probe."""
+        now = asyncio.get_running_loop().time()
+        if self._ready_result is not None and now < self._ready_until:
+            return self._ready_result
+        if not self.configured:
+            self._set_error("EXTRACTOR_NOT_CONFIGURED", "未配置经过验证的结构化证据模型")
+            self._ready_result = False
+            self._ready_until = now + 30
+            return False
+        probe_page = CrawledPage(
+            requested_url="https://example.com/xiaowo-probe",
+            final_url="https://example.com/xiaowo-probe",
+            title="公开探针",
+            markdown="公开探针文本：办理时间为九月一日。",
+            status_code=200,
+            content_type="text/html",
+            fetched_at="2026-01-01T00:00:00Z",
+            published_at=None,
+            content_hash="probe",
+            robots_allowed=True,
+            peer_ip_verified=True,
+        )
+        try:
+            result = await asyncio.wait_for(
+                self.extract("公开探针问题", [("probe-source", probe_page)]),
+                timeout=self.probe_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._set_error("EXTRACTOR_PROBE_FAILED", type(exc).__name__)
+            self._ready_result = False
+            self._ready_until = now + 10
+            return False
+        if not result:
+            if self.last_error_code is None:
+                self._set_error("EXTRACTOR_PROBE_EMPTY", "结构化模型未返回可验证声明")
+            self._ready_result = False
+            self._ready_until = now + 10
+            return False
+        self.last_error_code = None
+        self.last_error_detail = None
+        self._ready_result = True
+        self._ready_until = now + 60
+        return True
 
     async def extract(
         self,
@@ -87,13 +161,23 @@ class StructuredClaimExtractor:
         pages: list[tuple[str, CrawledPage]],
     ) -> list[ExtractedClaim]:
         prompt, visible_pages = self._prompt(question, pages)
+        if not self.configured:
+            self._set_error("EXTRACTOR_NOT_CONFIGURED", "未配置经过验证的结构化证据模型")
+            return []
         try:
             raw = await asyncio.to_thread(self._invoke, prompt)
             payload = _coerce_payload(raw)
-        except (ValidationError, ValueError, TypeError, json.JSONDecodeError, Exception) as exc:
-            if isinstance(exc, asyncio.CancelledError):
-                raise
+        except asyncio.CancelledError:
+            raise
+        except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._set_error("EXTRACTOR_INVALID_RESPONSE", type(exc).__name__)
             return []
+        except Exception as exc:
+            self._set_error("EXTRACTOR_CALL_FAILED", type(exc).__name__)
+            return []
+
+        self.last_error_code = None
+        self.last_error_detail = None
 
         results: list[ExtractedClaim] = []
         for claim in payload.claims:
@@ -119,6 +203,10 @@ class StructuredClaimExtractor:
             if evidence:
                 results.append(ExtractedClaim(text=text, evidence=tuple(evidence)))
         return results[:12]
+
+    def _set_error(self, code: str, detail: str) -> None:
+        self.last_error_code = code
+        self.last_error_detail = detail[:120]
 
     def _prompt(
         self,
@@ -156,10 +244,11 @@ class StructuredClaimExtractor:
 """
         return prompt, visible_pages
 
-    @staticmethod
-    def _invoke_default_model(prompt: str) -> Any:
+    def _invoke_default_model(self, prompt: str) -> Any:
+        if not self.model_name:
+            raise ClaimExtractionUnavailable("structured extractor model is not configured")
         from utils.llm_client import create_llm
 
-        model = create_llm(temperature=0)
+        model = create_llm(temperature=0, model=self.model_name)
         structured = model.with_structured_output(_ExtractionPayload, method="json_mode")
         return structured.invoke(prompt)
