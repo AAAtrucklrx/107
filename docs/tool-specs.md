@@ -1031,7 +1031,7 @@ TOOL_REGISTRY = {
 | 功能 | 按场景给出校园官方系统/平台跳转入口（强操作类诉求：选退课/评教/缴费等） |
 | 参数 | `scene: str`（场景描述，如"退课""交学费""评教"） |
 | 返回 | `{"found": true, "name", "url", "description", "category", "matched_keywords", "source": "官方"}`；无匹配 `found=false` + 提示禁止编造 URL |
-| 数据源 | `config/links.yaml`（19 条已核实官方链接，六分类 + 场景关键词；与校园导航页共用） |
+| 数据源 | `config/links.yaml`（19 条已核实官方链接，六分类 + 场景关键词；8 个高频入口另带 `featured/priority`；与校园服务页共用） |
 | 约束 | THINK 规则 21：URL 只能来自本工具返回或知识库来源；找不到入口如实说明 |
 
 ### 28. query_activities（tools/activity_tools.py）
@@ -1079,7 +1079,7 @@ TOOL_REGISTRY = {
 ### Web 运行模式
 
 - `XIAOWO_AUTH_MODE` 只能为 `anonymous`、`demo`、`cas`，模式互斥。
-- demo 身份固定为 `PB25111691 / 测试 / 人工智能 / 2025级`；demo 管理员只操作 `namespace=demo`，不能发布 production。
+- demo 身份固定为 `PB25111691 / 测试 / 计算机科学与技术 / 2025级`；demo 管理员只操作 `namespace=demo`，不能发布 production。
 - HTTP production 只允许 anonymous，个人学业与审核 API 固定拒绝访问。
 - CAS 模式只在精确可信的 HTTPS `XIAOWO_PUBLIC_ORIGIN` 下启用；专业、年级、成绩、课表和培养方案只取当前认证学号的数据。
 

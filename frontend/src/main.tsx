@@ -1,8 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource-variable/noto-sans-sc";
-import "@fontsource-variable/noto-serif-sc";
-import "./index.css";
+import "./catalog.css";
 import { App } from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

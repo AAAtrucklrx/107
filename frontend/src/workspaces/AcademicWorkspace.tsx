@@ -1,7 +1,7 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { BookOpenCheck, CalendarDays, GraduationCap, ListChecks, TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { AskXiaowoButton, Limitations, SourceBadge, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
+import { AskXiaowoButton, Limitations, SourceBadge, WorkspaceEmpty, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
 import { apiGet } from "../lib/api";
 import type {
   AcademicCourses,
@@ -19,11 +19,13 @@ interface AcademicWorkspaceProps {
 }
 
 type AcademicData = {
-  overview: AcademicOverview;
-  program: AcademicProgram;
-  courses: AcademicCourses;
-  schedule: AcademicSchedule;
+  overview?: AcademicOverview;
+  program?: AcademicProgram;
+  courses?: AcademicCourses;
+  schedule?: AcademicSchedule;
 };
+
+type AcademicErrors = Partial<Record<keyof AcademicData, string>>;
 
 function valueOrDash(value: unknown): string {
   return value === null || value === undefined || value === "" ? "--" : String(value);
@@ -67,6 +69,9 @@ function sortGroups<T>(entries: [string, T[]][], keyFn: (s: string) => [number, 
 }
 
 function GradeTable({ rows }: { rows: AcademicCourses["grades"] }) {
+  if (!rows.length) {
+    return <WorkspaceEmpty title="暂无成绩记录" detail="当前数据源没有返回可展示的成绩。" />;
+  }
   const groups = new Map<string, GradeRecord[]>();
   for (const row of rows) {
     const key = row.semester || "未标注学期";
@@ -78,7 +83,7 @@ function GradeTable({ rows }: { rows: AcademicCourses["grades"] }) {
       {ordered.map(([semester, list]) => (
         <section className="semester-group" key={semester}>
           <div className="semester-heading">
-            <div><span className="eyebrow">学期</span><h3>{semester}</h3></div>
+            <h3>{semester}</h3>
             <em>{list.length} 门</em>
           </div>
           <div className="data-table-wrap">
@@ -109,11 +114,11 @@ function OverviewView({ data, onAsk }: { data: AcademicOverview; onAsk: (questio
   ];
   return (
     <div className="academic-section">
-      <div className="metric-grid">
-        {metrics.map((metric) => <div className="metric-card" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></div>)}
+      <div className="data-band" aria-label="学业摘要">
+        {metrics.map((metric) => <div className="data-band__item" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></div>)}
       </div>
       <section className="content-section">
-        <div className="section-heading"><div><span className="eyebrow">成绩记录</span><h2>全部成绩</h2></div><AskXiaowoButton question="分析我的近期成绩和学习趋势" onAsk={onAsk} /></div>
+        <div className="section-heading"><h2>全部成绩</h2><AskXiaowoButton question="分析我的近期成绩和学习趋势" onAsk={onAsk} /></div>
         <GradeTable rows={data.grades ?? data.recent_grades} />
       </section>
       <Limitations items={data.limitations} />
@@ -129,20 +134,27 @@ function ProgramView({ data, onAsk }: { data: AcademicProgram; onAsk: (question:
     <div className="academic-section">
       {data.banner && <div className={`program-banner ${data.source.demo ? "program-banner--demo" : "program-banner--fallback"}`}><GraduationCap size={19} /><strong>{data.banner}</strong></div>}
       <div className="program-title-row">
-        <div><span className="eyebrow">{data.program.college || "培养方案"}</span><h2>{data.program.name || "当前培养方案"}</h2><p>{data.program.grade || ""}{total ? ` · 总学分 ${total}` : ""}</p></div>
+        <div><h2>{data.program.name || "当前培养方案"}</h2><p>{[data.program.college, data.program.grade, total ? `总学分 ${total}` : ""].filter(Boolean).join("，")}</p></div>
         <SourceBadge source={data.source} />
       </div>
-      <div className="module-grid">
-        {modules.map((module, index) => (
-          <div className="module-item" key={`${module.category}-${index}`}>
-            <span>{module.category || "未分类"}</span>
-            <strong>{valueOrDash(module.required_credits)}<small> 学分</small></strong>
-            <em>{valueOrDash(module.course_count)} 门课程</em>
+      {modules.length ? (
+        <div className="module-ledger" role="table" aria-label="培养方案模块统计">
+          <div className="module-ledger__header" role="row">
+            <span role="columnheader">课程模块</span>
+            <span role="columnheader">要求学分</span>
+            <span role="columnheader">课程数量</span>
           </div>
-        ))}
-      </div>
+          {modules.map((module, index) => (
+            <div className="module-ledger__row" role="row" key={`${module.category}-${index}`}>
+              <strong role="cell">{module.category || "未分类"}</strong>
+              <span role="cell"><b>{valueOrDash(module.required_credits)}</b> 学分</span>
+              <span role="cell"><b>{valueOrDash(module.course_count)}</b> 门课程</span>
+            </div>
+          ))}
+        </div>
+      ) : <WorkspaceEmpty title="暂无模块统计" detail="当前培养方案没有返回模块学分信息。" />}
       <section className="content-section">
-        <div className="section-heading"><div><span className="eyebrow">课程结构</span><h2>方案课程（按学期）</h2></div></div>
+        <div className="section-heading"><h2>方案课程（按学期）</h2></div>
         {(() => {
           const groups = new Map<string, ProgramCourse[]>();
           for (const course of courses) {
@@ -150,6 +162,7 @@ function ProgramView({ data, onAsk }: { data: AcademicProgram; onAsk: (question:
             groups.set(key, [...(groups.get(key) ?? []), course]);
           }
           const ordered = sortGroups([...groups.entries()], termSortKey);
+          if (!ordered.length) return <WorkspaceEmpty title="暂无方案课程" detail="当前方案没有可展示的课程记录。" />;
           return ordered.map(([term, list]) => (
             <div className="term-group" key={term}>
               <div className="term-heading"><strong>{termLabel(term)}</strong><em>{list.length} 门</em></div>
@@ -178,20 +191,20 @@ function CoursesView({ data, onAsk }: { data: AcademicCourses; onAsk: (question:
   return (
     <div className="academic-section">
       <section className="content-section content-section--first">
-        <div className="section-heading"><div><span className="eyebrow">本学期</span><h2>在修课程</h2></div><SourceBadge source={data.source} /></div>
-        <div className="course-list">
+        <div className="section-heading"><h2>在修课程</h2><SourceBadge source={data.source} /></div>
+        {data.courses.length ? <div className="course-list">
           {data.courses.map((course, index) => (
             <article className="course-row" key={`${course.course_code}-${index}`}>
               <div className="course-row__code">{course.course_code || "--"}</div>
-              <div className="course-row__main"><strong>{course.course_name || "未命名课程"}</strong><span>{[course.teacher, course.time, course.location].filter(Boolean).join(" · ")}</span></div>
+              <div className="course-row__main"><strong>{course.course_name || "未命名课程"}</strong><span>{[course.teacher, course.time, course.location].filter(Boolean).join("，")}</span></div>
               <div className="course-row__credit">{valueOrDash(course.credits)} 学分</div>
               <AskXiaowoButton compact question={`点评我正在修的课程“${course.course_name || course.course_code}”`} onAsk={onAsk} />
             </article>
           ))}
-        </div>
+        </div> : <WorkspaceEmpty title="暂无在修课程" detail="当前课业数据源没有返回本学期课程。" />}
       </section>
       <section className="content-section">
-        <div className="section-heading"><div><span className="eyebrow">历史记录</span><h2>全部成绩</h2></div></div>
+        <div className="section-heading"><h2>全部成绩</h2></div>
         <GradeTable rows={data.grades} />
       </section>
       <Limitations items={data.limitations} />
@@ -204,7 +217,7 @@ const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "�
 function ScheduleView({ data, onAsk }: { data: AcademicSchedule; onAsk: (question: string) => void }) {
   return (
     <div className="academic-section">
-      <div className="schedule-heading"><div><span className="eyebrow">当前学期</span><h2>{data.semester || "课表"}</h2></div><SourceBadge source={data.source} /></div>
+      <div className="schedule-heading"><div><h2>{data.semester || "课表"}</h2><span>当前学期</span></div><SourceBadge source={data.source} /></div>
       <div className="week-grid" aria-label="周课表">
         {weekdays.map((day) => (
           <section className="day-column" key={day}>
@@ -229,33 +242,48 @@ function ScheduleView({ data, onAsk }: { data: AcademicSchedule; onAsk: (questio
 }
 
 export function AcademicWorkspace({ session, onAsk }: AcademicWorkspaceProps) {
-  const [data, setData] = useState<AcademicData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<AcademicData>({});
+  const [errors, setErrors] = useState<AcademicErrors>({});
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [overview, program, courses, schedule] = await Promise.all([
-        apiGet<AcademicOverview>("/academic/overview"),
-        apiGet<AcademicProgram>("/academic/program"),
-        apiGet<AcademicCourses>("/academic/courses"),
-        apiGet<AcademicSchedule>("/academic/schedule"),
-      ]);
-      setData({ overview, program, courses, schedule });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "无法加载学业数据。" );
-    }
+    setLoading(true);
+    const [overview, program, courses, schedule] = await Promise.allSettled([
+      apiGet<AcademicOverview>("/academic/overview"),
+      apiGet<AcademicProgram>("/academic/program"),
+      apiGet<AcademicCourses>("/academic/courses"),
+      apiGet<AcademicSchedule>("/academic/schedule"),
+    ]);
+    const message = (reason: unknown, fallback: string) => reason instanceof Error ? reason.message : fallback;
+    setData({
+      ...(overview.status === "fulfilled" ? { overview: overview.value } : {}),
+      ...(program.status === "fulfilled" ? { program: program.value } : {}),
+      ...(courses.status === "fulfilled" ? { courses: courses.value } : {}),
+      ...(schedule.status === "fulfilled" ? { schedule: schedule.value } : {}),
+    });
+    setErrors({
+      ...(overview.status === "rejected" ? { overview: message(overview.reason, "无法加载学业总览。") } : {}),
+      ...(program.status === "rejected" ? { program: message(program.reason, "无法加载培养方案。") } : {}),
+      ...(courses.status === "rejected" ? { courses: message(courses.reason, "无法加载课程记录。") } : {}),
+      ...(schedule.status === "rejected" ? { schedule: message(schedule.reason, "无法加载课表。") } : {}),
+    });
+    setLoading(false);
   }, []);
 
   useEffect(() => { void load(); }, [load, session.principal.id]);
 
-  if (error) return <WorkspaceError message={error} onRetry={() => void load()} />;
-  if (!data) return <WorkspaceLoading label="正在读取你的学业档案" />;
+  const hasData = Object.values(data).some(Boolean);
+  if (loading && !hasData) return <WorkspaceLoading label="正在读取你的学业档案" />;
+  if (!hasData) return <WorkspaceError message={Object.values(errors)[0] ?? "无法加载学业数据。"} onRetry={() => void load()} />;
+  const identity = data.overview?.identity ?? session.principal.profile;
+  const unavailable = (key: keyof AcademicData) => (
+    <WorkspaceError message={errors[key] ?? "当前数据暂不可用。"} onRetry={() => void load()} />
+  );
   return (
     <Tabs.Root className="workspace-tabs academic-workspace" defaultValue="overview">
       <header className="workspace-header">
-        <div><span className="eyebrow">{data.overview.identity.major} · {data.overview.identity.grade}</span><h1>我的学业</h1></div>
-        <SourceBadge source={data.overview.source} />
+        <div><h1>我的学业</h1><p>{[identity?.major, identity?.grade].filter(Boolean).join(" · ") || "身份档案待确认"}</p></div>
+        {data.overview && <SourceBadge source={data.overview.source} />}
       </header>
       <Tabs.List className="tabs-list" aria-label="学业视图">
         <Tabs.Trigger value="overview"><TrendingUp size={15} />总览</Tabs.Trigger>
@@ -264,10 +292,10 @@ export function AcademicWorkspace({ session, onAsk }: AcademicWorkspaceProps) {
         <Tabs.Trigger value="schedule"><CalendarDays size={15} />课表</Tabs.Trigger>
       </Tabs.List>
       <div className="tabs-scroll">
-        <Tabs.Content value="overview"><OverviewView data={data.overview} onAsk={onAsk} /></Tabs.Content>
-        <Tabs.Content value="program"><ProgramView data={data.program} onAsk={onAsk} /></Tabs.Content>
-        <Tabs.Content value="courses"><CoursesView data={data.courses} onAsk={onAsk} /></Tabs.Content>
-        <Tabs.Content value="schedule"><ScheduleView data={data.schedule} onAsk={onAsk} /></Tabs.Content>
+        <Tabs.Content value="overview">{data.overview ? <OverviewView data={data.overview} onAsk={onAsk} /> : unavailable("overview")}</Tabs.Content>
+        <Tabs.Content value="program">{data.program ? <ProgramView data={data.program} onAsk={onAsk} /> : unavailable("program")}</Tabs.Content>
+        <Tabs.Content value="courses">{data.courses ? <CoursesView data={data.courses} onAsk={onAsk} /> : unavailable("courses")}</Tabs.Content>
+        <Tabs.Content value="schedule">{data.schedule ? <ScheduleView data={data.schedule} onAsk={onAsk} /> : unavailable("schedule")}</Tabs.Content>
       </div>
     </Tabs.Root>
   );

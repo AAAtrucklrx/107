@@ -32,13 +32,18 @@ class CampusService:
             ).casefold()
             if needle and needle not in haystack:
                 continue
+            priority = item.get("priority")
             items.append({
                 "name": item.get("name") or "",
                 "url": item.get("url") or "",
                 "description": item.get("description") or "",
                 "category": item.get("category") or "",
+                "featured": item.get("featured") is True,
+                "priority": priority if isinstance(priority, int) and priority > 0 else None,
             })
-        categories = sorted({str(item.get("category") or "") for item in links if item.get("category")})
+        categories = list(dict.fromkeys(
+            str(item.get("category") or "") for item in links if item.get("category")
+        ))
         return {
             "items": items,
             "categories": categories,
@@ -90,4 +95,3 @@ class CampusService:
             links = payload.get("links") or []
             self._links = [dict(item) for item in links if isinstance(item, dict)]
         return self._links
-

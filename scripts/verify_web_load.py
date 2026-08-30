@@ -108,7 +108,6 @@ async def _exercise(base_url: str, runner: GatedRunner, connections: int) -> dic
         connected = 0
         connected_lock = asyncio.Lock()
         all_connected = asyncio.Event()
-        release_streams = asyncio.Event()
 
         async with httpx.AsyncClient(
             base_url=base_url,
@@ -118,7 +117,10 @@ async def _exercise(base_url: str, runner: GatedRunner, connections: int) -> dic
         ) as streams:
             async def hold_stream(run: dict) -> None:
                 nonlocal connected
-                async with streams.stream("GET", run["events_url"]) as response:
+                events_path = str(run["events_url"])
+                if not events_path.startswith("/api/v1/"):
+                    events_path = f"/api/v1{events_path}"
+                async with streams.stream("GET", events_path) as response:
                     if response.status_code != 200:
                         body = await response.aread()
                         raise AssertionError(f"SSE 连接失败: {response.status_code} {body!r}")
@@ -126,13 +128,18 @@ async def _exercise(base_url: str, runner: GatedRunner, connections: int) -> dic
                         connected += 1
                         if connected == connections:
                             all_connected.set()
-                    await release_streams.wait()
                     terminal_seen = False
+                    event_types: list[str] = []
                     async for line in response.aiter_lines():
+                        if line.startswith("event: "):
+                            event_types.append(line.removeprefix("event: "))
                         if line == "event: answer.completed":
                             terminal_seen = True
                     if not terminal_seen:
-                        raise AssertionError("SSE 未以 answer.completed 完整结束")
+                        raise AssertionError(
+                            f"SSE 未以 answer.completed 完整结束: "
+                            f"run={run['run_id']}, events={event_types}",
+                        )
 
             stream_tasks = [asyncio.create_task(hold_stream(run)) for run in runs]
             try:
@@ -153,7 +160,6 @@ async def _exercise(base_url: str, runner: GatedRunner, connections: int) -> dic
                     raise AssertionError(f"超载未被稳定拒绝: {busy.status_code} {busy.text}")
 
                 runner.release.set()
-                release_streams.set()
                 await asyncio.wait_for(asyncio.gather(*stream_tasks), timeout=20)
                 return {
                     "sse_connections": connected,
@@ -163,7 +169,6 @@ async def _exercise(base_url: str, runner: GatedRunner, connections: int) -> dic
                 }
             finally:
                 runner.release.set()
-                release_streams.set()
                 for task in stream_tasks:
                     if not task.done():
                         task.cancel()

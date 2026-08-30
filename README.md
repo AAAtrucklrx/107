@@ -15,7 +15,7 @@
 | 🧭 培养方案 | 登录后只使用当前用户 CAS/成绩档案中的专业、年级和个人方案；个人方案不可用时可按已验证身份显示醒目标注的“专业通用参考，不是个人培养方案”，不会继承登录前的匿名预览选择 |
 | 📅 日程管理 | 日程记录与查询（自然语言时间解析："明天下午3点到4点"精确落点）、冲突检测、课表导入 |
 | 🎪 活动推荐 | **青春科大（第二课堂）实时数据**：对话直接查报名中活动；每日弹窗四因子个性化推荐（紧迫度/课表空闲/个性化/热度），个性化=平台兴趣标签+行为学习+**德智体美劳模块学时均衡补短板**；token 失效自动回退本地快照 |
-| 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；侧边栏"校园导航"页收录 19 条官方工具与网站 |
+| 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；校园服务工作区以 8 个配置驱动的高频方块和分类目录呈现 19 条官方工具与网站 |
 | 🧩 生态工具 | 学生自制工具投稿接入（Spec + 函数三步，`eco:` 前缀强制署名，见 `tools/ecosystem/README.md`） |
 | 🛡 可靠性 | LLM 平台断网/变慢三层降级：不假死、工具摘要直出、熔断不传染 |
 | 🧾 知识审核 | 回答完成后异步清洗公开证据；审核者逐块明确批准或排除，随后以不可变 Chroma/BM25 generation 原子发布；任务合并与 embedding 缓存减少重复工作 |
@@ -24,7 +24,7 @@
 
 ## 🛠 技术栈
 
-- **Web 应用**: React + Vite + TypeScript 前端，FastAPI 模块化单体后端，SQLite 持久事件 + 进程内通知驱动的 SSE 流式状态与回答
+- **Web 应用**: React + Vite + TypeScript 四工作区前端，采用“冷色数字编目台”设计系统；FastAPI 模块化单体后端，SQLite 持久事件 + 进程内通知驱动的 SSE 流式状态与回答
 - **过渡界面**: Streamlit 在迁移验收后的一个版本内只作为回退入口，不再并行发展为第二套生产 UI
 - **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮（规则 1-22）→ act → compose；确定性路由兜底）
 - **知识库**: ChromaDB 混合检索（向量 + BM25，维度不匹配自动降级 BM25-only）
@@ -71,7 +71,9 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 ├── ui/              # 迁移期保留的 Streamlit 回退界面
 ├── config/          # 官方链接与审核来源白名单
 ├── docs/            # 项目文档（会话交接摘要/接手日志/总纲方案/工具规格/团队材料）
-└── scripts/         # 采集与验证脚本（评课重爬 SOP/青春科大快照/verify_* 回归系列）
+├── scripts/         # 采集与验证脚本（评课重爬 SOP/青春科大快照/verify_* 回归系列）
+├── PRODUCT.md       # Web 产品事实、用户、任务与不可回退契约
+└── DESIGN.md        # Web 视觉令牌、响应式布局与组件规则
 ```
 
 ## 📄 文档
@@ -82,6 +84,8 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
 - [docs/小蜗_Web应用与联网RAG技术规格.md](docs/小蜗_Web应用与联网RAG技术规格.md) — 已确认的 Q1-Q80 Web/RAG 产品与技术契约
 - [docs/Web部署与数据迁移.md](docs/Web部署与数据迁移.md) — 运行模式、sidecar、worker、加密数据包和 generation 回滚 SOP
+- [docs/前端UI重构规格.md](docs/前端UI重构规格.md) — React 四工作区 UI 重构、可访问性与验收矩阵
+- [DESIGN.md](DESIGN.md) — “冷色数字编目台”设计系统与组件约束
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 - [docs/学习报告.md](docs/学习报告.md) — 项目学习基线
@@ -101,10 +105,10 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 | `python scripts/verify_time_parser.py` | 17/17（自然语言时间与 GPA 表） |
 | `python scripts/verify_security_ui.py` | 20/20（认证绑定、多用户方案隔离与 UI 安全） |
 | `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
-| `python -m pytest tests/web -q` | 99 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
-| `npm test` / `npm run build`（`frontend/`） | 6/6；生产构建成功，主入口 448.19 kB，无 chunk 警告 |
-| `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、浅深主题、三态分块审核、桌面/移动 Web 工作台验收 |
-| `python scripts/verify_web_load.py` | 100 条在线 SSE、30 个并发回答、有界队列与 `503 RUN_BUSY` |
+| `python -m pytest tests/web -q` | 100 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
+| `npm test` / `npm run build`（`frontend/`） | 11/11；生产构建成功，主入口 332.03 kB，Markdown 按需块 158.57 kB，无 chunk 警告 |
+| `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、Chat 3/2/1 与 Campus 4/3/2 响应式方块、1440/1024/390/320 浅深主题、三态分块审核 |
+| `python scripts/verify_web_load.py` | 100 条真实消费中的 SSE、30 个并发回答、有界队列、`503 RUN_BUSY` 与 100 条完整终态 |
 | `python scripts/qa_consistency.py` / `qa_new_docs.py` | 需 LLM；最近一次已确认基线 12/12 · 10/10 |
 | 全模块 UI 问答实测 | 19 问 18 直接通过 + 1 断言误判（答案正确），见 docs/e2e_full_module_test.png |
 

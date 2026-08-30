@@ -128,7 +128,6 @@ test("review item can queue a refetch and submit a source rule proposal", async 
 
 test("generation governance shows isolated pointers and confirms rollback", async () => {
   const user = userEvent.setup();
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<ReviewWorkspace session={session} />);
   await user.click(await screen.findByRole("tab", { name: "发布治理" }));
 
@@ -136,6 +135,8 @@ test("generation governance shows isolated pointers and confirms rollback", asyn
   expect(screen.getByText("gen-previous")).toBeInTheDocument();
   expect(screen.getByText("演示索引")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "回滚上一版本" }));
+  expect(screen.getByRole("dialog", { name: "回滚知识索引" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "确认回滚" }));
 
   await waitFor(() => expect(apiMutationMock).toHaveBeenCalledWith(
     "/admin/generations/rollback",
@@ -150,9 +151,9 @@ test("chunk decisions send an explicit three-state approval value", async () => 
   render(<ReviewWorkspace session={session} />);
   await user.click(await screen.findByRole("button", { name: /科大新栏目公开资料/ }));
   await user.click(screen.getByRole("tab", { name: /分块 1/ }));
-  expect(screen.getByRole("button", { name: "待定" })).toHaveAttribute("data-active", "true");
+  expect(screen.getByRole("radio", { name: "待定" })).toBeChecked();
 
-  await user.click(screen.getByRole("button", { name: "批准" }));
+  await user.click(screen.getByRole("radio", { name: "批准" }));
   await waitFor(() => expect(apiMutationMock).toHaveBeenCalledWith(
     "/admin/review-items/item-demo/chunks/chunk-one",
     "csrf-demo",

@@ -2,24 +2,33 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   AlertTriangle,
+  ArrowDown,
   Bot,
+  CalendarRange,
   Check,
   Clipboard,
   Database,
   Globe2,
   History,
+  Library,
   Menu,
   MessageSquarePlus,
   RotateCcw,
   Search,
   Send,
+  Sparkles,
   Square,
   ThumbsDown,
   ThumbsUp,
   Trash2,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StarterPromptTile } from "../components/LaunchTile";
+import { ConfirmDialog } from "../components/WorkspacePrimitives";
+import { starterPromptsFor } from "../data/starterPrompts";
+import type { StarterPromptIcon } from "../data/starterPrompts";
 import {
   clearLocalConversations,
   deleteLocalConversation,
@@ -61,11 +70,20 @@ const stageLabels: Record<string, string> = {
   cancelled: "已停止",
 };
 
-const promptSeeds = [
-  "查询本学期校历安排",
-  "推荐适合人工智能专业的课程",
-  "科大有哪些常用办事入口？",
-];
+const starterPromptIcons: Record<StarterPromptIcon, LucideIcon> = {
+  calendar: CalendarRange,
+  rules: Clipboard,
+  reviews: ThumbsUp,
+  services: Globe2,
+  activities: Sparkles,
+  library: Library,
+  schedule: CalendarRange,
+  grades: Check,
+  program: Database,
+  recommend: Search,
+  conflict: AlertTriangle,
+  agenda: History,
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -114,10 +132,7 @@ function HistoryPanel({
   return (
     <div className="chat-history">
       <div className="chat-history__header">
-        <div>
-          <span className="eyebrow">会话</span>
-          <strong>最近记录</strong>
-        </div>
+        <strong>最近记录</strong>
         <Tooltip.Root>
           <Tooltip.Trigger asChild>
             <button className="icon-button" type="button" onClick={onNew} aria-label="新建对话">
@@ -136,16 +151,34 @@ function HistoryPanel({
               <span>{conversation.title}</span>
               <small>{new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(new Date(conversation.updated_at))}</small>
             </button>
-            <button className="history-row__delete" type="button" onClick={() => onDelete(conversation.conversation_id)} aria-label={`删除会话 ${conversation.title}`}>
-              <Trash2 size={14} />
-            </button>
+            <ConfirmDialog
+              title="删除这条会话？"
+              description={`“${conversation.title}”删除后无法恢复。`}
+              confirmLabel="删除会话"
+              destructive
+              onConfirm={() => onDelete(conversation.conversation_id)}
+              trigger={(
+                <button className="history-row__delete" type="button" aria-label={`删除会话 ${conversation.title}`}>
+                  <Trash2 size={15} />
+                </button>
+              )}
+            />
           </div>
         ))}
       </div>
       {conversations.length > 0 && (
-        <button className="text-command text-command--danger chat-history__clear" type="button" onClick={onClear}>
-          <Trash2 size={14} />清空历史
-        </button>
+        <ConfirmDialog
+          title="清空全部历史？"
+          description="当前账号或浏览器中的全部会话都会被永久删除。"
+          confirmLabel="清空全部"
+          destructive
+          onConfirm={onClear}
+          trigger={(
+            <button className="text-command text-command--danger chat-history__clear" type="button">
+              <Trash2 size={15} />清空历史
+            </button>
+          )}
+        />
       )}
     </div>
   );
@@ -163,13 +196,15 @@ function RetrievalControl({ value, disabled, webEnabled, onChange }: {
     { value: "local", label: "本地", icon: Database },
   ];
   return (
-    <div className="retrieval-control" aria-label="资料范围">
+    <div className="retrieval-control" role="radiogroup" aria-label="资料范围">
       {options.map((option) => {
         const Icon = option.icon;
         return (
           <button
             key={option.value}
             type="button"
+            role="radio"
+            aria-checked={value === option.value}
             data-active={value === option.value}
             disabled={disabled || option.disabled}
             title={option.disabled ? "联网服务当前未启用" : undefined}
@@ -187,7 +222,7 @@ function StageStrip({ stage }: { stage?: string }) {
   if (!stage || stage === "completed") return null;
   const isWeb = stage === "web_search" || stage === "web_fetch";
   return (
-    <div className="stage-strip" role="status" aria-live="polite">
+    <div className="stage-strip" role="status">
       <span className="stage-strip__pulse" />
       {isWeb ? <Globe2 size={14} /> : <Search size={14} />}
       <span>{stageLabels[stage] ?? "正在处理"}</span>
@@ -230,7 +265,7 @@ function FeedbackDialog({
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content className="dialog-content feedback-dialog">
           <div className="dialog-heading">
-            <div><span className="eyebrow">回答反馈</span><Dialog.Title>帮助小蜗校准答案</Dialog.Title></div>
+            <Dialog.Title>帮助小蜗校准答案</Dialog.Title>
             <Dialog.Close className="icon-button" aria-label="关闭"><X size={17} /></Dialog.Close>
           </div>
           {status === "sent" ? (
@@ -267,9 +302,18 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [starterPromptsSuppressed, setStarterPromptsSuppressed] = useState(Boolean(seededQuestion));
   const streamController = useRef<AbortController | null>(null);
   const activeRun = useRef<string | null>(null);
+  const messageScroll = useRef<HTMLDivElement | null>(null);
+  const composerInput = useRef<HTMLTextAreaElement | null>(null);
+  const followOutput = useRef(true);
   const endAnchor = useRef<HTMLDivElement | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const starterPrompts = useMemo(
+    () => starterPromptsFor(session.capabilities.personal_academic),
+    [session.capabilities.personal_academic],
+  );
 
   const reloadHistory = useCallback(async () => {
     if (authenticated) {
@@ -285,6 +329,7 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
   useEffect(() => {
     setActiveId(null);
     setMessages([]);
+    setStarterPromptsSuppressed(Boolean(seededQuestion));
     void reloadHistory().catch((reason) => setError(reason instanceof Error ? reason.message : "无法读取历史。"));
     return () => streamController.current?.abort();
   }, [reloadHistory, session.principal.id]);
@@ -292,13 +337,42 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
   useEffect(() => {
     if (seededQuestion) {
       setDraft(seededQuestion);
+      setStarterPromptsSuppressed(true);
       onSeedConsumed?.();
     }
   }, [onSeedConsumed, seededQuestion]);
 
+  const selectStarterPrompt = useCallback((question: string) => {
+    setDraft(question);
+    window.setTimeout(() => {
+      composerInput.current?.focus();
+      composerInput.current?.setSelectionRange(question.length, question.length);
+    }, 0);
+  }, []);
+
   useEffect(() => {
+    if (messages.length === 0) {
+      if (messageScroll.current) messageScroll.current.scrollTop = 0;
+      return;
+    }
+    if (!followOutput.current) return;
+    endAnchor.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth", block: "end" });
+  }, [busy, messages]);
+
+  const handleMessageScroll = useCallback(() => {
+    const element = messageScroll.current;
+    if (!element) return;
+    const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    if (nearBottom === followOutput.current) return;
+    followOutput.current = nearBottom;
+    setShowJumpToLatest(!nearBottom);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    followOutput.current = true;
+    setShowJumpToLatest(false);
     endAnchor.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+  }, []);
 
   const persistLocal = useCallback(async (nextMessages: ChatMessage[], conversationId: string, selectedMode: RetrievalMode) => {
     const existing = localConversations.find((item) => item.conversation_id === conversationId);
@@ -379,6 +453,8 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
     setError(null);
     setBusy(true);
     setDraft("");
+    followOutput.current = true;
+    setShowJumpToLatest(false);
     void loadRenderedAnswer();
     const localId = authenticated ? activeId : (activeId ?? randomId("local"));
     if (!authenticated && !activeId) setActiveId(localId);
@@ -440,6 +516,8 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
     setError(null);
     setActiveId(conversationId);
     setHistoryOpen(false);
+    followOutput.current = true;
+    setShowJumpToLatest(false);
     if (authenticated) {
       const detail = await apiGet<ConversationDetail>(`/conversations/${conversationId}`);
       setMessages(toChatMessages(detail));
@@ -456,6 +534,9 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
     setMessages([]);
     setHistoryOpen(false);
     setDraft("");
+    setStarterPromptsSuppressed(false);
+    followOutput.current = true;
+    setShowJumpToLatest(false);
   }, [busy]);
 
   const deleteConversation = useCallback(async (conversationId: string) => {
@@ -507,18 +588,35 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
       <div className="conversation-pane">
         <header className="conversation-header">
           <button className="icon-button conversation-header__history" type="button" onClick={() => setHistoryOpen(true)} aria-label="打开会话历史"><Menu size={18} /></button>
-          <div><span className="eyebrow">问小蜗</span><strong>{activeId ? "当前对话" : "新对话"}</strong></div>
+          <div><strong>{activeId ? "当前对话" : "新对话"}</strong><span>问小蜗</span></div>
           <div className="privacy-note"><History size={13} />{authenticated ? "服务端保留 90 天" : "仅保存在此浏览器"}</div>
         </header>
         {error && <div className="conversation-error" role="alert"><AlertTriangle size={15} />{error}</div>}
-        <div className="message-scroll" aria-live="polite">
+        <div className="message-scroll" ref={messageScroll} onScroll={handleMessageScroll} aria-label="对话内容">
           {messages.length === 0 ? (
             <div className="chat-empty">
               <div className="chat-empty__mark"><Bot size={27} /></div>
               <h1>今天从哪里开始？</h1>
-              <div className="prompt-seeds">
-                {promptSeeds.map((prompt) => <button type="button" key={prompt} onClick={() => setDraft(prompt)}>{prompt}</button>)}
-              </div>
+              {!starterPromptsSuppressed && (
+                <section className="starter-prompts" aria-labelledby="starter-prompts-title">
+                  <header className="starter-prompts__heading">
+                    <span>{session.capabilities.personal_academic ? "PERSONAL ACADEMIC" : "PUBLIC CAMPUS"}</span>
+                    <h2 id="starter-prompts-title">常见问题</h2>
+                  </header>
+                  <div className="starter-prompt-grid">
+                    {starterPrompts.map((prompt, index) => (
+                      <StarterPromptTile
+                        key={prompt.id}
+                        index={index + 1}
+                        title={prompt.title}
+                        description={prompt.description}
+                        icon={starterPromptIcons[prompt.icon]}
+                        onSelect={() => selectStarterPrompt(prompt.question)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           ) : messages.map((message, index) => (
             <article key={message.id} className={`message message--${message.role}`}>
@@ -552,8 +650,14 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
           ))}
           <div ref={endAnchor} />
         </div>
+        {showJumpToLatest && (
+          <button className="jump-to-latest" type="button" onClick={jumpToLatest}>
+            <ArrowDown size={16} />回到最新
+          </button>
+        )}
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void submitQuestion(draft, mode); }}>
           <textarea
+            ref={composerInput}
             aria-label="向小蜗提问"
             placeholder="向小蜗提问"
             maxLength={8000}

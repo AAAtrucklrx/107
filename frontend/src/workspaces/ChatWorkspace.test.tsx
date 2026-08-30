@@ -71,3 +71,51 @@ test("chat renders verified complete segments, citations, and saves anonymous hi
   expect(screen.getByRole("link", { name: /教务处来源/ })).toBeInTheDocument();
   expect(putLocalConversation).toHaveBeenCalledTimes(1);
 });
+
+test("public starter prompt fills and focuses the composer without sending", async () => {
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+
+  await user.click(screen.getByRole("button", { name: /本学期校历/ }));
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  expect(input).toHaveValue("请查询本学期校历安排，并列出开学、考试周和重要教学节点。");
+  await waitFor(() => expect(input).toHaveFocus());
+  expect(screen.queryByText("已核验的完整回答。[1]")).not.toBeInTheDocument();
+});
+
+test("personal academic capability selects valid personal starter prompts", () => {
+  const personalSession: SessionPayload = {
+    ...session,
+    principal: {
+      ...session.principal,
+      id: "PB25111691",
+      auth_mode: "demo",
+      authenticated: true,
+      profile: { id: "PB25111691", name: "测试", major: "计算机科学与技术", grade: "2025级" },
+    },
+    capabilities: { ...session.capabilities, server_history: true, personal_academic: true },
+  };
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={personalSession} /></Tooltip.Provider>);
+
+  expect(screen.getByRole("button", { name: /今日课表/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /独立冲突检查/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /本学期校历/ })).not.toBeInTheDocument();
+});
+
+test("seeded academic question suppresses starters until a new conversation", async () => {
+  const user = userEvent.setup();
+  const onSeedConsumed = vi.fn();
+  render(
+    <Tooltip.Provider>
+      <ChatWorkspace config={config} session={session} seededQuestion="请点评离散数学" onSeedConsumed={onSeedConsumed} />
+    </Tooltip.Provider>,
+  );
+
+  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("请点评离散数学");
+  expect(screen.queryByRole("heading", { name: "常见问题" })).not.toBeInTheDocument();
+  expect(onSeedConsumed).toHaveBeenCalledTimes(1);
+
+  await user.click(screen.getByRole("button", { name: "新建对话" }));
+  expect(screen.getByRole("heading", { name: "常见问题" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("");
+});

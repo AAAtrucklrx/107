@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from tests.web.helpers import ImmediateRunner, bootstrap, make_settings, mutation_headers, parse_sse
 from xiaowo_web.chat.models import AnswerBundle, QaRunRequest
+from xiaowo_web.api.routers.chat import _event_stream
 from xiaowo_web.main import create_app
 from xiaowo_web.review import ReviewStore
 
@@ -47,6 +50,46 @@ class BlockingReviewStore(ReviewStore):
         self.enqueue_started.set()
         self.enqueue_release.wait(timeout=10)
         return {"namespace": namespace, "candidate": candidate, "status": "queued"}
+
+
+class TerminalRaceStore:
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def list_events(self, _run_id: str, _cursor: int) -> list[dict]:
+        self.reads += 1
+        if self.reads == 1:
+            return []
+        return [{
+            "id": 4,
+            "type": "answer.completed",
+            "data": {"stage": "completed"},
+        }]
+
+    def get_run(self, _run_id: str):
+        return SimpleNamespace(status="completed")
+
+
+class ConnectedRequest:
+    def __init__(self, store: TerminalRaceStore) -> None:
+        self.app = SimpleNamespace(state=SimpleNamespace(store=store))
+
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+def test_terminal_sse_event_is_drained_when_run_finishes_between_reads() -> None:
+    store = TerminalRaceStore()
+
+    async def collect() -> list[str]:
+        request = ConnectedRequest(store)
+        return [chunk async for chunk in _event_stream(request, "race-run", 0)]
+
+    chunks = asyncio.run(collect())
+
+    assert store.reads == 2
+    assert len(chunks) == 1
+    assert "event: answer.completed" in chunks[0]
 
 
 def test_unhealthy_sidecars_fail_readiness_without_disabling_liveness(tmp_path) -> None:

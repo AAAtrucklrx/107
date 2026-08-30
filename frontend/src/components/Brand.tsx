@@ -1,9 +1,8 @@
-import wordmark from "../assets/xiaowo-wordmark.svg";
-
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand ${compact ? "brand--compact" : ""}`} aria-label="小蜗科大学术工作台">
-      <img src={wordmark} alt="小蜗" className="brand__mark" />
+      <span className="brand__mark" aria-hidden="true" />
+      <span className="brand__monogram" aria-hidden="true">蜗</span>
       {!compact && <span className="brand__descriptor">科大学术工作台</span>}
     </div>
   );

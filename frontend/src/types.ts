@@ -227,6 +227,8 @@ export interface CampusServiceItem {
   url: string;
   description: string;
   category: string;
+  featured: boolean;
+  priority: number | null;
 }
 
 export interface CampusServices {

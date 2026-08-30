@@ -68,6 +68,12 @@ async def _event_stream(request: Request, run_id: str, after_sequence: int) -> A
             yield _encode_sse(event)
         run = store.get_run(run_id)
         if run is None or run.status in _TERMINAL_STATES:
+            # The terminal event and terminal run state commit atomically. A run
+            # can finish between the first event read and this status read, so
+            # drain once more before closing the stream.
+            for event in store.list_events(run_id, cursor):
+                cursor = int(event["id"])
+                yield _encode_sse(event)
             return
         now = time.monotonic()
         if now - last_keepalive >= 15:

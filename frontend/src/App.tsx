@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "motion/react";
 import { AlertCircle, LoaderCircle, RefreshCw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "./components/AppShell";
@@ -63,6 +62,10 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("xiaowo-theme", theme);
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+      "content",
+      theme === "dark" ? "#0D141A" : "#F4F7FA",
+    );
   }, [theme]);
 
   useEffect(() => {
@@ -171,21 +174,12 @@ export function App() {
       onDemoReset={handleDemoReset}
       busy={busy}
     >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={workspace}
-          className="workspace-transition"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-        >
-          {error && <div className="inline-alert" role="alert">{error}</div>}
-          <Suspense fallback={<div className="workspace-state" role="status"><LoaderCircle className="spin" size={20} /><span>正在载入工作区</span></div>}>
-            {workspaceContent}
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+      <div className="workspace-transition">
+        {error && <div className="inline-alert" role="alert">{error}</div>}
+        <Suspense fallback={<div className="workspace-state" role="status"><LoaderCircle className="spin" size={20} /><span>正在载入工作区</span></div>}>
+          {workspaceContent}
+        </Suspense>
+      </div>
     </AppShell>
   );
 }

@@ -2,7 +2,7 @@
 
 > 读者：部署在 114.214.241.119（东风云 Windows VM）内的 DeepSeek Harness（DSH）AI 代理。
 > 用途：AI 在 VM 中接管小蜗开发/运维前的**事实基线**。人用文档见 `docs/会话交接摘要.md`（唯一起点）与 `docs/接手日志.md`。
-> 维护：随代码同步更新；快照基准 **2026-08-27**。
+> 维护：随代码同步更新；快照基准 **2026-08-30**。
 
 ---
 
@@ -19,14 +19,14 @@
 
 能力面（功能模块）：智能问答 RAG / 课业助手（成绩·GPA·课表·空教室·考试）/ 选课顾问（均分推荐·同课多师·冲突检测·退补选压力）/ 培养方案（总览·学期规划·进度）/ 日程管理（自然语言时间·课表导入）/ 活动推荐（四因子：紧迫度·空闲·个性化·热度 + 均衡补短板）/ 官方入口链接（render_link + 校园导航页 19 条）/ 生态工具。
 
-## 2. 当前状态快照（2026-08-27 实测）
+## 2. 当前状态快照（2026-08-30 实测）
 
 | 项 | 值 |
 |---|---|
-| 本轮基线 HEAD | `d5431db` feat: add secure web workbench and evidence pipeline（2026-08-27） |
+| 本轮基线 HEAD | `bdb6d82`（main；本轮 UI、SSE 与文档收口仍为未提交工作区改动） |
 | 分支/远端 | main ↔ https://github.com/AAAtrucklrx/107.git |
 | 上个里程碑 | P5-1 `34e8858`、P5-2 `199449d` 已完成；`a88f6a8` P5-3 三联动已被当前工作区永久回滚 |
-| 当前交付 | Web vNext + 联网提取、SSE 通知、审核三态、队列保留和 generation 发布 hardening；实际最新提交以 `git log -1` 为准 |
+| 当前交付 | Web vNext + 联网提取、SSE 通知、审核三态、队列保留和 generation 发布 hardening；React 四工作区“冷色数字编目台”UI 已完成独立终审；实际最新提交以 `git log -1` 为准 |
 
 ### 2.1 已完成的推荐与身份边界（用户已确认 Q1-Q12）
 
@@ -42,7 +42,7 @@
 | `ui/chat.py` / `ui/program_page.py` | 侧栏显示年级；登录/登出清理匿名方案选择和个人方案缓存；登录用户缺专业/年级时停止且不猜；页头显示身份、专业、年级、档案来源和方案来源；通用回退醒目标注“专业通用参考，不是个人培养方案” |
 | `docs/选课顾问三联动_问题清单与修复对照.md` | 已删除（随回滚） |
 
-### 2.2 验证现状（本机 2026-08-27 新鲜结果）
+### 2.2 验证现状（本机 2026-08-30 新鲜结果）
 
 | 套件 | 结果 | 备注 |
 |---|---|---|
@@ -52,21 +52,26 @@
 | `verify_nodes.py` | ✅ 53/53 | 含复合推荐/独立冲突边界与工具签名 |
 | `verify_profile.py` | ✅ 11/11 | |
 | `verify_security_ui.py` | ✅ 20/20 | 含认证绑定、双用户方案树/缓存隔离、匿名状态清理 |
-| `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-27 已重跑 |
+| `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-30 已重跑 |
 | `e2e_program_identity.py` | ✅ 通过 | 桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与横向溢出 |
-| `pytest tests/web -q` | ✅ 99 passed | 认证/权限、通知驱动 SSE、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
-| `frontend: npm test / npm run build` | ✅ 6/6 / 成功 | Markdown/来源按需块 158.61 kB，主入口 448.19 kB，无 500 kB chunk 警告 |
-| `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、个人方案、审核治理、三态分块、浅深主题；1440×1000 / 390×844 |
-| `verify_web_load.py` | ✅ 通过 | 100 条在线 SSE、回答并发峰值 30、超限 503、100 条完整结束 |
+| `pytest tests/web -q` | ✅ 100 passed | 认证/权限、通知驱动 SSE、终态竞态补读、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
+| `frontend: npm test / npm run build` | ✅ 11/11 / 成功 | Markdown/来源按需块 158.57 kB，主入口 332.03 kB，无 500 kB chunk 警告 |
+| `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、能力感知常见问题、精选校园入口、查询隔离、个人方案、审核治理与三态分块；1440 / 1024 / 390 / 320px 浅深主题 |
+| `verify_web_load.py` | ✅ 通过 | 100 条真实消费中的 SSE、回答并发峰值 30、超限 503、100 条完整结束；事件 URL 按 `/api/v1` 相对契约解析 |
+| 浏览器设计矩阵 | ✅ 通过 | 1440 / 1024 / 768 / 390 / 320px，浅深主题；无整页横向溢出、控制台错误、小于 12px 可见辅助文字或低于 40/44px 的控件 |
 | 需 LLM：`qa_consistency` 12/12 · `qa_new_docs` 10/10 | 本轮未运行 | 脚本会向外部 LLM 发送学号/画像，未获明确授权；左侧为最近一次基线 |
 
 ### 2.3 Web vNext 已落地边界
 
-- 运行模式只有 `anonymous`、`demo`、`cas`。唯一 demo 身份为 `PB25111691 / 测试 / 人工智能 / 2025级`；demo 管理员只能操作 demo 审核库与 demo 索引。
+- 运行模式只有 `anonymous`、`demo`、`cas`。唯一 demo 身份为 `PB25111691 / 测试 / 计算机科学与技术 / 2025级`；demo 管理员只能操作 demo 审核库与 demo 索引。
 - 当前没有可信 HTTPS 域名：比赛使用 `competition + demo`；无 HTTPS 的公开 production 只能 anonymous，个人区和管理区关闭；真实 CAS 只保留 Provider/API，等待域名和白名单。
 - 本地资料不足、权威性不足或问题要求最新信息时才进入联网门控；搜索前永久禁止外发个人数据。确定结论要求一个审核官方一手来源或两个独立一致的可靠来源。
 - SearXNG/Crawl4AI 只提供服务器 sidecar 模板，当前开发机未安装或启动。adapter、Redis/LLM 禁用契约或结构化提取能力探针未通过时，readiness 不放行联网。
 - SSE 以 SQLite 为持久事实源，提交后通过进程内通知立即唤醒；1 秒读取作为跨进程兜底，事件窗口默认 1 小时且可配置。
+- SSE 终态事件与 run 终态在同一事务提交；流观察到 terminal 状态时必须再补读一次，避免遗漏同事务写入的 `answer.completed` / `run.failed`。
+- React 四工作区采用“冷色数字编目台”：≥1200px 为 216px 索引脊，761–1199px 为 72px 图标轨，≤760px 为顶部字标 + 底部导航；平板聊天历史走抽屉，审核采用索引页到全宽详情页。
+- 校园服务使用 8 个配置驱动的高频启动方块与分类目录（4/3/2 列），活动保留独立时间列表；聊天空会话按公共/个人能力显示 6 个常见任务方块。培养方案模块使用连续账簿。桌面正文/辅助文字下限为 14/12px，移动正文与输入为 16px；桌面/移动控件下限为 40/44px。
+- 产品与视觉事实分别固化在根目录 `PRODUCT.md`、`DESIGN.md`，UI 实施与验收契约见 `docs/前端UI重构规格.md`。
 - 回答完成后异步入审核队列；每块必须明确批准或排除且至少批准一块，worker 领取后才从 `approved` 转 `pending_publish`。
 - 发布任务关联具体条目并合并尚未领取的同 namespace 任务；失败不波及无关条目，激活前重验实时审核状态。Chroma 完整 generation 复用按模型与内容哈希校验的 embedding 缓存。
 - done/dead 任务默认保留 7/90 天；orphan generation 从成为 orphan 起保留 7 天后清理，哈希墓碑和审核历史保留。回滚前验证 manifest、两套索引、元数据、数量和内容指纹。

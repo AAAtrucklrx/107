@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
+import { ConfirmDialog, WorkspaceEmpty, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
 import { apiGet, apiMutation } from "../lib/api";
 import type {
   GenerationState,
@@ -106,7 +106,7 @@ function ReviewQueue({ items, selected, filter, onFilter, onSelect }: {
   return (
     <aside className="review-queue">
       <div className="review-queue__header">
-        <div><span className="eyebrow">审核队列</span><strong>{items.length} 条内容</strong></div>
+        <div><strong>审核队列</strong><span>{items.length} 条内容</span></div>
         <label className="queue-filter" aria-label="按状态筛选"><ListFilter size={15} />
           <select value={filter} onChange={(event) => onFilter(event.target.value)}>
             <option value="">全部状态</option>
@@ -119,7 +119,7 @@ function ReviewQueue({ items, selected, filter, onFilter, onSelect }: {
         </label>
       </div>
       <div className="review-queue__items">
-        {items.length === 0 ? <div className="empty-result">当前队列为空</div> : items.map((item) => (
+        {items.length === 0 ? <WorkspaceEmpty title="当前队列为空" detail="可以切换状态筛选查看其他内容。" /> : items.map((item) => (
           <button className="review-queue-item" data-active={selected === item.item_id} type="button" key={item.item_id} onClick={() => onSelect(item)}>
             <div><span className={`review-status review-status--${item.status}`}>{statusLabels[item.status]}</span><small>{formatTimestamp(item.fetched_at)}</small></div>
             <strong>{item.title}</strong>
@@ -270,7 +270,6 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
 
   const rollbackGeneration = useCallback(async () => {
     if (!generation?.can_rollback || !generation.previous_generation_id) return;
-    if (!window.confirm(`确认切换到上一完整 generation ${generation.previous_generation_id}？`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -325,24 +324,24 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   if (error && !items.length && !detail) return <WorkspaceError message={error} onRetry={() => void loadItems()} />;
 
   return (
-    <section className="review-workspace">
+    <Tabs.Root className="review-workspace" value={workspaceView} onValueChange={(value) => setWorkspaceView(value as WorkspaceView)}>
       <header className="workspace-header review-header">
-        <div><span className="eyebrow">{session.principal.review_namespace === "demo" ? "DEMO NAMESPACE" : "PRODUCTION"}</span><h1>知识审核</h1></div>
+        <div><h1>知识审核</h1><span className="workspace-context">{session.principal.review_namespace === "demo" ? "演示审核空间" : "生产审核空间"}</span></div>
         <div className="review-header__right">
-          <div className="review-view-tabs" role="tablist" aria-label="审核视图">
-            <button role="tab" aria-selected={workspaceView === "queue"} data-active={workspaceView === "queue"} onClick={() => setWorkspaceView("queue")}><FileText size={14} />内容队列</button>
-            <button role="tab" aria-selected={workspaceView === "governance"} data-active={workspaceView === "governance"} onClick={() => setWorkspaceView("governance")}><Database size={14} />发布治理</button>
-            <button role="tab" aria-selected={workspaceView === "feedback"} data-active={workspaceView === "feedback"} onClick={() => setWorkspaceView("feedback")}><MessageSquareWarning size={14} />回答反馈</button>
-          </div>
+          <Tabs.List className="review-view-tabs" aria-label="审核视图">
+            <Tabs.Trigger value="queue"><FileText size={14} />内容队列</Tabs.Trigger>
+            <Tabs.Trigger value="governance"><Database size={14} />发布治理</Tabs.Trigger>
+            <Tabs.Trigger value="feedback"><MessageSquareWarning size={14} />回答反馈</Tabs.Trigger>
+          </Tabs.List>
           {session.principal.review_namespace === "demo" && <div className="review-demo-lock"><ShieldAlert size={15} /><span>演示审核与生产知识永久隔离</span></div>}
         </div>
       </header>
       {error && <div className="workspace-inline-error" role="alert">{error}</div>}
       {notice && <div className="review-operation-notice" role="status"><Check size={14} />{notice}</div>}
-      {workspaceView === "feedback" ? (
+      <Tabs.Content className="review-view-content" value="feedback">
         <div className="feedback-review-list">
           <div className="content-source-row"><span>{feedback.length} 条待查看反馈</span><span className="data-source">保留 30 天</span></div>
-          {feedback.length === 0 ? <div className="empty-result">当前没有回答反馈</div> : feedback.map((item) => (
+          {feedback.length === 0 ? <WorkspaceEmpty title="当前没有回答反馈" detail="新的反馈会在此处进入核验队列。" /> : feedback.map((item) => (
             <article className="feedback-review-item" key={item.id}>
               <div><span className="review-status review-status--in_review">{item.category}</span><time>{formatTimestamp(item.created_at)}</time></div>
               <p>{item.detail || "用户仅提交了反馈分类，没有补充说明。"}</p>
@@ -350,10 +349,11 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
             </article>
           ))}
         </div>
-      ) : workspaceView === "governance" ? (
+      </Tabs.Content>
+      <Tabs.Content className="review-view-content" value="governance">
         <div className="review-governance">
           <header className="governance-heading">
-            <div><span className="eyebrow">INDEX GENERATIONS</span><h2>发布状态</h2></div>
+            <h2>发布状态</h2>
             <button className="icon-button governance-refresh" type="button" title="刷新发布状态" aria-label="刷新发布状态" disabled={generationLoading} onClick={() => void loadGeneration()}><RefreshCw size={16} /></button>
           </header>
           {generationLoading && !generation ? <WorkspaceLoading label="正在读取发布状态" /> : (
@@ -372,16 +372,25 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                 <code>{generation?.previous_generation_id ?? "无可回滚版本"}</code>
               </div>
               <div className="governance-actions">
-                <button className="secondary-button secondary-button--danger" type="button" disabled={busy || !generation?.can_rollback} onClick={() => void rollbackGeneration()}><RotateCcw size={15} />回滚上一版本</button>
+                <ConfirmDialog
+                  trigger={<button className="secondary-button secondary-button--danger" type="button" disabled={busy || !generation?.can_rollback}><RotateCcw size={15} />回滚上一版本</button>}
+                  title="回滚知识索引"
+                  description={`将 active 指针切换到上一完整版本 ${generation?.previous_generation_id ?? ""}。审核历史不会被删除。`}
+                  confirmLabel="确认回滚"
+                  destructive
+                  onConfirm={() => void rollbackGeneration()}
+                />
               </div>
             </section>
           )}
           <section className="trust-export-row">
-            <div><span className="eyebrow">SOURCE TRUST</span><h2>来源规则变更</h2><code>config/source_trust.yaml · Git 审查生效</code></div>
+            <div><h2>来源规则变更</h2><code>config/source_trust.yaml · Git 审查生效</code></div>
             <button className="secondary-button" type="button" disabled={busy} onClick={() => void exportTrustProposals()}><Download size={15} />导出 Git diff</button>
           </section>
         </div>
-      ) : <div className="review-layout" data-detail={Boolean(detail)}>
+      </Tabs.Content>
+      <Tabs.Content className="review-view-content" value="queue">
+      <div className="review-layout" data-detail={Boolean(detail)}>
         <ReviewQueue
           items={items}
           selected={detail?.item_id ?? null}
@@ -391,7 +400,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
         />
         <main className="review-detail">
           {!detail ? (
-            <div className="review-detail__empty"><ShieldCheck size={27} /><span>选择一条内容开始核验</span></div>
+            <div className="review-detail__empty"><ShieldCheck size={27} /><strong>选择一条内容开始核验</strong><span>原文、清洗稿、差异与分块会在这里并排进入审核流程。</span></div>
           ) : (
             <>
               <button className="review-back" type="button" onClick={() => setDetail(null)}><ArrowLeft size={16} />返回队列</button>
@@ -426,7 +435,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                 <Tabs.Content value="diff"><pre className="review-text review-diff">{detail.diff || "当前清洗稿与原文无文本差异。"}</pre></Tabs.Content>
                 <Tabs.Content value="chunks">
                   <div className="review-chunks">
-                    {chunks.map((chunk) => (
+                    {chunks.length === 0 ? <WorkspaceEmpty title="当前版本没有分块" detail="保存清洗稿的新版本后再进行分块决定。" /> : chunks.map((chunk) => (
                       <article className="review-chunk" data-approval-status={chunkApprovalStatus(chunk)} key={chunk.chunk_id}>
                         <div>
                           <span>分块 {chunk.position + 1}</span>
@@ -435,11 +444,26 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                         </div>
                         <p>{chunk.content_text}</p>
                         {editable && (
-                          <div className="chunk-decision" role="group" aria-label={`分块 ${chunk.position + 1} 审核决定`}>
-                            <button type="button" data-active={chunkApprovalStatus(chunk) === "pending"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "pending" })}><CircleDashed size={14} />待定</button>
-                            <button type="button" data-active={chunkApprovalStatus(chunk) === "approved"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "approved" })}><Check size={14} />批准</button>
-                            <button type="button" data-active={chunkApprovalStatus(chunk) === "rejected"} disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: "rejected" })}><X size={14} />排除</button>
-                          </div>
+                          <fieldset className="chunk-decision">
+                            <legend className="sr-only">分块 {chunk.position + 1} 审核决定</legend>
+                            {([
+                              ["pending", "待定", CircleDashed],
+                              ["approved", "批准", Check],
+                              ["rejected", "排除", X],
+                            ] as const).map(([value, label, Icon]) => (
+                              <label data-active={chunkApprovalStatus(chunk) === value} key={value}>
+                                <input
+                                  type="radio"
+                                  name={`chunk-${chunk.chunk_id}`}
+                                  value={value}
+                                  checked={chunkApprovalStatus(chunk) === value}
+                                  disabled={busy}
+                                  onChange={() => void mutate(`/admin/review-items/${detail.item_id}/chunks/${chunk.chunk_id}`, { approval_status: value })}
+                                />
+                                <Icon size={14} />{label}
+                              </label>
+                            ))}
+                          </fieldset>
                         )}
                       </article>
                     ))}
@@ -448,7 +472,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                 <Tabs.Content value="source">
                   {proposal && (
                     <section className="source-proposal">
-                      <header><div><span className="eyebrow">SOURCE RULE PROPOSAL</span><h3>来源规则建议</h3></div><span className="review-status review-status--draft">待 Git 审查</span></header>
+                      <header><h3>来源规则建议</h3><span className="review-status review-status--draft">待 Git 审查</span></header>
                       <div className="source-proposal__grid">
                         <label>精确域名<input value={proposal.host} readOnly aria-readonly="true" /></label>
                         <label>栏目路径<input value={proposal.path_prefix} onChange={(event) => setProposal({ ...proposal, path_prefix: event.target.value })} /></label>
@@ -458,8 +482,8 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                       <fieldset className="source-level-control">
                         <legend>来源等级</legend>
                         <div>
-                          <button type="button" data-active={proposal.level === "reliable_independent"} onClick={() => setProposal({ ...proposal, level: "reliable_independent" })}>独立可靠来源</button>
-                          <button type="button" data-active={proposal.level === "official_primary"} onClick={() => setProposal({ ...proposal, level: "official_primary" })}>官方一手来源</button>
+                          <label data-active={proposal.level === "reliable_independent"}><input type="radio" name="source-level" value="reliable_independent" checked={proposal.level === "reliable_independent"} onChange={() => setProposal({ ...proposal, level: "reliable_independent" })} />独立可靠来源</label>
+                          <label data-active={proposal.level === "official_primary"}><input type="radio" name="source-level" value="official_primary" checked={proposal.level === "official_primary"} onChange={() => setProposal({ ...proposal, level: "official_primary" })} />官方一手来源</label>
                         </div>
                       </fieldset>
                       <label className="source-proposal__rationale">核验依据<textarea value={proposal.rationale} maxLength={1000} onChange={(event) => setProposal({ ...proposal, rationale: event.target.value })} /></label>
@@ -470,7 +494,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
               </Tabs.Root>
               {editable && (
                 <section className="review-decision">
-                  <div><span className="eyebrow">发布参数</span><h3>审核决定</h3></div>
+                  <div><h3>审核决定</h3><span>发布参数</span></div>
                   <label>内容类别<select value={category} onChange={(event) => { const value = event.target.value as ReviewCategory; setCategory(value); setTtl(categories.find((item) => item.value === value)?.maxTtl ?? 7); }}>{categories.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
                   <label>有效期<div className="ttl-input"><Clock3 size={14} /><input type="number" min={1} max={selectedCategory.maxTtl} value={ttl} onChange={(event) => setTtl(Number(event.target.value))} /><span>天 / 上限 {selectedCategory.maxTtl}</span></div></label>
                   <div className="review-decision__actions">
@@ -483,7 +507,8 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
             </>
           )}
         </main>
-      </div>}
-    </section>
+      </div>
+      </Tabs.Content>
+    </Tabs.Root>
   );
 }

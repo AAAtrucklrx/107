@@ -9,15 +9,12 @@ import {
   FlaskConical,
   LogIn,
   LogOut,
-  Menu,
   Moon,
-  PanelLeftClose,
   SearchCheck,
-  Settings2,
   Sun,
   RotateCcw,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Brand } from "./Brand";
 import type { PublicConfig, SessionPayload, Theme, Workspace } from "../types";
 
@@ -54,16 +51,27 @@ function NavButton({
   const meta = workspaceMeta[workspace];
   const Icon = meta.icon;
   return (
-    <button
-      type="button"
-      className="workspace-nav__item"
-      data-active={current === workspace}
-      aria-current={current === workspace ? "page" : undefined}
-      onClick={() => onSelect(workspace)}
-    >
-      <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
-      <span>{meta.label}</span>
-    </button>
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="workspace-nav__item"
+          data-active={current === workspace}
+          aria-current={current === workspace ? "page" : undefined}
+          aria-label={meta.label}
+          onClick={() => onSelect(workspace)}
+        >
+          <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
+          <span>{meta.label}</span>
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="tooltip" side="right" sideOffset={10}>
+          {meta.label}
+          <Tooltip.Arrow className="tooltip__arrow" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }
 
@@ -91,7 +99,7 @@ export function AppShell({
         <aside className="desktop-rail">
           <Brand />
           {config.environment !== "production" && (
-            <div className="environment-stamp">
+            <div className="environment-stamp" aria-label={config.environment === "competition" ? "比赛环境" : "开发环境"}>
               <FlaskConical size={14} aria-hidden="true" />
               <span>{config.environment === "competition" ? "比赛环境" : "开发环境"}</span>
             </div>
@@ -148,7 +156,7 @@ export function AppShell({
           </main>
         </div>
 
-        <nav className="mobile-bottom-nav" aria-label="工作区">
+        <nav className="mobile-bottom-nav" aria-label="工作区" style={{ "--mobile-nav-count": showAcademic ? 3 : 2 } as CSSProperties}>
           <NavButton workspace="chat" current={workspace} onSelect={onWorkspaceChange} />
           {showAcademic && (
             <NavButton workspace="academic" current={workspace} onSelect={onWorkspaceChange} />

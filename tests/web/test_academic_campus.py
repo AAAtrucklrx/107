@@ -78,3 +78,21 @@ def test_campus_services_are_public_and_curated(tmp_path) -> None:
         assert payload["source"]["kind"] == "curated_config"
         assert len(payload["items"]) == 1
         assert payload["items"][0]["url"] == "https://lib.ustc.edu.cn"
+        assert payload["items"][0]["featured"] is True
+        assert payload["items"][0]["priority"] == 4
+
+        directory = client.get("/api/v1/campus/services").json()
+        featured = sorted(
+            (item for item in directory["items"] if item["featured"]),
+            key=lambda item: item["priority"],
+        )
+        assert len(featured) == 8
+        assert [item["priority"] for item in featured] == list(range(1, 9))
+        assert directory["categories"] == [
+            "教务学习",
+            "交流升学",
+            "个人事务",
+            "生活服务",
+            "就业发展",
+            "社区工具",
+        ]

@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-28T01:53:49+08:00",
+  "title": "Design System: 小蜗科大学术工作台",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "科大操作蓝",
+        "canonical": "#0757a6",
+        "tonalRamp": ["#001a33", "#00305b", "#06498c", "#0757a6", "#3b7cbd", "#78afea", "#b8d5f1", "#eef6fd"]
+      },
+      "retrieval": {
+        "role": "secondary",
+        "displayName": "证据青",
+        "canonical": "#008b94",
+        "tonalRamp": ["#062326", "#06454a", "#006c74", "#008b94", "#38aeb4", "#79cdd0", "#b9e4e5", "#effafa"]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "冷纸画布",
+        "canonical": "#f2f5f7",
+        "tonalRamp": ["#172027", "#2d3941", "#4d5a63", "#6f7c85", "#94a0a8", "#bac4ca", "#dce3e7", "#f2f5f7"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "墨色正文",
+        "canonical": "#14212a",
+        "tonalRamp": ["#0b1116", "#14212a", "#2d3b45", "#4e5d67", "#73818a", "#9aa5ac", "#c7cfd4", "#f1f4f6"]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "索引脊",
+        "canonical": "#17242d",
+        "tonalRamp": ["#080d11", "#101920", "#17242d", "#2d3d48", "#53636d", "#7e8c94", "#b4bec4", "#eef4f7"]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "确认绿",
+        "canonical": "#267553",
+        "tonalRamp": ["#10251b", "#19442f", "#267553", "#3f936d", "#71b596", "#9fd0ba", "#cbe7da", "#f0faf5"]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "演示琥珀",
+        "canonical": "#9a650e",
+        "tonalRamp": ["#291b07", "#503307", "#784d09", "#9a650e", "#bd8834", "#d7ae68", "#ead2a4", "#fbf4e7"]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "风险红",
+        "canonical": "#b33e49",
+        "tonalRamp": ["#321116", "#5d1d25", "#872c36", "#b33e49", "#cf6972", "#e3979d", "#f1c5c9", "#fdf0f1"]
+      },
+      "dark-canvas": {
+        "role": "neutral",
+        "displayName": "夜间画布",
+        "canonical": "#0d141a",
+        "tonalRamp": ["#070a0d", "#0d141a", "#18232b", "#2a3943", "#4c5c66", "#76858e", "#abb6bd", "#edf3f6"]
+      },
+      "dark-primary": {
+        "role": "primary",
+        "displayName": "夜间操作蓝",
+        "canonical": "#78afea",
+        "tonalRamp": ["#0b1f35", "#12375a", "#1c527f", "#3475a8", "#5c98d1", "#78afea", "#b3d2f2", "#eef7ff"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "工作区标题", "purpose": "稳定标记当前任务空间。" },
+      "title": { "displayName": "编目标题", "purpose": "内容分区、目录组和任务标题。" },
+      "body": { "displayName": "工作正文", "purpose": "回答、描述和数据内容。" },
+      "label": { "displayName": "核验标签", "purpose": "状态、时间、表头和辅助元数据。" },
+      "mono": { "displayName": "标识等宽字", "purpose": "URL、代码、版本和 generation。" }
+    },
+    "shadows": [
+      { "name": "low-lift", "value": "0 7px 22px rgb(31 48 59 / 0.08)", "purpose": "输入框、轻量反馈和悬浮操作。" },
+      { "name": "overlay", "value": "0 16px 42px rgb(31 48 59 / 0.12)", "purpose": "菜单与确认对话框。" },
+      { "name": "dark-overlay", "value": "0 18px 48px rgb(0 0 0 / 0.34)", "purpose": "深色主题覆盖层。" }
+    ],
+    "motion": [
+      { "name": "state-standard", "value": "150ms ease", "purpose": "审核决定、按钮和证据状态的局部变化。" },
+      { "name": "state-reduced", "value": "0.01ms", "purpose": "prefers-reduced-motion 下近乎即时完成。" }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "760px" },
+      { "name": "tablet-rail-start", "value": "761px" },
+      { "name": "desktop-rail-start", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Command",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "当前任务唯一的主要命令。",
+      "html": "<button class=\"ds-command\">确认操作</button>",
+      "css": ".ds-command { min-height: 40px; border: 1px solid var(--primary, #0757a6); border-radius: 5px; background: var(--primary, #0757a6); padding: 0 12px; color: #fff; font: 650 12px/1.4 'Noto Sans SC', sans-serif; letter-spacing: 0; transition: background-color 150ms ease, border-color 150ms ease; } .ds-command:hover { border-color: var(--primary-hover, #06498c); background: var(--primary-hover, #06498c); } .ds-command:focus-visible { outline: 2px solid var(--retrieval, #008b94); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Command",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "不会抢占主任务的次级操作。",
+      "html": "<button class=\"ds-secondary\">重新抓取</button>",
+      "css": ".ds-secondary { min-height: 40px; border: 1px solid var(--line-strong, #aebbc4); border-radius: 5px; background: var(--surface-raised, #fff); padding: 0 12px; color: var(--ink, #14212a); font: 650 12px/1.4 'Noto Sans SC', sans-serif; letter-spacing: 0; transition: background-color 150ms ease, border-color 150ms ease; } .ds-secondary:hover { border-color: var(--primary, #0757a6); color: var(--primary, #0757a6); } .ds-secondary:focus-visible { outline: 2px solid var(--retrieval, #008b94); outline-offset: 2px; }"
+    },
+    {
+      "name": "Catalog Search",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "校园目录和审核索引的紧凑搜索字段。",
+      "html": "<label class=\"ds-search\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"></circle><path d=\"m20 20-3.5-3.5\"></path></svg><input placeholder=\"搜索入口或活动\"></label>",
+      "css": ".ds-search { display: grid; min-height: 40px; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 8px; border: 1px solid var(--line-strong, #aebbc4); border-radius: 5px; background: var(--surface-raised, #fff); padding: 0 12px; color: var(--muted, #566672); } .ds-search:focus-within { border-color: var(--primary, #0757a6); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #0757a6) 12%, transparent); } .ds-search svg { width: 18px; fill: none; stroke: currentColor; stroke-width: 2; } .ds-search input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink, #14212a); font: 400 14px/1.4 'Noto Sans SC', sans-serif; }"
+    },
+    {
+      "name": "Current Workspace",
+      "kind": "nav",
+      "description": "深色索引脊中的当前工作区条目。",
+      "html": "<button class=\"ds-nav-current\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 19.5V5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-1.5Z\"></path><path d=\"M20 19.5V5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-1.5Z\"></path></svg><span>我的学业</span></button>",
+      "css": ".ds-nav-current { display: inline-flex; min-height: 43px; align-items: center; gap: 11px; border: 0; border-radius: 5px; background: color-mix(in srgb, var(--primary, #0757a6) 23%, var(--rail-raised, #21323d)); padding: 0 12px; color: #f7fbff; font: 650 13px/1.4 'Noto Sans SC', sans-serif; } .ds-nav-current svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; } .ds-nav-current:hover { background: color-mix(in srgb, var(--primary, #0757a6) 32%, var(--rail-raised, #21323d)); } .ds-nav-current:focus-visible { outline: 2px solid var(--retrieval, #008b94); outline-offset: 2px; }"
+    },
+    {
+      "name": "Evidence Status",
+      "kind": "chip",
+      "refersTo": "status",
+      "description": "明确标识已核验来源，不与主操作争夺注意力。",
+      "html": "<span class=\"ds-evidence\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z\"></path><path d=\"m9 12 2 2 4-4\"></path></svg>配置审核</span>",
+      "css": ".ds-evidence { display: inline-flex; min-height: 25px; align-items: center; gap: 5px; border-radius: 3px; background: var(--retrieval-soft, #dff1f1); padding: 4px 7px; color: var(--retrieval, #008b94); font: 650 12px/1.4 'Noto Sans SC', sans-serif; } .ds-evidence svg { width: 14px; fill: none; stroke: currentColor; stroke-width: 2; }"
+    },
+    {
+      "name": "Campus Catalog Row",
+      "kind": "custom",
+      "refersTo": "catalog-row",
+      "description": "按类别连续排列的校园服务入口。",
+      "html": "<article class=\"ds-catalog-row\"><div><strong>本科生综合教务系统</strong><p>选课、退课、成绩与考试安排</p></div><span>jw.ustc.edu.cn</span><button>打开</button></article>",
+      "css": ".ds-catalog-row { display: grid; min-height: 88px; grid-template-columns: minmax(0, 1fr) 150px 68px; align-items: center; gap: 14px; border-top: 1px solid var(--line, #d3dce2); border-bottom: 1px solid var(--line, #d3dce2); background: var(--surface, #f9fbfc); padding: 13px 4px; color: var(--ink, #14212a); font-family: 'Noto Sans SC', sans-serif; } .ds-catalog-row strong { font-size: 14px; } .ds-catalog-row p { margin: 4px 0 0; color: var(--muted, #566672); font-size: 14px; } .ds-catalog-row > span { color: var(--faint, #788792); font-size: 12px; } .ds-catalog-row button { min-height: 40px; border: 1px solid var(--line, #d3dce2); border-radius: 4px; background: var(--surface-raised, #fff); color: var(--muted, #566672); } .ds-catalog-row:hover { background: var(--surface-muted, #e9eef2); } .ds-catalog-row button:focus-visible { outline: 2px solid var(--retrieval, #008b94); outline-offset: 2px; }"
+    },
+    {
+      "name": "Program Module Ledger",
+      "kind": "custom",
+      "description": "连续呈现培养方案模块、学分和课程数。",
+      "html": "<div class=\"ds-ledger\"><div class=\"ds-ledger-head\"><span>课程模块</span><span>要求学分</span><span>课程数量</span></div><div class=\"ds-ledger-row\"><strong>专业核心课程</strong><span><b>30</b> 学分</span><span><b>8</b> 门课程</span></div></div>",
+      "css": ".ds-ledger { border-top: 1px solid var(--line-strong, #aebbc4); border-bottom: 1px solid var(--line-strong, #aebbc4); background: var(--surface-raised, #fff); color: var(--ink, #14212a); font-family: 'Noto Sans SC', sans-serif; } .ds-ledger-head, .ds-ledger-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(120px, .65fr) minmax(120px, .65fr); align-items: center; } .ds-ledger-head { min-height: 40px; background: var(--surface-muted, #e9eef2); color: var(--muted, #566672); font-size: 12px; font-weight: 650; } .ds-ledger-row { min-height: 58px; border-top: 1px solid var(--line, #d3dce2); } .ds-ledger-head > *, .ds-ledger-row > * { padding: 10px 16px; border-right: 1px solid var(--line, #d3dce2); } .ds-ledger-head > *:last-child, .ds-ledger-row > *:last-child { border-right: 0; } .ds-ledger-row strong { font-size: 14px; } .ds-ledger-row span { color: var(--muted, #566672); font-size: 12px; } .ds-ledger-row b { color: var(--ink, #14212a); font-size: 16px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "冷色数字编目台",
+    "overview": "小蜗是一张持续工作的科大学术编目台：深色索引脊提供稳定方位，冷白工作面承载问答、学业、校园目录和知识治理。界面安静、精确、信息密度适中，品牌存在于定制字标、规则线、连续数据带和可信状态中，而不是营销式构图或装饰插画。\n\n系统优先呈现身份、来源、时效和审核状态。视觉层级通过字体重量、表面明度、1px 结构线和留白建立；主操作色保持稀少，演示数据与真实数据之间必须有持续、可读且不只依赖颜色的区分。",
+    "keyCharacteristics": [
+      "深色索引脊与连续冷白工作面",
+      "分类目录行、数据带和账簿式信息组织",
+      "蓝色主操作、青色证据、独立状态色",
+      "浅色默认与完整深色主题",
+      "定制“小蜗”字标，不使用官方校徽或卡通吉祥物"
+    ],
+    "rules": [
+      { "name": "The One Meaning Per Accent Rule", "body": "蓝色只表示当前状态或主操作，青色只表示检索与证据，演示数据始终使用 warning 语义；不要互换。", "section": "colors" },
+      { "name": "The Legibility Floor Rule", "body": "桌面正文至少 14px、辅助信息至少 12px；移动正文和输入至少 16px。任何元数据都不能以 8–11px 换取密度。", "section": "typography" },
+      { "name": "The Flat By Default Rule", "body": "页面分区和重复条目保持平面；只有覆盖当前任务面的交互层可以使用阴影。", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 让身份、来源、时效、演示隔离和证据门槛持续可见。",
+      "Do 用连续数据带、目录行、账簿和 1px 规则线组织高密度信息。",
+      "Do 在 761–1199px 使用 72px 图标轨，在 760px 以下使用单列任务流。",
+      "Do 为深浅主题、键盘焦点、320px 布局和 reduced-motion 提供同等完整度。"
+    ],
+    "donts": [
+      "Don't 把应用改成营销首页、Hero、卡片墙或通用后台模板。",
+      "Don't 混用操作蓝、证据青、演示 warning 和状态色的语义。",
+      "Don't 使用 8–11px 可见文字、低于目标的触控区域或彩色粗侧条。",
+      "Don't 在页面分区里嵌套卡片、使用大圆角胶囊、装饰渐变或泛化入场淡入。",
+      "Don't 使用官方校徽、虚构校园素材或未核验的真实性暗示。"
+    ]
+  }
+}
