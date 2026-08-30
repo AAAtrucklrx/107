@@ -56,6 +56,8 @@ import type {
 
 const loadRenderedAnswer = () => import("../components/RenderedAnswer");
 const RenderedAnswer = lazy(() => loadRenderedAnswer().then((module) => ({ default: module.RenderedAnswer })));
+const loadClaimCheckList = () => import("../components/ClaimCheckList");
+const ClaimCheckList = lazy(() => loadClaimCheckList().then((module) => ({ default: module.ClaimCheckList })));
 
 interface ChatWorkspaceProps {
   config: PublicConfig;
@@ -787,6 +789,11 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
                 {message.status === "failed" && <div className="message-failure"><AlertTriangle size={15} />本次回答未完成</div>}
                 {!!message.claims?.some((claim) => claim.status === "conflict") && (
                   <div className="claim-conflict"><AlertTriangle size={15} /><span><strong>信息存在分歧</strong>请结合下方来源核验，不以模型猜测替代证据。</span></div>
+                )}
+                {message.role === "assistant" && !!message.claims?.length && message.status !== "streaming" && (
+                  <Suspense fallback={null}>
+                    <ClaimCheckList claims={message.claims} />
+                  </Suspense>
                 )}
                 {!!message.limitations?.length && (
                   <ul className="limitations">{message.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>

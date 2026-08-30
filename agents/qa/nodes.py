@@ -282,6 +282,7 @@ def embedding_parse(state: QaState) -> dict:
     # "住宿费/学费/贷款"等多篇争夺）时保证含答案文档进入候选（2026-08-16 补录）
     candidates = list(state.get("candidates") or [])
     found = bool(state.get("candidates_found"))
+    retrieval_log = list(state.get("retrieval_log") or [])
     try:
         from knowledge.vector_store import FAQVectorStore
         res = FAQVectorStore().search(query, top_k=12)
@@ -297,11 +298,17 @@ def embedding_parse(state: QaState) -> dict:
             if identity:
                 seen.add(identity)
         found = bool(res.get("found", False) or found)
+        retrieval_log.append({
+            "round": 0, "decision": "retrieve",
+            "reason": f"知识库首轮检索: 共 {len(res.get('results') or [])} 条候选"
+                      f"{'(达到匹配阈值)' if res.get('found') else '(未达阈值)'}",
+        })
     except Exception as e:
         log.warning(f"候选召回失败: {e}")
 
     log.info(f"意图识别: {intent} (method={result.get('method')}, module={module_signal}, 候选 {len(candidates)} 条)")
-    return {"intent": intent, "intent_top3": top3, "candidates": candidates, "candidates_found": found}
+    return {"intent": intent, "intent_top3": top3, "candidates": candidates,
+            "candidates_found": found, "retrieval_log": retrieval_log}
 
 
 # ── think: LLM 自主决策（降级为确定性规则） ────────────
@@ -326,7 +333,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 
 ## 决策规则
 1. decision=compose：已有候选或工具结果足以回答 → 直接进入合成
-2. decision=retrieve：候选不足或答非所问 → 在 query 字段给出改写后的检索词，重新检索知识库
+2. decision=retrieve：候选不足或答非所问 → 在 query 字段给出改写后的检索词，重新检索知识库；若问题含多个并列方面（如"退学和休学分别怎么办"），可在 sub_queries 字段给出 1-3 个并列子检索词并行检索（每个子检索词独立命中不同文档），单义问题只填 query、sub_queries 留空
 3. decision=call_tool：需要个人数据或动态信息（课表/成绩/GPA/空教室/考试/课程推荐/日程）→ 指定 tool 与 args
 4. decision=clarify：问题模糊且没有工具能直接处理 → 在 clarify_text 字段给出追问
 5. 敏感请求（作弊/改成绩/代考/抄袭）→ decision=compose，不调用任何工具，合成时礼貌拒绝
@@ -349,7 +356,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 22. 活动/第二课堂问句（"有什么活动/讲座/志愿可以报名"、"最近有什么活动"、"周末有什么活动"、"XX月X日有什么活动"）→ 调 query_activities（可带 keyword/category/time_window 过滤），如实转述返回的活动（名称/主办方/时间/报名截止），不得编造活动或修改时间；活动报名本身是强操作，追问报名入口时按规则 21 给 render_link
 
 ## 输出格式（严格 JSON）
-{{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
+{{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "sub_queries": ["并列子检索词，可空数组"], "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
 
 
 _TIME_WORDS = ["今天", "明天", "后天", "昨天", "这周", "下周", "周一", "周二", "周三",
@@ -708,6 +715,8 @@ def think(state: QaState) -> dict:
         update = {
             "decision": decision,
             "retrieve_query": data.get("query", "") if decision == "retrieve" else "",
+            "sub_queries": [str(q).strip() for q in (data.get("sub_queries") or [])
+                            if str(q).strip()] if decision == "retrieve" else [],
             "clarify_question": data.get("clarify_text", "") if decision == "clarify" else "",
             "thought_log": (state.get("thought_log") or []) + [{
                 "round": rounds + 1, "decision": decision, "reason": data.get("reason", ""),
@@ -1159,22 +1168,36 @@ def act(state: QaState) -> dict:
     update: dict = {"rounds": rounds}
 
     if decision == "retrieve":
-        query = state.get("retrieve_query") or state.get("query", "")
+        base_query = state.get("retrieve_query") or state.get("query", "")
+        # 查询发散: 改写词 + 并列子检索词(去重去空, 最多 3 个), 并行检索合并候选
+        queries: list[str] = []
+        for q in [base_query, *(state.get("sub_queries") or [])]:
+            q = (q or "").strip()
+            if q and q not in queries:
+                queries.append(q)
         candidates = list(state.get("candidates") or [])
+        retrieval_log = list(state.get("retrieval_log") or [])
         try:
             from knowledge.vector_store import FAQVectorStore
-            res = FAQVectorStore().search(query, top_k=12)
+            store = FAQVectorStore()
             seen = {(c.get("id") or c.get("chunk_id")) for c in candidates}
-            added = 0
-            for c in res.get("results") or []:
-                cid = c.get("id") or c.get("chunk_id")
-                if cid not in seen:
-                    candidates.append(c)
-                    seen.add(cid)
-                    added += 1
+            for q in queries:
+                res = store.search(q, top_k=12)
+                added = 0
+                for c in res.get("results") or []:
+                    cid = c.get("id") or c.get("chunk_id")
+                    if cid not in seen:
+                        candidates.append(c)
+                        seen.add(cid)
+                        added += 1
+                retrieval_log.append({
+                    "round": rounds, "decision": "retrieve",
+                    "reason": f"重新检索「{q[:20]}」: 新增 {added} 条候选",
+                })
             update["candidates"] = candidates
-            update["candidates_found"] = res.get("found", False) or bool(state.get("candidates_found"))
-            log.info(f"act[retrieve] '{query}' → 新增 {added} 条候选，共 {len(candidates)} 条")
+            update["candidates_found"] = bool(state.get("candidates_found"))
+            update["retrieval_log"] = retrieval_log
+            log.info(f"act[retrieve] {queries} → 共 {len(candidates)} 条候选")
         except Exception as e:
             log.warning(f"act 重检索失败: {e}")
         return update

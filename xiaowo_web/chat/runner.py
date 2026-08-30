@@ -235,6 +235,12 @@ class LegacyQaRunner:
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="xiaowo-qa")
         self._trust_store = SourceTrustStore()
         self._approved_retriever = approved_retriever
+        # ①: reranker 后台预热(加载 ~3s, 避免首次问答卡顿; 模型缺失时静默跳过)
+        try:
+            from knowledge.reranker import prewarm
+            prewarm()
+        except Exception:
+            pass
 
     def _resolve_runner(self) -> Callable[..., dict[str, Any]]:
         if self._run_qa_func is None:
@@ -320,6 +326,16 @@ class LegacyQaRunner:
                 "decision": str(entry.get("decision") or "compose"),
                 "reason": str(entry.get("reason") or "").strip(),
             })
+        # ③: 检索过程记录(首轮召回/子查询重查)并入思考链, 按 round 排序
+        for entry in (result.get("retrieval_log") or []):
+            if not isinstance(entry, dict):
+                continue
+            thoughts.append({
+                "round": entry.get("round") or 0,
+                "decision": str(entry.get("decision") or "retrieve"),
+                "reason": str(entry.get("reason") or "").strip(),
+            })
+        thoughts.sort(key=lambda item: (item["round"], len(str(item["reason"]))))
         tool_records = _tool_records(tool_results)
         candidate_records = _candidate_records(candidates, self._trust_store)
         candidate_supports = candidate_records if result.get("candidates_found") else []

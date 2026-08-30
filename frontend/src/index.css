@@ -1481,6 +1481,103 @@ button:disabled {
   cursor: default;
 }
 
+/* ④: 引用逐条核查 */
+.claim-check-section {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.claim-check-section__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.claim-check-section__trigger span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claim-check-section__trigger svg[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.claim-check-section__content {
+  overflow: hidden;
+}
+
+.claim-check-list {
+  margin: 0;
+  padding: 4px 12px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.claim-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.claim-check__badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.claim-check__badge--confirmed {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.claim-check__badge--conflict {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.claim-check__badge--insufficient {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.claim-check__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.claim-check__text {
+  color: var(--ink);
+  opacity: 0.9;
+}
+
+.claim-check__sources {
+  color: var(--retrieval);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
 .source-section {
   margin-top: 14px;
   border-top: 1px solid var(--line);

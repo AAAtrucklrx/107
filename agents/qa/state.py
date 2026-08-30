@@ -20,6 +20,8 @@ class QaState(TypedDict):
     chat_history: list[dict]  # 最近对话历史（多轮指代理解，保留最近20条）
     decision: str  # think 决策：clarify / retrieve / call_tool / compose
     retrieve_query: str  # retrieve 决策时改写后的检索词
+    sub_queries: list[str]  # retrieve 决策时的并列子检索词(查询发散, 可空)
+    retrieval_log: list[dict]  # 检索过程记录 [{round, decision, reason}] → thought.step 上屏
     tool_calls: list[dict]  # call_tool 决策的工具调用 [{tool, args}]
     tool_results: list[dict]  # 工具执行结果 [{tool, result, status}]
     rounds: int  # 已执行工具轮次（上限 4）

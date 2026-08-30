@@ -215,7 +215,8 @@ class FAQVectorStore:
             return {"found": False, "results": [], "top_score": 0.0}
 
         count = self.collection.count()
-        pool = min(max(top_k * 3, top_k + 5), count)
+        # ① 召回池扩大(top_k*5): 多召回给 rerank 精排留空间, 提升 top 命中
+        pool = min(max(top_k * 5, top_k + 5), count)
 
         # 1) 向量候选
         query_embedding = self.embedding_model.encode([query]).tolist()
@@ -268,8 +269,23 @@ class FAQVectorStore:
 
         # 3) RRF 融合（k=60），以融合排名决定最终顺序
         fused = _rrf_merge([vec_ids, bm_ranking], k=RRF_K)
-        ranked_ids = [doc_id for doc_id, _ in
-                      sorted(fused.items(), key=lambda kv: -kv[1])[:top_k]]
+        fused_ranked = [doc_id for doc_id, _ in
+                        sorted(fused.items(), key=lambda kv: -kv[1])]
+        ranked_ids = fused_ranked[:top_k]
+
+        # 4) 可选 rerank 精排: 交叉编码器对 RRF 前 N 候选重排(模型缺失时静默回退)
+        try:
+            from knowledge.reranker import RERANK_POOL, rerank, rerank_available
+            rerank_candidates = fused_ranked[:RERANK_POOL]
+            if rerank_available() and len(rerank_candidates) > top_k:
+                fetched_pre = self.collection.get(ids=rerank_candidates)
+                doc_map = dict(zip(fetched_pre["ids"], fetched_pre["documents"]))
+                doc_texts = [str(doc_map.get(doc_id, ""))[:300] for doc_id in rerank_candidates]
+                top_idx = rerank(query, doc_texts, top_k)
+                ranked_ids = [rerank_candidates[i] for i in top_idx]
+                log.info(f"rerank 精排: {len(rerank_candidates)} 候选 → top{top_k}")
+        except Exception as e:
+            log.warning(f"rerank 精排跳过, 使用 RRF 顺序: {e}")
 
         results = []
         top_score = 0.0
