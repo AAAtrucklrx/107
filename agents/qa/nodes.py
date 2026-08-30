@@ -92,7 +92,7 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
     extracted = _extract_profile(state.get("query") or "", up)
     explicit_fields = set(extracted.get("_explicit_fields") or [])
     for key in (
-        "major", "grade", "interests", "preference_type", "workload_preference",
+        "major", "grade", "interests", "keywords", "preference_type", "workload_preference",
         "course_scope", "preferred_teachers", "target_term",
     ):
         value = extracted.get(key)
@@ -987,6 +987,29 @@ def _extract_teacher(query: str) -> str | None:
     return m.group(1) if m else None
 
 
+# 非课程名后缀:这些词不作为课程关键词("选修课/推荐课/水课"等)
+_COURSE_KEYWORD_STOP = (
+    "推荐", "选修", "必修", "通识", "通修", "水", "好", "哪些", "什么",
+    "这", "那", "专业", "公共", "核心", "实验", "的", "课", "程",
+)
+
+
+def _extract_course_keywords(query: str) -> list[str]:
+    """从问句中提取课程名关键词("图论课推荐"→["图论"];"推荐AI方向的选修课"→[])。
+
+    只识别「XX课/XX课程」模式,且 XX 不是常见非课程词,避免把
+    "选修课/推荐课/水课"等当成课程名(这些会污染 recommend_courses 的硬过滤)。
+    """
+    keywords: list[str] = []
+    for match in re.finditer(r"([\u4e00-\u9fffA-Za-z0-9·（）()]{2,12}?)课(?:程)?", query):
+        word = match.group(1)
+        if any(word.endswith(stop) for stop in _COURSE_KEYWORD_STOP):
+            continue
+        if word not in keywords:
+            keywords.append(word)
+    return keywords
+
+
 def _extract_profile(query: str, user_profile: dict) -> dict:
     """从查询与登录信息中提取推荐上下文和本轮明确需求。
 
@@ -1007,6 +1030,12 @@ def _extract_profile(query: str, user_profile: dict) -> dict:
     interests = [kw for kw in _INTEREST_KEYWORDS if kw in query]
     if interests:
         explicit_fields.append("interests")
+
+    # 课程名关键词("图论课推荐"→["图论"]):recommend_courses 的硬过滤条件,
+    # 确定性路由下必须提取,否则"图论课推荐"会退化成全方案推荐且不含图论
+    keywords = _extract_course_keywords(query)
+    if keywords:
+        explicit_fields.append("keywords")
 
     workload_terms = ("任务少", "作业少", "低负担", "省时", "轻松", "水课", "不点名", "摸鱼", "工作量小")
     workload = "low" if any(k in query for k in workload_terms) else None
@@ -1072,6 +1101,7 @@ def _extract_profile(query: str, user_profile: dict) -> dict:
         "major": major,
         "grade": grade,
         "interests": interests,
+        "keywords": keywords,
         "preference_type": pref,
         "workload_preference": workload,
         "course_scope": scope,

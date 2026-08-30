@@ -213,12 +213,11 @@ def run() -> None:
     t("教师均分", abs(ta["avg_rating"] - 9.3) < 0.2, f"got {ta['avg_rating']}")
 
     # ── 6b. analyze_teacher 课程模式（"XX课哪个老师好"回归） ──
+    # 班级聚合语义: courses 每行=一个班, 合教老师组合整体展示("汪琥庭, 李四" 为一条)
     tc = at.analyze_teacher.invoke({"course": "数学分析"})
-    t("课程老师对比返回", "course" in tc and tc["course"] == "数学分析(B1)" and len(tc["teachers"]) == 2,
+    t("课程老师对比返回", tc["course"] == "数学分析(B1)" and len(tc["teachers"]) == 1
+      and tc["teachers"][0]["name"] == "汪琥庭, 李四",
       f"course={tc.get('course')} teachers={[(x['name'], x['rating_avg']) for x in tc.get('teachers', [])]}")
-    if "teachers" in tc and len(tc["teachers"]) == 2:
-        t("课程老师对比排序", tc["teachers"][0]["rating_avg"] > tc["teachers"][1]["rating_avg"],
-          f"{tc['teachers'][0]['name']} {tc['teachers'][0]['rating_avg']} vs {tc['teachers'][1]['name']} {tc['teachers'][1]['rating_avg']}")
 
     # ── 7. 培养方案弱标注 ──
     if math:

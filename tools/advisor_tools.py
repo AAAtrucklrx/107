@@ -1461,7 +1461,15 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             if m["name"] not in best_by_name or m["rating_count"] > best_by_name[m["name"]]["rating_count"]:
                 best_by_name[m["name"]] = m
         uniq = list(best_by_name.values())
-        if len(uniq) > 1:
+        # 完全同名课程(如"图论"精确命中"图论"): 直接聚合该课程全部班级/老师, 不因
+        # 近似名课程(代数图论/数理逻辑与图论)触发 ambiguity —— "只说课程时返回所有老师的课"
+        exact = [
+            m for m in uniq
+            if _norm_course_name(m["name"]) == _norm_course_name(course or "")
+        ]
+        if exact:
+            c = exact[0]
+        elif len(uniq) > 1:
             # 近似名课程多门（如 B1/B2 分班）, 交给用户确认, 避免误选
             conn.close()
             return {
@@ -1473,27 +1481,32 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
                 ],
                 "message": f"找到多门与「{course}」相关的课程, 请指定确切课程名（如区分 B1/B2 分班）",
             }
-        c = uniq[0]
-        # 不合并数据适配：同名多页聚合（每页即一位老师），跨页汇总教师/均分/样本/评论
-        pages = conn.execute(
-            "SELECT id FROM courses WHERE name = ? ORDER BY rate_count DESC",
+        else:
+            c = exact[0] if exact else uniq[0]
+        # 班级聚合: courses 表每行=一个班级(不合并同课多师), 合教老师组合整体展示
+        # (如"许胤龙, 吕敏, 李永坤"为一组, 不拆成单个老师)
+        class_rows = conn.execute(
+            "SELECT c.id, c.code, c.credit, c.dept, c.rating_avg, c.rate_count, "
+            "GROUP_CONCAT(t.name, ', ') AS teacher_names "
+            "FROM courses c LEFT JOIN course_teachers ct ON ct.course_id = c.id "
+            "LEFT JOIN teachers t ON t.id = ct.teacher_id "
+            "WHERE c.name = ? GROUP BY c.id ORDER BY c.rate_count DESC",
             (c["name"],),
         ).fetchall()
-        page_ids = [p["id"] for p in pages]
         teachers: list[dict] = []
-        seen_teacher: set[str] = set()
-        for pid in page_ids:
-            for t in _teacher_cells(conn, pid):
-                if t["name"] and t["name"] not in seen_teacher:
-                    seen_teacher.add(t["name"])
-                    teachers.append(t)
+        for row in class_rows:
+            teachers.append({
+                "name": row["teacher_names"] or "",
+                "code": row["code"] or "",
+                "dept": row["dept"] or "",
+                "credit": row["credit"],
+                "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
+                "rate_count": row["rate_count"] or 0,
+            })
         teachers.sort(key=lambda t: (-(t["rating_avg"] or 0), -(t["rate_count"] or 0)))
         reviews: list[dict] = []
-        for t in teachers:
-            for pid in page_ids:
-                reviews.extend(_top_reviews(conn, pid, t["name"], limit=2))
-                if len(reviews) >= 6:
-                    break
+        for row in class_rows:
+            reviews.extend(_top_reviews(conn, row["id"], limit=2))
             if len(reviews) >= 6:
                 break
         agg = conn.execute(
