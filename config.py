@@ -41,7 +41,10 @@ DATABASE_PATH = PROJECT_ROOT / "database" / "xiaowo.db"
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
 
 # ── 知识库配置 ────────────────────────────────
-CHROMA_PERSIST_DIR = str(PROJECT_ROOT / "knowledge" / "chroma_db")
+# chromadb 1.5.9 的 Rust 端在中文/非 ASCII 路径下无法落盘 hnsw 索引
+# (data_level0.bin 等文件静默缺失 → 重建后新进程打开报 "Error loading hnsw index")。
+# 因此持久化目录必须指向纯英文物理路径(默认 C:\xiaowo_kb\chroma_db,env 可覆盖)。
+CHROMA_PERSIST_DIR = os.getenv("XIAOWO_CHROMA_DIR", r"C:\xiaowo_kb\chroma_db")
 KNOWLEDGE_DATA_DIR = PROJECT_ROOT / "knowledge" / "data"
 FAQ_TOP_K = 5
 FAQ_SIMILARITY_THRESHOLD = 0.6  # 低于此分数认为无匹配

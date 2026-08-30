@@ -174,7 +174,8 @@ class WebSettings:
                 published_chroma_dir=Path(
                     source.get(
                         "XIAOWO_PUBLISHED_CHROMA_DIR",
-                        str(PROJECT_ROOT / "knowledge" / "chroma_db" / "web_approved"),
+                        # 中文路径下 chromadb Rust 端无法落盘 hnsw,发布索引也放英文物理路径
+                        r"C:\xiaowo_kb\web_approved",
                     ),
                 ).resolve(),
                 published_bm25_dir=Path(

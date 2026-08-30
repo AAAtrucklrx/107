@@ -120,21 +120,32 @@ $py = "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe"
 
 ---
 
-## 4. 本 VM 部署记录(2026-08-26)
+## 4. 本 VM 部署记录(2026-08-26 起,持续更新)
 
 | 项 | 状态 |
 |---|---|
-| 代码 | `C:\小蜗`,git HEAD = `510f22c` = origin/main **完全同步**,工作区零修改(可溯源 ✅) |
-| Python 3.14.7 | ✅ 已装(winget 别名损坏不可用,改直装官网安装器;路径 `%LOCALAPPDATA%\Programs\Python\Python314\python.exe`) |
-| git 2.55.0 | ✅ 已装(`C:\Program Files\Git\cmd\git.exe`;GitHub 可达性实测 OK) |
-| VC++ 运行库 | ✅ 已更新至 14.44(SYSTEM32 原为 2016 版 MSVCP140,导致 chromadb 原生库访问冲突崩溃,已修复) |
-| 依赖 | ✅ venv `C:\小蜗\.venv` + `pip install -r requirements.lock.txt`(163 包全装) |
-| 向量库 | ✅ 已重建:769 向量(API 嵌入 qwen3-embedding)、元数据零缺失、6/6 检索命中;原拷贝的 chroma_db 无法加载(hnsw 损坏),`rebuild_kb.py --yes` 解决 |
-| 验证集 | ✅ **10/10 套件全过**:verify_tools 40/40 · test_fixes 50/50 · verify_nodes 53/53 · check_course_db 9/9 · verify_profile 11/11 · verify_ecosystem 10/10 · verify_links 12/12 · verify_activities 8/8(实拉) · verify_time_parser 17/17 · verify_security_ui 20/20;init_check ✅ |
-| 服务 | ✅ **运行中**(手动后台,Streamlit 8501,HTTP 200);冒烟:知识问答 RAG ✅ / 选课推荐工具链 ✅ / 闲聊 ✅ |
-| LLM 平台 | ✅ api.llm.ustc.edu.cn 可达,key 有效(嵌入+合成均实测) |
-| YOUNG_TOKEN | ✅ 有效(verify_activities 实拉 8 条;过期会自动回退快照) |
-| 端口转发 | ⏳ 待用户在平台执行(本文件 §1);转发生效后需同步 `.env` 的 `CAS_SERVICE_URL` 并重启服务 |
-| NSSM | ⏳ 待服务稳定确认后注册(命令见 §2) |
+| 代码 | `C:\小蜗`,git 与 origin/main 同步(最新 `baf2ede`),本地增量:fixture 真实数据(不入 git)+ 运维资产 |
+| Python 3.14.7 | ✅ 已装(`%LOCALAPPDATA%\Programs\Python\Python314\python.exe`) |
+| git 2.55.0 | ✅ 已装(`C:\Program Files\Git\cmd\git.exe`) |
+| VC++ 运行库 | ✅ 已更新至 14.44(2016 版 MSVCP140 曾致 chromadb 崩溃) |
+| 依赖 | ✅ venv `C:\小蜗\.venv` + requirements.lock.txt(163 包) |
+| 向量库 | ✅ 已重建 769 向量(API 嵌入);数据更新时勿直接替换 chroma_db,用 `rebuild_kb.py --yes` |
+| 验证集 | ✅ tests/web 84/84 · verify_tools 40/40 · test_fixes 50/50 · verify_nodes 53/53 · verify_security_ui 20/20 · 前端 5/5 |
+| **服务形态** | ✅ **NSSM 服务(2026-08-27 注册)**:`XiaowoWeb`(uvicorn 8501)+ `XiaowoKeepalive`(LLM 保温) |
+| 服务配置 | 开机自启(SERVICE_AUTO_START)+ 崩溃 5s 自动重启(已实测:强杀进程 12s 内恢复) |
+| 服务日志 | `data/service-web.stdout.log` / `service-web.stderr.log` / `llm_keepalive.log` |
+| 端口转发 | ✅ 平台 8850→8501;`.env` 的 `CAS_SERVICE_URL=http://114.214.241.119:8850` 已同步 |
+| NSSM 路径 | `C:\tools\nssm\nssm.exe` |
 
-> ⚠️ 与交接文档的差异:文档快照(2026-08-25)记载 HEAD=28e53f7+未提交改动;实际开发机已提交并推送为 **510f22c**(fix: isolate program plans and refine recommendations),VM 代码即该最新状态。文档(VM接手文档/会话交接摘要)中的 28e53f7 描述待后续同步(需用户批准改文档)。
+### 服务日常操作(2026-08-27 起)
+
+```powershell
+$nssm = "C:\tools\nssm\nssm.exe"
+& $nssm restart XiaowoWeb        # 重启(改代码后)
+& $nssm stop XiaowoWeb           # 停止
+sc.exe query XiaowoWeb           # 状态(STATE: 4 RUNNING)
+Get-Content C:\小蜗\data\service-web.stderr.log -Tail 50   # 看日志
+```
+
+> ⚠️ 服务模式与手动模式不要同时跑(8501 端口互斥);服务注册后不再手动 Start-Process uvicorn。
+> 代码更新流程:`git pull` → `nssm restart XiaowoWeb`(前端代码需先 `npm run build`)。
