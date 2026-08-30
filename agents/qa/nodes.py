@@ -995,13 +995,16 @@ _COURSE_KEYWORD_STOP = (
 
 
 def _extract_course_keywords(query: str) -> list[str]:
-    """从问句中提取课程名关键词("图论课推荐"→["图论"];"推荐AI方向的选修课"→[])。
+    """从问句中提取课程名关键词("图论课推荐"→["图论"];"散打I推荐"→["散打I"];"推荐AI方向的选修课"→[])。
 
-    只识别「XX课/XX课程」模式,且 XX 不是常见非课程词,避免把
-    "选修课/推荐课/水课"等当成课程名(这些会污染 recommend_courses 的硬过滤)。
+    识别「XX课/XX课程/XX推荐/XX怎么样/XX如何/XX咋样」模式,且 XX 不是常见非课程词,
+    避免把"选修课/推荐课/水课"等当成课程名(这些会污染 recommend_courses 的硬过滤)。
     """
     keywords: list[str] = []
-    for match in re.finditer(r"([\u4e00-\u9fffA-Za-z0-9·（）()]{2,12}?)课(?:程)?", query):
+    for match in re.finditer(
+        r"([\u4e00-\u9fffA-Za-z0-9·（）()]{2,12}?)(?:课(?:程)?|推荐|怎么样|如何|咋样)",
+        query,
+    ):
         word = match.group(1)
         if any(word.endswith(stop) for stop in _COURSE_KEYWORD_STOP):
             continue

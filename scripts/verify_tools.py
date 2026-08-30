@@ -151,6 +151,21 @@ ok("关键词归一化结果非空", len(kw_recs) > 0, f"{len(kw_recs)} 门")
 ok("关键词归一化全部含「数学分析」", all("数学分析" in c["name"] for c in kw_recs),
    [c["name"] for c in kw_recs][:5])
 
+# 8b. 指定课程直查系列合并: 完全同名+同系列班型(散打→散打+散打I+散打II; 图论含(H)不含近似课)
+r_sd = recommend_courses.invoke({"profile": {"max_results": 5}, "keywords": ["散打"]})
+sd_recs = r_sd.get("recommendations") or []
+sd_names = sorted({c["name"] for c in sd_recs})
+ok("直查-散打系列全列", r_sd.get("source") == "exact_course" and sd_names == ["散打", "散打I", "散打II"],
+   f"{sd_names} ({len(sd_recs)} 班)")
+r_sd1 = recommend_courses.invoke({"profile": {"max_results": 5}, "keywords": ["散打I"]})
+sd1_names = sorted({c["name"] for c in (r_sd1.get("recommendations") or [])})
+ok("直查-散打I问什么给什么", sd1_names == ["散打I"], f"{sd1_names}")
+r_tl = recommend_courses.invoke({"profile": {"max_results": 5}, "keywords": ["图论"]})
+tl_names = {c["name"] for c in (r_tl.get("recommendations") or [])}
+ok("直查-图论含(H)班", "图论(H)" in tl_names, f"{sorted(tl_names)}")
+ok("直查-近似课不混入", not (tl_names & {"代数图论", "数理逻辑与图论", "极值与概率图论"}),
+   f"{sorted(tl_names)}")
+
 # 9. 课程搜索跨库合并: 本地种子课程表仅少量样例,
 #    search_courses 应合并评课库完整课程表, 使「数学分析B1」可被检索
 from database.db_manager import DatabaseManager

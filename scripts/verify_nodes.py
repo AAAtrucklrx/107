@@ -52,6 +52,17 @@ def main() -> None:
     t("选修名词不等于推荐动作",
       not _is_recommendation_request("我的选修课冲突吗"), "")
 
+    # 课程名关键词提取: 含"推荐/怎么样"后缀与罗马数字班型(散打I)
+    k1 = _extract_profile("散打I推荐", {})["keywords"]
+    k2 = _extract_profile("散打推荐", {})["keywords"]
+    k3 = _extract_profile("数学分析怎么样", {})["keywords"]
+    k4 = _extract_profile("推荐AI方向的选修课", {})["keywords"]
+    k5 = _extract_profile("有什么推荐", {})["keywords"]
+    t("关键词-散打I推荐提取", k1 == ["散打I"], str(k1))
+    t("关键词-散打推荐提取", k2 == ["散打"], str(k2))
+    t("关键词-怎么样提取", k3 == ["数学分析"], str(k3))
+    t("关键词-非课程词不提取", k4 == [] and k5 == [], str((k4, k5)))
+
     # 工具摘要推荐分支须输出画像说明（供 LLM 向用户说明自动画像依据）
     fake = [{"tool": "recommend_courses", "status": "done", "result": {
         "recommendations": [], "groups": {}, "total_candidates": 0,

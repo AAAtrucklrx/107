@@ -948,6 +948,55 @@ _COURSE_ALIAS = {
     "高数": "高等数学", "大物": "大学物理", "大英": "大学英语",
 }
 
+# 课程名尾部的系列后缀: 括号段((B1)/(H)/(2))、罗马数字(I/II/III)、阿拉伯数字(1/2)
+_SERIES_TAIL_RE = re.compile(r"(?:[（(][^（()）]*[）)]|[IVXⅠⅡⅢⅣⅤ]+|\d+)$")
+
+
+def _strip_series_tail(name: str) -> str:
+    """去掉课程名尾部的系列后缀(循环剥离, 支持组合):
+    '数学分析(B1)'→'数学分析'、'图论(H)'→'图论'、'散打II'→'散打'、'数学分析(2)'→'数学分析';
+    无系列后缀的课('代数图论'/'图论与组合'/'大学英语')原样返回。"""
+    cur = name.strip()
+    while True:
+        nxt = _SERIES_TAIL_RE.sub("", cur)
+        if nxt == cur:
+            return cur
+        cur = nxt
+
+
+_SELECT_EXACT_COLS = (
+    "SELECT c.name, c.id, c.code, c.credit, c.dept, c.rating_avg, c.rate_count, "
+    "GROUP_CONCAT(t.name, ', ') AS teacher_names "
+    "FROM courses c LEFT JOIN course_teachers ct ON ct.course_id = c.id "
+    "LEFT JOIN teachers t ON t.id = ct.teacher_id "
+)
+
+
+def _exact_course_rows(conn: sqlite3.Connection, c_key: str) -> list[sqlite3.Row]:
+    """指定课程直查行集: 完全同名全部班级 + 同系列班型合并。
+
+    完全同名命中后不能短路——会丢掉系列班型('散打'命中后散打I/II 不返回);
+    因此再查 LIKE, 只并入「去掉尾部系列后缀后与课程名相同」的班
+    ('散打I'→散打,'图论(H)'→图论), 前缀不同的近似课('代数图论'/'数理逻辑与图论')不混入。
+    按样本量降序, 完全同名班在前。"""
+    rows = conn.execute(
+        _SELECT_EXACT_COLS + f"WHERE {_SQL_NORM_NAME} = ? GROUP BY c.id ORDER BY c.rate_count DESC",
+        (c_key,),
+    ).fetchall()
+    seen = {row["id"] for row in rows}
+    merged = list(rows)
+    fuzzy = conn.execute(
+        _SELECT_EXACT_COLS + f"WHERE {_SQL_NORM_NAME} LIKE ? GROUP BY c.id ORDER BY c.rate_count DESC",
+        (f"%{c_key}%",),
+    ).fetchall()
+    for row in fuzzy:
+        if row["id"] in seen:
+            continue
+        if _norm_course_name(_strip_series_tail(row["name"])) == c_key:
+            merged.append(row)
+            seen.add(row["id"])
+    return merged
+
 
 def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
                             max_results: int) -> dict | None:
@@ -961,21 +1010,7 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
         c_key = _norm_course_name(kw)
         for alias, full in _COURSE_ALIAS.items():
             c_key = c_key.replace(alias, full)
-        rows = []
-        for where, params in (
-            (_SQL_NORM_NAME + " = ?", (c_key,)),
-            (_SQL_NORM_NAME + " LIKE ?", (f"%{c_key}%",)),
-        ):
-            rows = conn.execute(
-                "SELECT c.name, c.id, c.code, c.credit, c.dept, c.rating_avg, c.rate_count, "
-                "GROUP_CONCAT(t.name, ', ') AS teacher_names "
-                "FROM courses c LEFT JOIN course_teachers ct ON ct.course_id = c.id "
-                "LEFT JOIN teachers t ON t.id = ct.teacher_id "
-                f"WHERE {where} GROUP BY c.id ORDER BY c.rate_count DESC",
-                params,
-            ).fetchall()
-            if rows:
-                break
+        rows = _exact_course_rows(conn, c_key)
         if not rows:
             continue  # 该关键词未命中课程, 试下一个
         items = []
