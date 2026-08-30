@@ -310,6 +310,16 @@ class LegacyQaRunner:
 
         tool_results = [value for value in (result.get("tool_results") or []) if isinstance(value, dict)]
         candidates = [value for value in (result.get("candidates") or []) if isinstance(value, dict)]
+        # B2: think 决策过程透出(前端折叠卡); 只透 decision/reason, 不露提示词与工具原始数据
+        thoughts: list[dict[str, Any]] = []
+        for entry in (result.get("thought_log") or []):
+            if not isinstance(entry, dict):
+                continue
+            thoughts.append({
+                "round": entry.get("round") or 0,
+                "decision": str(entry.get("decision") or "compose"),
+                "reason": str(entry.get("reason") or "").strip(),
+            })
         tool_records = _tool_records(tool_results)
         candidate_records = _candidate_records(candidates, self._trust_store)
         candidate_supports = candidate_records if result.get("candidates_found") else []
@@ -353,6 +363,8 @@ class LegacyQaRunner:
             sources=sources,
             limitations=limitations,
             terminal_reason="local_answer",
+            thoughts=thoughts,
+            truncated=bool(result.get("truncated")),
         )
 
     def close(self) -> None:

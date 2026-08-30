@@ -1284,12 +1284,12 @@ def compose(state: QaState) -> dict:
     error = state.get("error") or ""
 
     if intent == "敏感拒绝" and any(w in query for w in _SENSITIVE_WORDS):
-        return {"answer": _sensitive_refusal(), "error": error}
+        return {"answer": _sensitive_refusal(), "error": error, "truncated": False}
     if intent == "闲聊" and not results and not candidates:
-        return {"answer": _chitchat(query), "error": error}
+        return {"answer": _chitchat(query), "error": error, "truncated": False}
     personal_field = state.get("personal_qa")
     if personal_field:
-        return {"answer": _personal_qa_answer(personal_field, state), "error": error}
+        return {"answer": _personal_qa_answer(personal_field, state), "error": error, "truncated": False}
 
     tool_summary = _build_tool_summary(results)
     candidates_summary = _build_candidates_summary(candidates)
@@ -1298,7 +1298,7 @@ def compose(state: QaState) -> dict:
     if state.get("llm_down"):
         log.info("compose: LLM 已熔断（本轮此前失败），直接输出降级摘要")
         return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates),
-                "error": error or "LLM 不可用（熔断降级）"}
+                "error": error or "LLM 不可用（熔断降级）", "truncated": False}
 
     try:
         llm = create_llm(temperature=0.3)
@@ -1315,18 +1315,22 @@ def compose(state: QaState) -> dict:
             "tool_summary": tool_summary,
         })
         answer = _strip_rule_prefix(response.content)
+        # B4: 输出触顶截断标记(finish_reason=length) → 前端展示"继续生成"
+        truncated = bool(
+            (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length"
+        )
         if not (answer or "").strip():
             log.warning("compose LLM 返回空回答，降级为结果格式化")
             return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates,
                                                note="LLM 返回空回答"),
-                    "error": error or "LLM 返回空回答"}
-        return {"answer": answer, "error": error}
+                    "error": error or "LLM 返回空回答", "truncated": False}
+        return {"answer": answer, "error": error, "truncated": truncated}
     except Exception as e:
         log.warning(f"QA 综合回答 LLM 失败，降级为结果格式化: {e}")
         from utils.llm_client import mark_llm_down_if_unreachable
         mark_llm_down_if_unreachable(e)  # 仅连接级失败开熔断窗（读超时不动窗）
         return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates),
-                "error": error or f"LLM 不可用: {e}"}
+                "error": error or f"LLM 不可用: {e}", "truncated": False}
 
 
 def _llm_down_answer(tool_summary: str, candidates_summary: str,

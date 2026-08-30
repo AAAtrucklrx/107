@@ -1,11 +1,14 @@
+import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   AlertTriangle,
   ArrowDown,
   Bot,
+  Brain,
   CalendarRange,
   Check,
+  ChevronDown,
   Clipboard,
   Database,
   Globe2,
@@ -13,6 +16,7 @@ import {
   Library,
   Menu,
   MessageSquarePlus,
+  Pencil,
   RotateCcw,
   Search,
   Send,
@@ -47,6 +51,7 @@ import type {
   SessionPayload,
   Source,
   SseEnvelope,
+  ThoughtStep,
 } from "../types";
 
 const loadRenderedAnswer = () => import("../components/RenderedAnswer");
@@ -230,6 +235,91 @@ function StageStrip({ stage }: { stage?: string }) {
   );
 }
 
+// B1: 打字机渲染 — 流式期间逐块渐显 markdown, 完成后一次全显
+function TypewrittenAnswer({ message }: { message: ChatMessage }) {
+  const active = message.status === "streaming";
+  const full = message.content;
+  const [shown, setShown] = useState(active ? 0 : full.length);
+  useEffect(() => {
+    if (!active) {
+      setShown((prev) => (prev === full.length ? prev : full.length));
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      setShown((prev) => {
+        if (prev >= full.length) return prev;
+        const step = Math.max(4, Math.ceil(full.length / 150));
+        return Math.min(full.length, prev + step);
+      });
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [active, full]);
+  return (
+    <RenderedAnswer
+      content={full.slice(0, shown)}
+      sources={message.sources ?? []}
+    />
+  );
+}
+
+const thoughtDecisionLabels: Record<string, string> = {
+  call_tool: "调用工具",
+  retrieve: "检索资料",
+  clarify: "追问澄清",
+  compose: "直接回答",
+};
+
+// B5: 编辑态输入框
+function UserMessageEditor({ message, onCancel, onSave }: {
+  message: ChatMessage;
+  onCancel: (message: ChatMessage) => void;
+  onSave: (message: ChatMessage, text: string) => void;
+}) {
+  const [text, setText] = useState(message.content);
+  return (
+    <div className="user-message-editor">
+      <textarea
+        aria-label="编辑问题"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        rows={2}
+        maxLength={8000}
+        autoFocus
+      />
+      <div className="user-message-editor__actions">
+        <button className="secondary-button" type="button" onClick={() => onCancel(message)}>取消</button>
+        <button className="command-button" type="button" disabled={!text.trim()} onClick={() => onSave(message, text)}>重新生成</button>
+      </div>
+    </div>
+  );
+}
+
+// B2: 可折叠思考过程卡(只展示决策与理由, 不露提示词)
+function ThoughtCard({ thoughts }: { thoughts: ThoughtStep[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible.Root className="thought-card" open={open} onOpenChange={setOpen}>
+      <Collapsible.Trigger className="thought-card__trigger" aria-label="展开思考过程">
+        <span><Brain size={14} />思考过程 {thoughts.length} 步</span>
+        <ChevronDown size={14} data-open={open} aria-hidden="true" />
+      </Collapsible.Trigger>
+      <Collapsible.Content className="thought-card__content">
+        <ol className="thought-card__steps">
+          {thoughts.map((thought) => (
+            <li key={thought.round}>
+              <span className="thought-card__badge">{thoughtDecisionLabels[thought.decision] ?? thought.decision}</span>
+              <span className="thought-card__reason">{thought.reason || `第 ${thought.round} 轮决策`}</span>
+            </li>
+          ))}
+        </ol>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  );
+}
+
 function FeedbackDialog({
   message,
   csrfToken,
@@ -406,6 +496,17 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
       }));
       return;
     }
+    if (event.type === "thought.step") {
+      const thought = data as unknown as ThoughtStep;
+      updateAssistant(assistantId, (message) => ({
+        ...message,
+        thoughts: [
+          ...(message.thoughts ?? []).filter((item) => item.round !== thought.round),
+          thought,
+        ].sort((a, b) => a.round - b.round),
+      }));
+      return;
+    }
     if (event.type === "answer.segment") {
       updateAssistant(assistantId, (message) => ({
         ...message,
@@ -427,6 +528,7 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
           claims: (data.claims as ChatMessage["claims"]) ?? [],
           limitations: (data.limitations as string[] | undefined) ?? [],
           terminalReason: String(data.terminal_reason ?? "completed"),
+          truncated: Boolean(data.truncated),
         } : message);
         if (!authenticated && conversationId) void persistLocal(next, conversationId, selectedMode);
         return next;
@@ -573,6 +675,33 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
     return "";
   }, [messages]);
 
+  // B4: 回答触顶截断 → 以续写指令发起新一轮(历史含原问答, LLM 从断处继续)
+  const continueGenerating = useCallback((message: ChatMessage) => {
+    const original = lastUserQuestion(messages.indexOf(message));
+    void submitQuestion(
+      `请从刚才的回答截断处继续往下写（不要重复已经写过的内容）：\n${original}`,
+      message.mode ?? "auto",
+    );
+  }, [lastUserQuestion, messages, submitQuestion]);
+
+  // B5: 编辑已发问题重新生成(本地截断到该问题, 服务端同一会话追加新回答)
+  const startEdit = useCallback((message: ChatMessage) => {
+    updateAssistant(message.id, (item) => ({ ...item, editing: true }));
+  }, [updateAssistant]);
+
+  const cancelEdit = useCallback((message: ChatMessage) => {
+    updateAssistant(message.id, (item) => ({ ...item, editing: false }));
+  }, [updateAssistant]);
+
+  const saveEdit = useCallback((message: ChatMessage, newText: string) => {
+    const cleaned = newText.trim();
+    if (!cleaned) return;
+    const index = messages.indexOf(message);
+    if (index < 0) return;
+    setMessages((current) => current.slice(0, index));
+    void submitQuestion(cleaned, mode);
+  }, [messages, mode, submitQuestion]);
+
   const historyProps = useMemo(() => ({
     conversations,
     activeId,
@@ -623,11 +752,37 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
               <div className="message__identity">{message.role === "assistant" ? <><Bot size={15} />小蜗</> : "你"}</div>
               <div className="message__body">
                 {message.role === "assistant" && <StageStrip stage={message.stage} />}
-                {message.role === "user" && message.content && <div className="markdown-body"><p>{message.content}</p></div>}
+                {message.role === "user" && (message.editing ? (
+                  <UserMessageEditor message={message} onCancel={cancelEdit} onSave={saveEdit} />
+                ) : (
+                  <div className="user-message">
+                    {message.content && <div className="markdown-body"><p>{message.content}</p></div>}
+                    {!busy && (
+                      <button
+                        className="message-action message-edit-button"
+                        type="button"
+                        onClick={() => startEdit(message)}
+                        aria-label="编辑并重新生成"
+                        title="编辑并重新生成"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {message.role === "assistant" && !!message.thoughts?.length && (
+                  <ThoughtCard thoughts={message.thoughts} />
+                )}
                 {message.role === "assistant" && (message.content || !!message.sources?.length) && (
                   <Suspense fallback={<div className="message-render-loading" role="status" aria-label="正在呈现回答"><span /><span /></div>}>
-                    <RenderedAnswer content={message.content} sources={message.sources ?? []} />
+                    <TypewrittenAnswer message={message} />
                   </Suspense>
+                )}
+                {message.role === "assistant" && message.truncated && message.status !== "streaming" && (
+                  <div className="truncated-bar">
+                    <span>回答较长，已生成到输出上限。</span>
+                    <button type="button" disabled={busy} onClick={() => void continueGenerating(message)}>继续生成</button>
+                  </div>
                 )}
                 {message.status === "failed" && <div className="message-failure"><AlertTriangle size={15} />本次回答未完成</div>}
                 {!!message.claims?.some((claim) => claim.status === "conflict") && (

@@ -85,6 +85,12 @@ export interface SseEnvelope<T = Record<string, unknown>> {
   data: T;
 }
 
+export interface ThoughtStep {
+  round: number;
+  decision: string;
+  reason: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -99,6 +105,9 @@ export interface ChatMessage {
   claims?: Claim[];
   limitations?: string[];
   terminalReason?: string;
+  thoughts?: ThoughtStep[];
+  truncated?: boolean;
+  editing?: boolean;
 }
 
 export interface ConversationSummary {

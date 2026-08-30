@@ -1339,6 +1339,148 @@ button:disabled {
   color: var(--retrieval);
 }
 
+/* B5: 用户消息编辑重生成 */
+.user-message {
+  position: relative;
+}
+
+.message-edit-button {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  color: var(--muted);
+  transition: opacity 0.15s ease;
+}
+
+.user-message:hover .message-edit-button {
+  opacity: 1;
+}
+
+.user-message-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-message-editor textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-1);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.user-message-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* B2: 可折叠思考过程卡 */
+.thought-card {
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.thought-card__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.thought-card__trigger span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.thought-card__trigger svg[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.thought-card__content {
+  overflow: hidden;
+}
+
+.thought-card__steps {
+  margin: 0;
+  padding: 4px 12px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.thought-card__steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.thought-card__badge {
+  flex: none;
+  border-radius: 6px;
+  padding: 1px 7px;
+  background: var(--retrieval-soft, color-mix(in srgb, var(--retrieval) 12%, transparent));
+  color: var(--retrieval);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.thought-card__reason {
+  opacity: 0.85;
+}
+
+/* B4: 截断提示 + 继续生成 */
+.truncated-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11.5px;
+}
+
+.truncated-bar button {
+  border: none;
+  border-radius: 6px;
+  background: var(--warning);
+  color: var(--canvas);
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.truncated-bar button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .source-section {
   margin-top: 14px;
   border-top: 1px solid var(--line);

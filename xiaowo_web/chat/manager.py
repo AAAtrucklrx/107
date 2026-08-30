@@ -163,6 +163,9 @@ class ChatManager:
     async def _complete(self, job: _Job, bundle: AnswerBundle) -> None:
         request = job.request
         self._stage(request.run_id, "answering", "正在生成回答")
+        # B2: think 决策过程逐条推送(回答之前), 前端折叠卡展示
+        for thought in bundle.thoughts:
+            self.store.append_event(request.run_id, "thought.step", thought)
         for source in bundle.sources:
             self.store.append_event(
                 request.run_id,
@@ -218,6 +221,7 @@ class ChatManager:
                 "sources": bundle.sources,
                 "limitations": limitations,
                 "terminal_reason": bundle.terminal_reason,
+                "truncated": bundle.truncated,
                 "stage": "completed",
                 "conversation_id": request.conversation_id,
             },

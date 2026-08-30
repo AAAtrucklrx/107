@@ -123,6 +123,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "thought_log": [],
                 "clarify_question": "",
                 "answer": "",
+                "truncated": False,
                 "error": "",
             }
             final = _get_graph().invoke(initial)
@@ -152,5 +153,6 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "thought_log": [],
             "clarify_question": "",
             "answer": f"处理请求时出错：{e}",
+            "truncated": False,
             "error": str(e),
         }

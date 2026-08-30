@@ -29,3 +29,6 @@ class AnswerBundle:
     limitations: list[str] = field(default_factory=list)
     terminal_reason: str = "completed"
     ingestion_candidates: list[dict[str, Any]] = field(default_factory=list)
+    # B2: think 决策过程(前端折叠卡展示); B4: LLM 输出触顶截断标记(前端"继续生成")
+    thoughts: list[dict[str, Any]] = field(default_factory=list)
+    truncated: bool = False
