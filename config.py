@@ -22,7 +22,9 @@ LLM_CONFIG = {
     "api_key": os.getenv("LLM_API_KEY", "your-api-key-here"),
     "model": os.getenv("LLM_MODEL", "deepseek-v4-flash"),
     "temperature": 0.3,
-    "max_tokens": 2048,
+    # 输出预算:实测 2048 在长列表场景被截断(finish=length),4096 足够且自然收尾;
+    # 平台接受 8192,但生成时延 ~30s,撞 45s 生成超时的风险更高
+    "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4096")),
     "timeout": 30,
     # 平台故障快速失败：0＝不重试，1＝重试一次（最多 2 次尝试）；P3-2 降级路由配套
     "max_retries": int(os.getenv("LLM_MAX_RETRIES", "1")),

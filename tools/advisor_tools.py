@@ -942,6 +942,71 @@ def _split_targets(max_results: int, profile: dict) -> tuple[int, int]:
     return req, max_results - req
 
 
+# 课程简称 → 全称(指定课程直查用; 与 analyze_teacher 双参数别名一致)
+_COURSE_ALIAS = {
+    "数分": "数学分析", "线代": "线性代数", "概统": "概率论与数理统计",
+    "高数": "高等数学", "大物": "大学物理", "大英": "大学英语",
+}
+
+
+def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
+                            max_results: int) -> dict | None:
+    """指定课程直查: 返回该课程全部班级(合教组合整体展示), 不套培养方案。
+
+    任一关键词命中课程 → 直查结果(source="exact_course");
+    全部未命中 → None(调用方回退培养方案推荐)。
+    简称先展开("数分"→"数学分析"), 优先完全同名, 再模糊匹配。
+    """
+    for kw in keywords:
+        c_key = _norm_course_name(kw)
+        for alias, full in _COURSE_ALIAS.items():
+            c_key = c_key.replace(alias, full)
+        rows = []
+        for where, params in (
+            (_SQL_NORM_NAME + " = ?", (c_key,)),
+            (_SQL_NORM_NAME + " LIKE ?", (f"%{c_key}%",)),
+        ):
+            rows = conn.execute(
+                "SELECT c.name, c.id, c.code, c.credit, c.dept, c.rating_avg, c.rate_count, "
+                "GROUP_CONCAT(t.name, ', ') AS teacher_names "
+                "FROM courses c LEFT JOIN course_teachers ct ON ct.course_id = c.id "
+                "LEFT JOIN teachers t ON t.id = ct.teacher_id "
+                f"WHERE {where} GROUP BY c.id ORDER BY c.rate_count DESC",
+                params,
+            ).fetchall()
+            if rows:
+                break
+        if not rows:
+            continue  # 该关键词未命中课程, 试下一个
+        items = []
+        for row in rows:  # 指定课程直查必须列全所有班级, 不受 max_results 截断
+            # 班级多时每班仅带 1 条评论, 保证 LLM 输出预算内能列全所有班级
+            reviews = _top_reviews(conn, row["id"], limit=1)
+            teachers = row["teacher_names"] or ""
+            items.append({
+                "name": row["name"],
+                "code": row["code"] or "",
+                "credit": row["credit"],
+                "dept": row["dept"] or "",
+                "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
+                "rate_count": row["rate_count"] or 0,
+                "teachers": [{"name": t.strip()} for t in teachers.split(",") if t.strip()],
+                "top_reviews": reviews,
+                "reasons": ["指定课程直查: 该课程全部班级(第三方评课数据, 仅供参考)"],
+            })
+        return {
+            "recommendations": items,
+            "groups": {"required": items},
+            "progress": None,
+            "total_candidates": len(rows),
+            "filtered_count": len(items),
+            "keyword_fallback": False,
+            "program_context": None,
+            "source": "exact_course",
+        }
+    return None
+
+
 def _recommend_flat(conn: sqlite3.Connection, profile: dict, keywords: list[str],
                     max_results: int, taken: set[str]) -> dict:
     """无方案命中：按用户需求 + 可靠度排序，并明确标记为无方案降级。"""
@@ -1300,6 +1365,30 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     if not program_total and prog_id is not None:
         program_rows, program_total, unmatched = _load_local_program_rows(conn, prog_id, prog_name)
         program_name, program_source = prog_name, "generic"
+
+    # 指定课程直查模式: 有明确课程名关键词时绕过培养方案, 直接返回该课程全部班级
+    # (合教组合整体展示), 不带方案上下文; 关键词全部未命中课程时回退培养方案流程。
+    if hard_keywords:
+        exact_result = _recommend_exact_course(conn, hard_keywords, max_results)
+        if exact_result is not None:
+            conn.close()
+            note = dict(PROFILES.get(profile.get("preference_type", "balanced"), PROFILES["balanced"]))
+            note["auto"] = False
+            note["source"] = "default"
+            note["needs"] = {
+                "interests": profile.get("interests") or [],
+                "course_scope": profile.get("course_scope") or "all",
+                "workload_preference": profile.get("workload_preference"),
+                "preferred_teachers": profile.get("preferred_teachers") or [],
+                "target_term": _canonical_target_term(profile.get("target_term"), current_yi),
+            }
+            exact_result["profile_note"] = note
+            exact_result.setdefault("limitations", [])
+            if not profile.get("_taken_known"):
+                exact_result["limitations"].append("未取得完整已修课程记录，无法确认是否已修读部分班级。")
+            if not exact_result.get("recommendations"):
+                exact_result["limitations"].append("指定课程范围没有命中可核验候选，本次未放宽该硬条件。")
+            return exact_result
 
     if not program_total:
         result = _recommend_flat(conn, profile, hard_keywords, max_results, taken)

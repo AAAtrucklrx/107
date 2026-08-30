@@ -363,8 +363,12 @@ def _render_card(card):
             #   {recommendations, groups:{required,elective,exploratory}, total_candidates}
             body = "### 📚 选课推荐\n"
             groups = d.get("groups") or {}
-            for label, key in (("必修", "required"), ("方案内选修", "elective"),
-                               ("方向补充", "exploratory")):
+            if d.get("source") == "exact_course":
+                group_labels = (("课程班级", "required"),)
+            else:
+                group_labels = (("必修", "required"), ("方案内选修", "elective"),
+                                ("方向补充", "exploratory"))
+            for label, key in group_labels:
                 items = groups.get(key) or []
                 if not items:
                     continue
