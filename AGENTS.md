@@ -18,10 +18,11 @@
 
 | 服务 | 端口 | 说明 |
 |---|---|---|
-| Web（SPA+API+SSE） | 8000（公网 8850 转发） | `competition + demo`，公网访问 `http://114.214.241.119:8850`（origin 单值校验，改地址须同步 `.env` 的 `XIAOWO_PUBLIC_ORIGIN`） |
+| Web（SPA+API+SSE） | 8000（公网 8850 转发） | `competition + demo`，公网访问 `http://114.214.241.119:8850`（origin 单值校验，改地址须同步 `.env` 的 `XIAOWO_PUBLIC_ORIGIN`）；**联网已启用**（readiness 四项全绿：database/review_database/web_evidence/evidence_extractor） |
 | 审核/发布 worker | — | `python -m xiaowo_web.worker`，常驻 |
 | Streamlit 回退 | 8502 | 仅紧急回退 |
 
+- 联网 sidecar（宿主机 Docker 29.7.2，已 attestation）：SearXNG `127.0.0.1:8080` + Crawl4AI 0.9.2 + adapter `127.0.0.1:11235`，三容器 healthy；管理经 `/var/run/docker.sock`（沙箱内可 exec/restart，脚本 `deploy/server/docker_exec.py`）或宿主机 `docker compose -f deploy/sidecars/compose.yml`。**搜索引擎限流是常态**（数据中心 IP），管线已做空结果重试一次；sidecar 细节与调优见 `docs/部署规格与记录_2026-09-01.md` §7。
 - 管理：`deploy/server/{start_all,stop_all,status}.sh`（nohup + pidfile，**无 systemd**）；日志 `deploy/server/logs/`。
 - 健康：`GET /api/v1/health/live`、`/api/v1/health/ready`、`/api/v1/config/public`。
 - `.env` 是服务器唯一配置（LLM key、YOUNG_TOKEN、`XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_PUBLIC_ORIGIN`、chroma/reranker/review 各 Linux 路径、生成预算 60s/70s——长生成实测 ~32s 所需）。密钥不进 git。

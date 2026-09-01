@@ -88,6 +88,19 @@ class EvidencePipeline:
                 raise
             return self._insufficient([], ["SearXNG 搜索当前不可用或超时。"], terminal_reason="SEARCH_PARTIAL")
 
+        if not batch.hits:
+            # 搜索引擎对数据中心 IP 偶发限流返回空结果；短暂退避后重试一次。
+            await asyncio.sleep(1.5)
+            try:
+                batch = await asyncio.wait_for(
+                    self.search.search(sanitized.text, limit=10),
+                    timeout=self.settings.search_timeout_seconds,
+                )
+            except (TimeoutError, SidecarContractError, Exception) as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
+                return self._insufficient([], ["SearXNG 搜索当前不可用或超时。"], terminal_reason="SEARCH_PARTIAL")
+
         limitations: list[str] = []
         if batch.partial:
             limitations.append("部分搜索引擎未响应，结果可能不完整。")

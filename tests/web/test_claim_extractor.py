@@ -86,10 +86,10 @@ def test_extractor_unwraps_message_content_blocks() -> None:
 def test_configured_default_model_path_passes_the_capability_probe(monkeypatch) -> None:
     class StructuredModel:
         def invoke(self, _prompt: str) -> dict:
-            quote = "公开探针文本：办理时间为九月一日。"
+            quote = "公开探针文本：办理时间为九月一日至九月三日。"
             return {
                 "claims": [{
-                    "text": "办理时间为九月一日。",
+                    "text": "办理时间为九月一日至九月三日。",
                     "evidence": [{
                         "source_id": "probe-source",
                         "relation": "supports",

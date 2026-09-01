@@ -32,6 +32,23 @@ class FakeSearch:
         return None
 
 
+class EmptyThenHitSearch:
+    def __init__(self, second_hits: list[SearchHit]) -> None:
+        self.second_hits = second_hits
+        self.queries: list[str] = []
+        self.calls = 0
+
+    async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
+        self.queries.append(query)
+        self.calls += 1
+        if self.calls == 1:
+            return SearchBatch([])
+        return SearchBatch(self.second_hits[:limit])
+
+    async def close(self) -> None:
+        return None
+
+
 class FakeCrawler:
     def __init__(self, pages: dict[str, CrawledPage], healthy: bool = True) -> None:
         self.pages = pages
@@ -69,6 +86,31 @@ def _page(url: str, markdown: str, *, final_url: str | None = None) -> CrawledPa
         robots_allowed=True,
         peer_ip_verified=True,
     )
+
+
+def test_empty_first_search_retries_once(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/2"
+    markdown = "教务处公告说明，本事项自二零二六年十月一日起执行。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    search = EmptyThenHitSearch([SearchHit("公告", url)])
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        search,
+        FakeCrawler({url: _page(url, markdown)}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="本事项自二零二六年十月一日起执行。",
+            evidence=(ExtractedEvidence(
+                source_id=source_id,
+                relation="supports",
+                quote=markdown,
+            ),),
+        )]),
+    )
+
+    answer = asyncio.run(pipeline.answer("这项公开事项何时执行"))
+    assert search.calls == 2
+    assert answer.terminal_reason == "web_evidence_confirmed"
 
 
 def test_official_quote_can_confirm_a_claim(tmp_path) -> None:

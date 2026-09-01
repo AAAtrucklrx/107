@@ -27,20 +27,37 @@ ui:
   query_in_title: false
 
 outgoing:
-  request_timeout: 3.0
-  max_request_timeout: 4.0
+  request_timeout: 5.5
+  max_request_timeout: 7.0
   pool_connections: 20
   pool_maxsize: 10
   enable_http2: true
 
 engines:
+  # 本服务器 2026-09-01 实测可达且有效：baidu / 360search / chinaso（其余引擎禁用原因见 DEPLOY-STEP-BY-STEP.md 与部署规格记录）
   - name: baidu
+    disabled: false
+  - name: "360search"
+    disabled: false
+  - name: chinaso
     disabled: false
   - name: bing
     disabled: false
-  - name: brave
+  - name: mojeek
     disabled: false
+  - name: sogou
+    disabled: true
   - name: duckduckgo
-    disabled: false
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: google
+    disabled: true
+  - name: "google cse"
+    disabled: true
   - name: wikipedia
-    disabled: false
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: qwant
+    disabled: true

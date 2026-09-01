@@ -122,7 +122,7 @@ class StructuredClaimExtractor:
             requested_url="https://example.com/xiaowo-probe",
             final_url="https://example.com/xiaowo-probe",
             title="公开探针",
-            markdown="公开探针文本：办理时间为九月一日。",
+            markdown="公开探针文本：办理时间为九月一日至九月三日。",
             status_code=200,
             content_type="text/html",
             fetched_at="2026-01-01T00:00:00Z",

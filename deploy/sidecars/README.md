@@ -1,6 +1,8 @@
 # 小蜗联网 Sidecar 部署模板
 
-本目录只保存配置模板，不会在开发机安装或启动 Docker、SearXNG 或 Crawl4AI。
+> **逐步执行版教程：见 `DEPLOY-STEP-BY-STEP.md`**（面向云主机宿主机，Ubuntu 24.04，含镜像加速与验收清单）。
+> 本目录只保存配置模板，不会在开发机安装或启动 Docker、SearXNG 或 Crawl4AI。
+> 注意（2026-09-01）：`searxng/settings.yml` 引擎已按本服务器网络实测换为 baidu/bing/sogou/360search/mojeek（原 brave/duckduckgo/wikipedia 在本机不可达）。
 
 ## 边界
 
