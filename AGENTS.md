@@ -8,7 +8,7 @@
 
 ## ⚠️ 当前状态（2026-09-01 实测）——动手前必看
 
-- HEAD：`980feb6`（feat: rebuild schedule and add campus tools admin），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`22a07ec`（feat(evidence): wechat official-account channel…），main 分支，远端 `github.com/AAAtrucklrx/107`。
 - **工作区干净**：无未提交改动；未跟踪项均为数据/环境产物（`.env`、`data/`、`database/*.db-wal/shm`、`scripts/data/`、`.models/`、`.npm-cache/`、`deploy/server/logs/` 等，均不入 git）。
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
 - **已确认的身份边界**：登录后的专业/年级只取当前用户 CAS/成绩档案，取不到不猜且不继承匿名选择；个人方案失败时可按已验证身份显示通用方案，但必须标注“专业通用参考，不是个人培养方案”。
@@ -57,7 +57,7 @@ $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 108/108（2026-09-01）
+$PY -m pytest tests/web -q          # 132/132（2026-09-01）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build
