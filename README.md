@@ -57,6 +57,8 @@ python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000
 
 SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [Web 部署与数据迁移](docs/Web部署与数据迁移.md)。当前开发机不安装或启动这些 sidecar。旧 Streamlit 回退入口仍可用 `python -m streamlit run app_test.py --server.port 8502` 启动。
 
+**服务器实操部署**（Linux，2026-09-01 已上线）：`deploy/server/{start_all,stop_all,status}.sh` 管理三服务（Web:8000 / worker / Streamlit:8502），公网 `http://114.214.241.119:8850`（competition + demo）；完整契约与调优记录见 [部署规格与记录](docs/部署规格与记录_2026-09-01.md)，服务器环境事实见 [VM 接手文档](docs/VM接手文档.md) §6。
+
 ## 📁 项目结构
 
 ```

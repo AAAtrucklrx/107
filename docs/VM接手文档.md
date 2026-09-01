@@ -1,8 +1,14 @@
 # VM 接手文档（小蜗 → AI 代理完整上下文）
 
-> 读者：部署在 114.214.241.119（东风云 Windows VM）内的 DeepSeek Harness（DSH）AI 代理。
-> 用途：AI 在 VM 中接管小蜗开发/运维前的**事实基线**。人用文档见 `docs/会话交接摘要.md`（唯一起点）与 `docs/接手日志.md`。
+> 读者：部署在 114.214.241.119（东风云云主机）内的 DeepSeek Harness（DSH）AI 代理。
+> 用途：AI 在主机中接管小蜗开发/运维前的**事实基线**。人用文档见 `docs/会话交接摘要.md`（唯一起点）与 `docs/接手日志.md`。
 > 维护：随代码同步更新；快照基准 **2026-08-30**。
+
+> ⚠️ **2026-09-01 更新（本机现状，优先于下文 Windows 描述）**：本主机已 Linux 化并完成部署——
+> Ubuntu 24.04（8C/16G），DSH 运行于 bwrap 沙箱（/etc、/root 只读，无 systemd），工作区 `/root/Desktop/小蜗`；
+> **部署已完成**（competition+demo @ `http://114.214.241.119:8850`，origin 单值校验），HEAD `980feb6`，数据资产（评课库/主库/审核库/chroma/young 快照）全部就位；
+> 运维用 `deploy/server/{start_all,stop_all,status}.sh`；GitHub 走 Watt Toolkit 加速（**根证书 2026-08-31 轮换**，CA=`scripts/data/steamtools_ca_latest.pem`；Linux git 为 GnuTLS 后端、无 `http.sslBackend=openssl`）；
+> 完整部署契约与调优记录见 `docs/部署规格与记录_2026-09-01.md`。下文 §6 Windows 表与 §8 清单仅作历史参考。
 
 ---
 
@@ -60,6 +66,8 @@
 | `verify_web_load.py` | ✅ 通过 | 100 条真实消费中的 SSE、回答并发峰值 30、超限 503、100 条完整结束；事件 URL 按 `/api/v1` 相对契约解析 |
 | 浏览器设计矩阵 | ✅ 通过 | 1440 / 1024 / 768 / 390 / 320px，浅深主题；无整页横向溢出、控制台错误、小于 12px 可见辅助文字或低于 40/44px 的控件 |
 | 需 LLM：`qa_consistency` 12/12 · `qa_new_docs` 10/10 | 本轮未运行 | 脚本会向外部 LLM 发送学号/画像，未获明确授权；左侧为最近一次基线 |
+
+> **2026-09-01 Linux 服务器实测**（代码已推进至 `980feb6`）：`pytest tests/web` **108/108**（100 旧 + 8 校园工具/学术新测试）；`verify_tools.py` 44/44 · `test_fixes.py` 49/49 · `verify_nodes.py` 57/57 · `check_course_db` 9/9；`verify_web_load` 通过（SSE=100 / 峰值并发 30 / 超限 503 / 完成 100）；init_check 通过（评课库 5667 门、向量 1000 条、检索命中）。
 
 ### 2.3 Web vNext 已落地边界
 
@@ -119,34 +127,22 @@ docs/            会话交接摘要（人用）/接手日志/总纲方案/tool-s
 
 ## 6. 环境事实
 
-### 本机（开发机，沙箱受限）
-- Python 3.14：`C:\Users\Richelieu\AppData\Local\Programs\Python\Python314\python.exe`
-- PowerShell 无 `&&`；内联 `-c` 多行引号易炸 → 写脚本文件；沙箱 tempfile 受限用 `XIAOWO_TEST_TMP`
-- 本机代理教训：FlClash/Steam++/iWan 叠加会劫持流量（“IP 未发送任何数据”元凶）；访问校内服务用 iWan，访问公网别开全局梯子
+> **2026-09-01 起以本节「Linux 服务器」为准**；下方 Windows 开发机/云主机历史事实仅回溯用。
 
-### VM（东风云 弹性云主机，Windows 11 Pro 8C16G）
+### Linux 服务器（当前主机 · 2026-09-01 实测）
 | 项 | 值 |
 |---|---|
-| 内网 IP | 192.167.103.3 |
-| 虚拟 IP（三层网络，默认不出校） | 114.214.241.119 |
-| 控制台网关（noVNC，仅校园网/iWan） | 114.214.243.253:5000（4900 = VNC 后端） |
-| RDP（已通） | `mstsc` → 114.214.241.119:23389（源端口 23389 → 云主机 3389） |
-| 校内服务实测 | api.llm 200 ✅ · young 403(可达) ✅ · jw.ustc.edu.cn 302→/login ✅ · `jwxt.ustc.edu.cn` 无公网 DNS（**代码不用它**，真实域名 jw.ustc.edu.cn） |
-| 平台端口转发 | 源端口禁用 22/53/514/123/7272/7274；规则：源端口(虚拟IP) → 云主机端口(VM)；RDP 已按此建好 |
-| 密码 | 初始化时已自定义（用户自持）；A3 警示：未改默认密码做转发会收权限 |
+| 系统/资源 | Ubuntu 24.04.4 LTS，8C/16G，磁盘 263G 可用 |
+| DSH 运行形态 | bwrap 沙箱（PID1=bwrap）：**/etc、/root 只读**，无 systemd 总线；工作区 `/root/Desktop/小蜗` 为宿主机磁盘挂载（持久化） |
+| Python | 3.12.3（无系统 pip/ensurepip）；仓库 venv `.venv`（get-pip 引导，pip 26.2.1） |
+| Node/npm | v22.23.2 / 10.9.8；npm 缓存必须指工作区 `.npm-cache`（/root 只读） |
+| 网络 | 校内 LLM/jw/young ✓、PyPI/npm/hf-mirror ✓；**github.com 仅经 Watt Toolkit 加速**（Steam++.Accelerator :443 + 根证书 8-31 轮换，CA=`scripts/data/steamtools_ca_latest.pem`） |
+| 端口 | 80/443 宿主占用；Web 8000（公网 8850 转发，已建规则 `8850(虚拟IP)→8000(云主机)`）、Streamlit 8502（转发 8851 可选） |
+| 部署 | competition+demo @ `http://114.214.241.119:8850`；管理 `deploy/server/{start_all,stop_all,status}.sh`；日志 `deploy/server/logs/` |
 
-**VM 部署进行中清单**（交接状态）：
-- [x] RDP 远程登录打通
-- [ ] 安装 Python 3.14（未装；`python` 命中 Store 假别名——用 `winget install Python.Python.3.14` 或官网安装器）
-- [ ] 安装受支持的 Node.js/npm，用于 `frontend/` 的可重复构建
-- [ ] 代码上机：`git clone https://github.com/AAAtrucklrx/107.git C:\xiaowo`（GitHub 可达性待测；不通则 RDP 拖 zip）
-- [ ] 数据上机：旧 `xiaowo_deploy_data.zip` 可恢复基础四项；新增审核库/网页快照/批准 generation 必须按 `docs/Web部署与数据迁移.md` 生成带 SHA-256 manifest 的加密包
-- [ ] `.env`：比赛使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_ADMIN_IDS=PB25111691`、实际 HTTP public origin；当前不配置/启用 CAS，不进 git
-- [ ] `python -m venv .venv` + `pip install -r requirements.lock.txt` + `python init_check.py`
-- [ ] `frontend/` 执行 `npm ci` 与 `npm run build`，启动 FastAPI（建议 VM 内 8000）并注册 NSSM 服务
-- [ ] 比赛配置 `competition + demo`，平台端口转发源端口 8850 → FastAPI 端口；持续显示演示数据标识
-- [ ] 在服务器按 `deploy/sidecars/README.md` 部署并核验 sidecar；未通过 attestation 前保持联网关闭
-- [ ] 单独注册 `python -m xiaowo_web.worker` 服务；确认与 Web 使用同一审核库和 generation 路径
+### Windows 历史事实（开发机 + 原 Windows 云主机，仅回溯）
+- 开发机 Python 3.14：`C:\Users\Richelieu\AppData\Local\Programs\Python\Python314\python.exe`；PowerShell 无 `&&`（用 `;`）；沙箱 tempfile 受限用 `XIAOWO_TEST_TMP`；代理教训：FlClash/Steam++/iWan 叠加会劫持流量。
+- 原 Windows VM 部署进行中清单（**已全部改为在 Linux 服务器完成，本清单作废**）：原计划 `competition + demo`、8850 端口转发、fastapi/worker/NSSM 等，均已按 `docs/部署规格与记录_2026-09-01.md` 落地（NSSM→nohup 脚本、venv 差异见上表）。
 - [ ] 「出校」申请（公网访问，用户决定晚点提交；审批周期不可控）
 - [ ] CAS 白名单 P3-1（登记 service URL；外部申请）
 - [ ] **DSH AI 部署（本交接目的）**：`npx @deepseek-ai/dsh web`（Node ≥22.19，官方包）→ Web UI 3080；**官方 DeepSeek key 由用户自行配置**（api.deepseek.com）；形态 = Web UI + 端口转发（DSH 配置存 VM 用户目录 ~/.dsh）
@@ -180,8 +176,12 @@ python init_check.py
 5. **8-1 LLM 熔断窗 600s**（进程级全局，多用户 A 断网连累 B；建议缩至 60-300s——架构观察项，用户未拍板）
 6. **出校申请 / 可信 HTTPS 域名**（真实 CAS、个人区和 production 管理区的硬前置）
 7. **P6-1 流水线未完整纳入验证集**：`scripts/dev_pipeline/config.py` 仍只配置部分测试脚本。
-8. **服务器 Web 部署**：代码侧已完成；VM 仍需 Node/Python、构建、隔离 demo、sidecar attestation、worker 和端口转发实测。
-9. **P6-3 剩余历史文档审定**：Web 核心运行文档已同步；`项目交接报告.md` 等历史总览仍需独立决定是否重写。
+8. **P6-3 剩余历史文档审定**：Web 核心运行文档已同步；`项目交接报告.md` 等历史总览仍需独立决定是否重写。
+
+**2026-09-01 新增（服务器部署后发现）**：
+10. **向量库维度降级**：现有 chroma 为 768 维（text2vec 时代构建），API embedding（qwen3-embedding）为 4096 维 → 按既有设计降级 BM25 检索（`knowledge/vector_store.py` 自动降级，检索仍可用；可选后续用 qwen3-embedding 重建索引，属数据资产变更需用户拍板）。
+11. **LLM 客户端超时上限**：`config.py` LLM_CONFIG `timeout=30s`，>4000 字符长答案实测生成 ~32s 会撞超时（重试 1 次）；Web 层预算已调 60s/70s（.env）。用户已决定暂不改代码。
+12. **Watt Toolkit 根证书轮换**：2026-08-31 换根，旧 `scripts/data/steamtools_ca.pem` 失效；git 通道必须以 `scripts/data/steamtools_ca_latest.pem` 为 CA，且本机 git 为 GnuTLS 后端（无 `http.sslBackend=openssl`）。
 
 ## 9. 密钥纪律
 
