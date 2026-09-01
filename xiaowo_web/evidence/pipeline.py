@@ -22,7 +22,7 @@ from xiaowo_web.evidence.models import (
     ValidatedUrl,
 )
 from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
-from xiaowo_web.evidence.rewrite import QueryRewriter, official_site_query
+from xiaowo_web.evidence.rewrite import QueryRewriter, official_site_query, temporal_anchor
 from xiaowo_web.evidence.trust import SourceTrustStore, registered_domain
 from xiaowo_web.evidence.url_security import UrlGuard, UrlSafetyError
 from xiaowo_web.settings import WebSettings
@@ -85,6 +85,7 @@ class EvidencePipeline:
         sources_acc: list[dict] = []
         limitations_acc: list[str] = []
         claims_acc: list[dict] | None = None
+        year_anchor = temporal_anchor(sanitized.text) if self.settings.web_query_rewrite else None
 
         for round_index in range(max_rounds):
             if round_index >= len(queries):
@@ -169,7 +170,11 @@ class EvidencePipeline:
                     "EXTRACTOR_PROBE_FAILED": "结构化证据模型能力探针失败。",
                 }
                 limitations_acc.append(messages.get(extractor_code, "结构化证据提取暂不可用。"))
-            claims, confirmed_lines, conflict_lines, ingestion_spans = self._verify_claims(extracted, pages)
+            claims, confirmed_lines, conflict_lines, ingestion_spans, year_notes = self._verify_claims(
+                extracted, pages, year_anchor=year_anchor,
+            )
+            if year_notes:
+                limitations_acc.extend(item for item in year_notes if item not in limitations_acc)
             claims_acc = claims
             sources_accext = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
             if confirmed_lines or conflict_lines:
@@ -251,13 +256,18 @@ class EvidencePipeline:
         self,
         extracted: list[ExtractedClaim],
         page_records: list[_PageRecord],
-    ) -> tuple[list[dict], list[str], list[str], dict[str, list[str]]]:
+        *,
+        year_anchor: str | None = None,
+    ) -> tuple[list[dict], list[str], list[str], dict[str, list[str]], list[str]]:
         pages = {record.source_id: record for record in page_records}
         citation_map = {record.source_id: index + 1 for index, record in enumerate(page_records)}
         claims: list[dict] = []
         confirmed_lines: list[str] = []
         conflict_lines: list[str] = []
         ingestion_spans: dict[str, list[str]] = {}
+        year_notes: list[str] = []
+        seen_mismatch = False
+        seen_undated = False
         for index, candidate in enumerate(extracted[:20], start=1):
             if not candidate.text.strip():
                 continue
@@ -269,6 +279,13 @@ class EvidencePipeline:
                 page_text = " ".join(record.page.markdown.split()) if record else ""
                 if record is None or len(quote) < 12 or quote not in page_text:
                     continue
+                if year_anchor:
+                    published_year = self._published_year(record.page)
+                    if published_year and not self._evidence_year_ok(record.page, year_anchor):
+                        seen_mismatch = True
+                        continue
+                    if published_year is None:
+                        seen_undated = True
                 excerpt_hash = hashlib.sha256(quote.encode("utf-8")).hexdigest()
                 near_hash = hashlib.sha256(page_text[:4000].encode("utf-8")).hexdigest()
                 evidence_sources.append(EvidenceSource(
@@ -316,7 +333,23 @@ class EvidencePipeline:
                         ingestion_spans.setdefault(item["source_id"], []).append(item["excerpt_hash"])
             elif assessment.status == "conflict":
                 conflict_lines.append(f"- {candidate.text.strip()} {suffix}".strip())
-        return claims, confirmed_lines, conflict_lines, ingestion_spans
+        if seen_mismatch:
+            year_notes.append("已排除发布年份与问题年份不一致的联网证据。")
+        if seen_undated:
+            year_notes.append("部分来源未标注发布时间，年份一致性未核对。")
+        return claims, confirmed_lines, conflict_lines, ingestion_spans, year_notes
+
+    @staticmethod
+    def _published_year(page: CrawledPage) -> str | None:
+        published = (page.published_at or "").strip()
+        match = re.search(r"(20\d{2})", published)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _evidence_year_ok(page: CrawledPage, year_anchor: str) -> bool:
+        """年份引用侧核对：问题含年份锚时，证据的发布年份必须与锚一致。"""
+        published_year = EvidencePipeline._published_year(page)
+        return published_year is None or published_year == year_anchor
 
     @staticmethod
     def _ingestion_candidates(

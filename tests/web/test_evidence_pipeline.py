@@ -73,7 +73,7 @@ class FixedExtractor:
         return self.claims
 
 
-def _page(url: str, markdown: str, *, final_url: str | None = None) -> CrawledPage:
+def _page(url: str, markdown: str, *, final_url: str | None = None, published_at: str = "2026-08-27") -> CrawledPage:
     return CrawledPage(
         requested_url=url,
         final_url=final_url or url,
@@ -82,7 +82,7 @@ def _page(url: str, markdown: str, *, final_url: str | None = None) -> CrawledPa
         status_code=200,
         content_type="text/html",
         fetched_at=datetime.now(UTC).isoformat(),
-        published_at="2026-08-27",
+        published_at=published_at,
         content_hash=hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
         robots_allowed=True,
         peer_ip_verified=True,
@@ -299,3 +299,87 @@ def test_sensitive_query_never_reaches_search(tmp_path) -> None:
     answer = asyncio.run(pipeline.answer("帮我查我的成绩"))
     assert answer.terminal_reason == "PERSONAL_QUERY"
     assert search.queries == []
+
+
+def test_year_mismatch_evidence_is_excluded(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/19339.html"
+    markdown = "教务处公告明确说明，秋季学期选课通知发布于教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch([SearchHit("公告", url)]),
+        FakeCrawler({url: _page(url, markdown, published_at="2025-07-01")}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="秋季学期选课通知发布于教学子栏目。",
+            evidence=(ExtractedEvidence(source_id=source_id, relation="supports", quote=markdown),),
+        )]),
+        rewriter=ScriptedRewriter([["选课通知 2026"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
+    assert any("发布年份与问题年份不一致" in item for item in answer.limitations)
+
+
+def test_matching_year_keeps_claim_confirmed(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
+    markdown = "教务处公告明确说明，秋季学期选课通知发布于教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch([SearchHit("公告", url)]),
+        FakeCrawler({url: _page(url, markdown, published_at="2026-07-16")}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="秋季学期选课通知发布于教学子栏目。",
+            evidence=(ExtractedEvidence(source_id=source_id, relation="supports", quote=markdown),),
+        )]),
+        rewriter=ScriptedRewriter([["选课通知 2026"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert answer.terminal_reason == "web_evidence_confirmed"
+    assert answer.claims[0]["status"] == "confirmed"
+
+
+def test_year_mismatch_evidence_is_excluded(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/19339.html"
+    markdown = "教务处公告明确说明，秋季学期选课通知发布于教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch([SearchHit("公告", url)]),
+        FakeCrawler({url: _page(url, markdown, published_at="2025-07-01")}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="秋季学期选课通知发布于教学子栏目。",
+            evidence=(ExtractedEvidence(source_id=source_id, relation="supports", quote=markdown),),
+        )]),
+        rewriter=ScriptedRewriter([["选课通知 2026"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
+    assert any("发布年份与问题年份不一致" in item for item in answer.limitations)
+
+
+def test_matching_year_keeps_claim_confirmed(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
+    markdown = "教务处公告明确说明，秋季学期选课通知发布于教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch([SearchHit("公告", url)]),
+        FakeCrawler({url: _page(url, markdown, published_at="2026-07-16")}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="秋季学期选课通知发布于教学子栏目。",
+            evidence=(ExtractedEvidence(source_id=source_id, relation="supports", quote=markdown),),
+        )]),
+        rewriter=ScriptedRewriter([["选课通知 2026"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert answer.terminal_reason == "web_evidence_confirmed"
+    assert answer.claims[0]["status"] == "confirmed"
