@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from xiaowo_web.evidence.rewrite import QueryRewriter, _RewritePayload
+from xiaowo_web.evidence.rewrite import QueryRewriter, _RewritePayload, official_site_query, temporal_anchor
 
 
 def _run(coro):
@@ -23,7 +23,7 @@ def test_long_question_returns_keyword_queries() -> None:
 
     rewriter = QueryRewriter(invoke)
     result = _run(rewriter.rewrite("中国科学技术大学2026年秋季学期本科生选课通知的最新安排是什么？"))
-    assert result == ["科大 教务处 选课通知", "2026 秋季本科生选课安排"]
+    assert result == ["科大 教务处 选课通知 2026", "2026 秋季本科生选课安排"]
 
 
 def test_duplicate_or_original_queries_are_dropped() -> None:
@@ -53,3 +53,28 @@ def test_prompt_includes_short_hint_when_requested() -> None:
     result = _run(rewriter.rewrite("这条问题同样非常长，用来检验简短改写提示词是否真正被拼接进了提示里。", short_hint=True))
     assert result == ["更短关键词"]
     assert "更简短" in seen[0]
+
+
+def test_temporal_anchor_resolves_relative_years() -> None:
+    assert temporal_anchor("今年选课时间") == str(2026)
+    assert temporal_anchor("明年开学安排") == str(2027)
+    assert temporal_anchor("2026年春季学期") == "2026"
+    assert temporal_anchor("一般问题描述") is None
+
+
+def test_year_is_appended_to_rewritten_queries_when_missing() -> None:
+    year = str(2026)
+
+    def invoke(_prompt: str) -> dict:
+        return {"queries": ["科大选课通知"]}
+
+    rewriter = QueryRewriter(invoke)
+    result = _run(rewriter.rewrite("请问中国科学技术大学今年秋季学期本科生选课通知的最新安排是什么？"))
+    assert result == [f"科大选课通知 {year}"]
+
+
+def test_official_site_query_mapping() -> None:
+    assert official_site_query("请问选课成绩在哪查") == "site:ustc.edu.cn 教务处"
+    assert official_site_query("研究生复试时间") == "site:ustc.edu.cn 研究生院"
+    assert official_site_query("图书馆开放时间") == "site:ustc.edu.cn 图书馆"
+    assert official_site_query("今天天气怎么样") is None

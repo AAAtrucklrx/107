@@ -37,6 +37,45 @@ _SYSTEM_PROMPT = (
     "只返回 JSON：{\"queries\": [\"关键词1\", \"关键词2\"]}。"
 )
 
+# 校内事务 → 官方站点限定查询（证据面扩展：site 查询提高官方一手命中率）
+_OFFICIAL_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "教务处": ("教务处", "选课", "成绩", "课表", "校历", "考试", "评教", "补办", "转专业", "缓考"),
+    "研究生院": ("研究生", "招生", "复试", "学位", "导师"),
+    "图书馆": ("图书馆", "借阅", "馆藏", "研讨室"),
+    "学生工作部": ("学工", "奖助", "勤工", "宿舍", "离校"),
+    "校医院": ("校医院", "医保", "体检"),
+    "财务处": ("学费", "缴费", "报销", "发票"),
+    "就业指导中心": ("就业", "招聘", "实习"),
+    "本科招生": ("招生办", "本科招生"),
+}
+# 问题里显式年份/相对年份
+_YEAR_RE = re.compile(r"(20\d{2})\s*年|今年|明年|本学期|下学年", re.IGNORECASE)
+
+
+def temporal_anchor(question: str) -> str | None:
+    """提取问题中的年份锚（今年/明年/20XX年），用于把时效信息并入查询词。"""
+    from datetime import date
+
+    text = question.strip()
+    if re.search(r"20\d{2}", text):
+        match = re.search(r"(20\d{2})", text)
+        return match.group(1)
+    now = date.today().year
+    if "明年" in text:
+        return str(now + 1)
+    if "今年" in text or "本学期" in text or "下学年" in text:
+        return str(now)
+    return None
+
+
+def official_site_query(question: str) -> str | None:
+    """若问题涉及校内事务，返回 site 限定的官方站点查询（如 site:ustc.edu.cn 教务处）。"""
+    text = question.strip()
+    for org, hints in _OFFICIAL_KEYWORDS.items():
+        if any(hint in text for hint in hints):
+            return f"site:ustc.edu.cn {org}"
+    return None
+
 
 class QueryRewriter:
     """Bound query rewriting; returns None on any failure (caller falls back)."""
@@ -69,6 +108,9 @@ class QueryRewriter:
         prompt = _SYSTEM_PROMPT
         if short_hint:
             prompt += "（请比上一轮更简短，使用不同关键词组合。）"
+        year = temporal_anchor(text)
+        if year:
+            prompt += f"（问题涉及 {year} 年/当前学年，查询词应包含对应年份。）"
         try:
             import asyncio
 
@@ -88,6 +130,12 @@ class QueryRewriter:
             queries.append(cleaned[:QUERY_MAX_CHARS])
             if len(queries) >= self.max_queries:
                 break
+        # 确定性：问题含年份锚且改写词没有年份时，把年份并入（防模型忽略提示）
+        if year and queries:
+            queries = [
+                (f"{q} {year}" if year not in q else q)[: QUERY_MAX_CHARS + 5]
+                for q in queries
+            ]
         return queries or None
 
     def _invoke_default_model(self, prompt: str) -> Any:

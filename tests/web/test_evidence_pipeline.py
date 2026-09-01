@@ -164,10 +164,37 @@ def test_second_round_searches_different_query_after_empty_first(tmp_path) -> No
         rewriter=rewriter,
     )
 
-    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期开学典礼在哪一天举行？"))
     # 第一轮：关键词A（空）+ 退避重试一次；加轮提示改写得到 换词C 后再搜一次并确认。
     assert search.queries == ["关键词A", "关键词A", "换词C"]
     assert rewriter.hints == [False, True]
+    assert answer.terminal_reason == "web_evidence_confirmed"
+
+
+def test_official_site_query_is_used_on_second_round(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
+    markdown = "教务处公告说明，选课通知已发布于教务处教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    site_query = "site:ustc.edu.cn 教务处"
+    search = QueryAwareSearch({site_query: [SearchHit("公告", url)]})
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        search,
+        FakeCrawler({url: _page(url, markdown)}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="选课通知已发布于教务处教学子栏目。",
+            evidence=(ExtractedEvidence(
+                source_id=source_id,
+                relation="supports",
+                quote=markdown,
+            ),),
+        )]),
+        rewriter=ScriptedRewriter([["关键词A"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert search.queries == ["关键词A", "关键词A", site_query]
     assert answer.terminal_reason == "web_evidence_confirmed"
 
 

@@ -22,7 +22,7 @@ from xiaowo_web.evidence.models import (
     ValidatedUrl,
 )
 from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
-from xiaowo_web.evidence.rewrite import QueryRewriter
+from xiaowo_web.evidence.rewrite import QueryRewriter, official_site_query
 from xiaowo_web.evidence.trust import SourceTrustStore, registered_domain
 from xiaowo_web.evidence.url_security import UrlGuard, UrlSafetyError
 from xiaowo_web.settings import WebSettings
@@ -196,11 +196,19 @@ class EvidencePipeline:
         return self._insufficient(sources_acc, limitations_acc, claims=claims_acc)
 
     async def _candidate_queries(self, question: str) -> list[str]:
-        """Rewrite long questions into 1-2 keyword queries; original on any failure."""
-        if not self.settings.web_query_rewrite:
-            return [question]
-        rewritten = await self.rewriter.rewrite(question)
-        return rewritten or [question]
+        """Rewrite long questions into 1-2 keyword queries; original on any failure.
+
+        校内事务问题额外注入 site 官方站点查询（第二位优先，提高权威一手来源命中率）。
+        """
+        if self.settings.web_query_rewrite:
+            rewritten = await self.rewriter.rewrite(question)
+        else:
+            rewritten = None
+        queries = rewritten or [question]
+        site_query = official_site_query(question)
+        if site_query and site_query not in queries:
+            queries.insert(1, site_query)
+        return queries[:3]
 
     async def _search_once(self, query: str) -> tuple[SearchBatch | None, list[str]]:
         """One search attempt with a single empty-result retry (engine rate limits)."""
