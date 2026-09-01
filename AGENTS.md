@@ -22,6 +22,7 @@
 | 审核/发布 worker | — | `python -m xiaowo_web.worker`，常驻 |
 | Streamlit 回退 | 8502 | 仅紧急回退 |
 
+- 公众号联网通道：科大相关问题优先检索微信公众号（`XIAOWO_WECHAT_ENABLED=true`，官方号白名单 `中国科学技术大学|中科大|中国科大|蜗壳`，图片 OCR 走平台 unlimited-ocr；熔断+限频+SSRF 域白名单保护；详见 `docs/公众号联网通道_spec_2026-09.md` 与 `docs/部署规格与记录_2026-09-01.md` §11）。
 - 联网 sidecar（宿主机 Docker 29.7.2，已 attestation）：SearXNG `127.0.0.1:8080` + Crawl4AI 0.9.2 + adapter `127.0.0.1:11235`，三容器 healthy；管理经 `/var/run/docker.sock`（沙箱内可 exec/restart，脚本 `deploy/server/docker_exec.py`）或宿主机 `docker compose -f deploy/sidecars/compose.yml`。**搜索引擎限流是常态**（数据中心 IP），管线已做空结果重试一次；sidecar 细节与调优见 `docs/部署规格与记录_2026-09-01.md` §7。
 - 管理：`deploy/server/{start_all,stop_all,status}.sh`（nohup + pidfile，**无 systemd**）；日志 `deploy/server/logs/`。
 - 健康：`GET /api/v1/health/live`、`/api/v1/health/ready`、`/api/v1/config/public`。

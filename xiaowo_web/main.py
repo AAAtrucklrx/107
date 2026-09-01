@@ -23,6 +23,7 @@ from xiaowo_web.evidence.clients import Crawl4AiClient, SearxngClient, SidecarHe
 from xiaowo_web.evidence.extractor import StructuredClaimExtractor
 from xiaowo_web.evidence.pipeline import EvidencePipeline
 from xiaowo_web.evidence.rewrite import QueryRewriter
+from xiaowo_web.evidence.wechat import WechatClient
 from xiaowo_web.evidence.runner import EvidenceAwareRunner
 from xiaowo_web.knowledge import ApprovedKnowledgeRetriever
 from xiaowo_web.settings import PROJECT_ROOT, WebSettings
@@ -83,6 +84,7 @@ def create_app(
                     probe_timeout_seconds=resolved_settings.evidence_extractor_probe_timeout_seconds,
                 ),
                 rewriter=QueryRewriter(),
+                wechat=WechatClient(),
             )
             resolved_runner = EvidenceAwareRunner(local_runner, evidence_pipeline)
             if resolved_health_provider is None:

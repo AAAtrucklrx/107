@@ -121,6 +121,8 @@ class WebSettings:
     # 联网检索增强：查询改写（长问句 → 1-2 个关键词查询）与有限加轮（1..3）
     web_query_rewrite: bool = True
     web_search_max_rounds: int = 2
+    # 微信公众号通道（科大相关问题优先，受熔断保护；由 XIAOWO_WECHAT_ENABLED 控制）
+    wechat_enabled: bool = True
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -214,6 +216,7 @@ class WebSettings:
                 )),
                 web_query_rewrite=_env_bool(source, "XIAOWO_WEB_QUERY_REWRITE", default=True),
                 web_search_max_rounds=max(1, min(3, int(source.get("XIAOWO_WEB_SEARCH_ROUNDS", "2")))),
+                wechat_enabled=_env_bool(source, "XIAOWO_WECHAT_ENABLED", default=True),
                 max_question_chars=int(source.get("XIAOWO_MAX_QUESTION_CHARS", "8000")),
                 max_concurrent_runs=int(source.get("XIAOWO_MAX_CONCURRENT_RUNS", "30")),
                 max_queued_runs=int(source.get("XIAOWO_MAX_QUEUED_RUNS", "30")),
