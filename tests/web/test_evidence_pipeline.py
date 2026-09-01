@@ -15,6 +15,7 @@ from xiaowo_web.evidence.models import (
     SearchHit,
 )
 from xiaowo_web.evidence.pipeline import EvidencePipeline
+from xiaowo_web.evidence.rewrite import QueryRewriter
 from xiaowo_web.evidence.url_security import UrlGuard
 
 
@@ -86,6 +87,88 @@ def _page(url: str, markdown: str, *, final_url: str | None = None) -> CrawledPa
         robots_allowed=True,
         peer_ip_verified=True,
     )
+
+
+class QueryAwareSearch:
+    def __init__(self, hits_by_query: dict[str, list[SearchHit]]) -> None:
+        self.hits_by_query = hits_by_query
+        self.queries: list[str] = []
+
+    async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
+        self.queries.append(query)
+        return SearchBatch((self.hits_by_query.get(query) or [])[:limit])
+
+    async def close(self) -> None:
+        return None
+
+
+class ScriptedRewriter:
+    def __init__(self, results: list[list[str] | None]) -> None:
+        self.results = list(results)
+        self.calls = 0
+        self.hints: list[bool] = []
+
+    async def rewrite(self, _question: str, *, short_hint: bool = False) -> list[str] | None:
+        self.calls += 1
+        self.hints.append(short_hint)
+        if self.results:
+            return self.results.pop(0)
+        return None
+
+
+def test_rewritten_query_is_used_for_search(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/19339.html"
+    markdown = "教务处公告明确说明，秋季学期选课通知的具体发布时间为九月一日。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    search = QueryAwareSearch({"科大 教务处 选课通知": [SearchHit("公告", url)]})
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        search,
+        FakeCrawler({url: _page(url, markdown)}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="秋季学期选课通知的具体发布时间为九月一日。",
+            evidence=(ExtractedEvidence(
+                source_id=source_id,
+                relation="supports",
+                quote=markdown,
+            ),),
+        )]),
+        rewriter=ScriptedRewriter([["科大 教务处 选课通知"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知的具体发布时间？"))
+    assert search.queries[0] == "科大 教务处 选课通知"
+    assert answer.terminal_reason == "web_evidence_confirmed"
+
+
+def test_second_round_searches_different_query_after_empty_first(tmp_path) -> None:
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
+    markdown = "教务处公告说明，选课通知已发布于教务处教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    search = QueryAwareSearch({"换词C": [SearchHit("公告", url)]})
+    rewriter = ScriptedRewriter([["关键词A"], ["换词C"]])
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        search,
+        FakeCrawler({url: _page(url, markdown)}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([ExtractedClaim(
+            text="选课通知已发布于教务处教学子栏目。",
+            evidence=(ExtractedEvidence(
+                source_id=source_id,
+                relation="supports",
+                quote=markdown,
+            ),),
+        )]),
+        rewriter=rewriter,
+    )
+
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    # 第一轮：关键词A（空）+ 退避重试一次；加轮提示改写得到 换词C 后再搜一次并确认。
+    assert search.queries == ["关键词A", "关键词A", "换词C"]
+    assert rewriter.hints == [False, True]
+    assert answer.terminal_reason == "web_evidence_confirmed"
 
 
 def test_empty_first_search_retries_once(tmp_path) -> None:

@@ -22,6 +22,7 @@ from xiaowo_web.evidence.models import (
     ValidatedUrl,
 )
 from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
+from xiaowo_web.evidence.rewrite import QueryRewriter
 from xiaowo_web.evidence.trust import SourceTrustStore, registered_domain
 from xiaowo_web.evidence.url_security import UrlGuard, UrlSafetyError
 from xiaowo_web.settings import WebSettings
@@ -57,6 +58,7 @@ class EvidencePipeline:
         url_guard: UrlGuard | None = None,
         trust_store: SourceTrustStore | None = None,
         extractor: ClaimExtractor,
+        rewriter: QueryRewriter | None = None,
     ) -> None:
         self.settings = settings
         self.search = search
@@ -64,6 +66,7 @@ class EvidencePipeline:
         self.url_guard = url_guard or UrlGuard()
         self.trust_store = trust_store or SourceTrustStore()
         self.extractor = extractor
+        self.rewriter = rewriter or QueryRewriter()
 
     async def answer(
         self,
@@ -77,106 +80,152 @@ class EvidencePipeline:
         except QuerySafetyError as exc:
             return self._insufficient([], [exc.message], terminal_reason=exc.code)
 
-        self._stage(on_stage, "web_search", "正在联网搜索")
+        queries = await self._candidate_queries(sanitized.text)
+        max_rounds = max(1, self.settings.web_search_max_rounds)
+        sources_acc: list[dict] = []
+        limitations_acc: list[str] = []
+        claims_acc: list[dict] | None = None
+
+        for round_index in range(max_rounds):
+            if round_index >= len(queries):
+                if (
+                    round_index == 1
+                    and len(queries) == 1
+                    and self.settings.web_query_rewrite
+                ):
+                    # 唯一候选失败且还有加轮预算：请改写器给出更简短的另一组关键词。
+                    extra = await self.rewriter.rewrite(sanitized.text, short_hint=True)
+                    if extra:
+                        queries.extend(extra)
+                if round_index >= len(queries):
+                    break
+            query = queries[round_index]
+            if round_index > 0 and query == queries[round_index - 1]:
+                break
+
+            self._stage(on_stage, "web_search", "正在联网搜索")
+            batch, search_limitations = await self._search_once(query)
+            limitations_acc.extend(search_limitations)
+            if batch is None:
+                continue
+            if not batch.hits:
+                limitations_acc.append(f"第 {round_index + 1} 轮检索未命中，尝试其他关键词。")
+                continue
+
+            ranked = sorted(batch.hits, key=self._rank_hit)
+            validated_hits: list[tuple[SearchHit, ValidatedUrl, TrustDecision]] = []
+            for hit in ranked:
+                try:
+                    validated = await asyncio.to_thread(self.url_guard.validate, hit.url)
+                except UrlSafetyError:
+                    continue
+                trust = self.trust_store.classify(validated)
+                validated_hits.append((hit, validated, trust))
+                if len(validated_hits) >= 3:
+                    break
+            if not validated_hits:
+                limitations_acc.append("无搜索结果通过公开网络地址与来源安全校验。")
+                continue
+
+            self._stage(on_stage, "web_fetch", "正在抓取公开页面")
+            if not await self.crawler.health():
+                return self._insufficient(
+                    [], limitations_acc + ["Crawl4AI 未通过 egress、robots 与连接固定健康检查。"],
+                    terminal_reason="CRAWL_BLOCKED",
+                )
+            tasks = [self._crawl_one(hit, validated, trust) for hit, validated, trust in validated_hits]
+            try:
+                crawled = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=max(0.1, self.settings.evidence_timeout_seconds - self.settings.search_timeout_seconds),
+                )
+            except TimeoutError:
+                crawled = []
+                limitations_acc.append("网页抓取达到证据预算。")
+            pages = [item for item in crawled if isinstance(item, _PageRecord)]
+            if len(pages) < len(validated_hits):
+                limitations_acc.append("部分候选页面未通过抓取或重定向后的安全校验。")
+            if not pages:
+                limitations_acc.append("本轮未抓到可用页面。")
+                continue
+
+            self._stage(on_stage, "evidence_check", "正在核验证据")
+            try:
+                extracted = await self.extractor.extract(
+                    sanitized.text,
+                    [(record.source_id, record.page) for record in pages],
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                extracted = []
+                limitations_acc.append("结构化证据提取暂不可用，未输出未经核验的结论。")
+            extractor_code = getattr(self.extractor, "last_error_code", None)
+            if extractor_code and not any("结构化证据提取" in item for item in limitations_acc):
+                messages = {
+                    "EXTRACTOR_NOT_CONFIGURED": "结构化证据提取未配置经过验证的模型。",
+                    "EXTRACTOR_INVALID_RESPONSE": "结构化证据模型返回格式未通过校验。",
+                    "EXTRACTOR_CALL_FAILED": "结构化证据模型调用失败。",
+                    "EXTRACTOR_PROBE_FAILED": "结构化证据模型能力探针失败。",
+                }
+                limitations_acc.append(messages.get(extractor_code, "结构化证据提取暂不可用。"))
+            claims, confirmed_lines, conflict_lines, ingestion_spans = self._verify_claims(extracted, pages)
+            claims_acc = claims
+            sources_accext = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
+            if confirmed_lines or conflict_lines:
+                if confirmed_lines:
+                    sections: list[str] = [s for s in confirmed_lines if s]
+                    if conflict_lines:
+                        sections.append("信息存在分歧\n\n" + "\n".join(conflict_lines))
+                    return AnswerBundle(
+                        markdown="\n\n".join(sections),
+                        claims=claims,
+                        sources=sources_accext,
+                        limitations=limitations_acc,
+                        terminal_reason="web_evidence_confirmed",
+                        ingestion_candidates=self._ingestion_candidates(pages, ingestion_spans),
+                    )
+                # 只有冲突、无确认：视为证据不足，继续加轮（下次若确认则确认，否则最终如实列出）
+                limitations_acc.append("已找到来源但声明存在分歧，继续核验。")
+                sources_acc.extend(sources_accext)
+                continue
+
+            sources_acc.extend(sources_accext)
+            limitations_acc.append("已找到公开来源，但尚无声明达到确定性证据门槛。")
+
+        return self._insufficient(sources_acc, limitations_acc, claims=claims_acc)
+
+    async def _candidate_queries(self, question: str) -> list[str]:
+        """Rewrite long questions into 1-2 keyword queries; original on any failure."""
+        if not self.settings.web_query_rewrite:
+            return [question]
+        rewritten = await self.rewriter.rewrite(question)
+        return rewritten or [question]
+
+    async def _search_once(self, query: str) -> tuple[SearchBatch | None, list[str]]:
+        """One search attempt with a single empty-result retry (engine rate limits)."""
         try:
             batch = await asyncio.wait_for(
-                self.search.search(sanitized.text, limit=10),
+                self.search.search(query, limit=10),
                 timeout=self.settings.search_timeout_seconds,
             )
         except (TimeoutError, SidecarContractError, Exception) as exc:
             if isinstance(exc, asyncio.CancelledError):
                 raise
-            return self._insufficient([], ["SearXNG 搜索当前不可用或超时。"], terminal_reason="SEARCH_PARTIAL")
-
+            return None, ["SearXNG 搜索当前不可用或超时。"]
         if not batch.hits:
-            # 搜索引擎对数据中心 IP 偶发限流返回空结果；短暂退避后重试一次。
             await asyncio.sleep(1.5)
             try:
                 batch = await asyncio.wait_for(
-                    self.search.search(sanitized.text, limit=10),
+                    self.search.search(query, limit=10),
                     timeout=self.settings.search_timeout_seconds,
                 )
             except (TimeoutError, SidecarContractError, Exception) as exc:
                 if isinstance(exc, asyncio.CancelledError):
                     raise
-                return self._insufficient([], ["SearXNG 搜索当前不可用或超时。"], terminal_reason="SEARCH_PARTIAL")
-
-        limitations: list[str] = []
-        if batch.partial:
-            limitations.append("部分搜索引擎未响应，结果可能不完整。")
-        ranked = sorted(batch.hits, key=self._rank_hit)
-        validated_hits: list[tuple[SearchHit, ValidatedUrl, TrustDecision]] = []
-        for hit in ranked:
-            try:
-                validated = await asyncio.to_thread(self.url_guard.validate, hit.url)
-            except UrlSafetyError:
-                continue
-            trust = self.trust_store.classify(validated)
-            validated_hits.append((hit, validated, trust))
-            if len(validated_hits) >= 3:
-                break
-        if not validated_hits:
-            limitations.append("没有搜索结果通过公开网络地址与来源安全校验。")
-            return self._insufficient([], limitations, terminal_reason="EVIDENCE_INSUFFICIENT")
-
-        self._stage(on_stage, "web_fetch", "正在抓取公开页面")
-        if not await self.crawler.health():
-            limitations.append("Crawl4AI 未通过 egress、robots 与连接固定健康检查。")
-            return self._insufficient([], limitations, terminal_reason="CRAWL_BLOCKED")
-        tasks = [self._crawl_one(hit, validated, trust) for hit, validated, trust in validated_hits]
-        try:
-            crawled = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=max(0.1, self.settings.evidence_timeout_seconds - self.settings.search_timeout_seconds),
-            )
-        except TimeoutError:
-            crawled = []
-            limitations.append("网页抓取达到 12 秒证据预算。")
-        pages = [item for item in crawled if isinstance(item, _PageRecord)]
-        if len(pages) < len(validated_hits):
-            limitations.append("部分候选页面未通过抓取或重定向后的安全校验。")
-        if not pages:
-            return self._insufficient([], limitations, terminal_reason="EVIDENCE_INSUFFICIENT")
-
-        self._stage(on_stage, "evidence_check", "正在核验证据")
-        try:
-            extracted = await self.extractor.extract(
-                sanitized.text,
-                [(record.source_id, record.page) for record in pages],
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            extracted = []
-            limitations.append("结构化证据提取暂不可用，未输出未经核验的结论。")
-        extractor_code = getattr(self.extractor, "last_error_code", None)
-        if extractor_code and not any("结构化证据提取" in item for item in limitations):
-            messages = {
-                "EXTRACTOR_NOT_CONFIGURED": "结构化证据提取未配置经过验证的模型。",
-                "EXTRACTOR_INVALID_RESPONSE": "结构化证据模型返回格式未通过校验。",
-                "EXTRACTOR_CALL_FAILED": "结构化证据模型调用失败。",
-                "EXTRACTOR_PROBE_FAILED": "结构化证据模型能力探针失败。",
-            }
-            limitations.append(messages.get(extractor_code, "结构化证据提取暂不可用。"))
-        claims, confirmed_lines, conflict_lines, ingestion_spans = self._verify_claims(extracted, pages)
-        public_sources = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
-        if not confirmed_lines and not conflict_lines:
-            limitations.append("已找到公开来源，但尚无声明达到确定性证据门槛。")
-            return self._insufficient(public_sources, limitations, claims=claims)
-
-        sections: list[str] = []
-        if confirmed_lines:
-            sections.append("\n".join(confirmed_lines))
-        if conflict_lines:
-            sections.append("信息存在分歧\n\n" + "\n".join(conflict_lines))
-        return AnswerBundle(
-            markdown="\n\n".join(sections),
-            claims=claims,
-            sources=public_sources,
-            limitations=limitations,
-            terminal_reason="web_evidence_confirmed" if confirmed_lines else "SOURCE_CONFLICT",
-            ingestion_candidates=self._ingestion_candidates(pages, ingestion_spans),
-        )
+                return None, ["SearXNG 搜索当前不可用或超时。"]
+        limitations = ["部分搜索引擎未响应，结果可能不完整。"] if batch.partial else []
+        return batch, limitations
 
     async def _crawl_one(
         self,

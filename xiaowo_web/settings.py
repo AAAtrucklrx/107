@@ -118,6 +118,9 @@ class WebSettings:
     evidence_extractor_enabled: bool = True
     evidence_extractor_model: str = ""
     evidence_extractor_probe_timeout_seconds: float = 4.0
+    # 联网检索增强：查询改写（长问句 → 1-2 个关键词查询）与有限加轮（1..3）
+    web_query_rewrite: bool = True
+    web_search_max_rounds: int = 2
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -209,6 +212,8 @@ class WebSettings:
                 evidence_extractor_probe_timeout_seconds=float(source.get(
                     "XIAOWO_EVIDENCE_EXTRACTOR_PROBE_TIMEOUT_SECONDS", "4",
                 )),
+                web_query_rewrite=_env_bool(source, "XIAOWO_WEB_QUERY_REWRITE", default=True),
+                web_search_max_rounds=max(1, min(3, int(source.get("XIAOWO_WEB_SEARCH_ROUNDS", "2")))),
                 max_question_chars=int(source.get("XIAOWO_MAX_QUESTION_CHARS", "8000")),
                 max_concurrent_runs=int(source.get("XIAOWO_MAX_CONCURRENT_RUNS", "30")),
                 max_queued_runs=int(source.get("XIAOWO_MAX_QUEUED_RUNS", "30")),
