@@ -217,3 +217,101 @@ CREATE TABLE IF NOT EXISTS source_trust_proposals (
     created_at REAL NOT NULL,
     FOREIGN KEY (item_id) REFERENCES review_items(item_id) ON DELETE CASCADE
 );
+
+-- User-submitted campus tools are deliberately separate from config/links.yaml.
+-- The YAML file remains the trust boundary for verified official links.
+CREATE TABLE IF NOT EXISTS campus_tool_applications (
+    application_id TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+    applicant_principal_id TEXT NOT NULL,
+    applicant_auth_mode TEXT NOT NULL CHECK (applicant_auth_mode IN ('demo', 'cas')),
+    applicant_name_snapshot TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL CHECK (category IN ('study', 'life', 'information', 'community', 'other')),
+    submitted_url TEXT NOT NULL,
+    normalized_url TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
+    decision_reason TEXT,
+    reviewed_by TEXT,
+    reviewed_at REAL,
+    request_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    UNIQUE(namespace, applicant_principal_id, request_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_campus_tool_applications_queue
+    ON campus_tool_applications(namespace, status, updated_at DESC, application_id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_campus_tool_applications_owner
+    ON campus_tool_applications(namespace, applicant_principal_id, created_at DESC, application_id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_campus_tool_applications_pending_url
+    ON campus_tool_applications(namespace, normalized_url)
+    WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS campus_tools (
+    tool_id TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+    application_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL CHECK (category IN ('study', 'life', 'information', 'community', 'other')),
+    url TEXT NOT NULL,
+    normalized_url TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'unpublished')),
+    published_by TEXT NOT NULL,
+    published_at REAL NOT NULL,
+    unpublished_by TEXT,
+    unpublished_at REAL,
+    unpublish_reason TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES campus_tool_applications(application_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_campus_tools_directory
+    ON campus_tools(namespace, status, category, published_at DESC, tool_id DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_campus_tools_active_url
+    ON campus_tools(namespace, normalized_url)
+    WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS campus_tool_audit (
+    audit_id TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+    actor_key TEXT NOT NULL,
+    action TEXT NOT NULL,
+    object_type TEXT NOT NULL CHECK (object_type IN ('application', 'tool', 'notification')),
+    object_id TEXT NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    reason TEXT,
+    request_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE(namespace, actor_key, request_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_campus_tool_audit_object
+    ON campus_tool_audit(namespace, object_type, object_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_notifications (
+    notification_id TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL CHECK (namespace IN ('demo', 'production')),
+    recipient_principal_id TEXT NOT NULL,
+    notification_type TEXT NOT NULL CHECK (notification_type IN ('tool_approved', 'tool_rejected', 'tool_unpublished')),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    application_id TEXT NOT NULL,
+    tool_id TEXT,
+    read_at REAL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES campus_tool_applications(application_id),
+    FOREIGN KEY (tool_id) REFERENCES campus_tools(tool_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient
+    ON user_notifications(namespace, recipient_principal_id, read_at, created_at DESC);

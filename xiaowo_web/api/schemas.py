@@ -105,3 +105,35 @@ class SourceTrustProposalCreate(BaseModel):
         if not prefix.startswith("/") or "?" in prefix or "#" in prefix or "\\" in prefix:
             raise ValueError("path_prefix must be an absolute URL path")
         return prefix.rstrip("/") or "/"
+
+
+CampusToolCategory = Literal["study", "life", "information", "community", "other"]
+
+
+class CampusToolApplicationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+    url: str = Field(min_length=8, max_length=4096)
+    description: str = Field(default="", max_length=240)
+    category: CampusToolCategory
+
+
+class CampusToolApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class CampusToolRejection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=2, max_length=500)
+
+
+class CampusToolUnpublish(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=2, max_length=500)

@@ -54,40 +54,98 @@
   ],
   "courses": [
     {
-      "course_code": "MATH1007",
-      "course_name": "数学分析(B2)",
-      "teacher": "演示教师",
+      "course_code": "MATH1008",
+      "course_name": "数学分析(B3)",
+      "teacher": "演示教师甲",
       "credits": 6.0,
-      "time": "周一 第3,4节",
-      "location": "3C202",
-      "semester": "2026年春季学期"
+      "time": "周一 1~16周 第1-2节 07:50-09:25；周三 1~16周 第1-2节 07:50-09:25",
+      "location": "3C201 / 3C202",
+      "semester": "2026-2027-1",
+      "meetings": [
+        {
+          "day": "周一",
+          "weekday": 1,
+          "weeks": "1~16周",
+          "periods": [1, 2],
+          "start_time": "07:50",
+          "end_time": "09:25",
+          "location": "3C201",
+          "raw": "周一 1~16周 第1-2节"
+        },
+        {
+          "day": "周三",
+          "weekday": 3,
+          "weeks": "1~16周",
+          "periods": [1, 2],
+          "start_time": "07:50",
+          "end_time": "09:25",
+          "location": "3C202",
+          "raw": "周三 1~16周 第1-2节"
+        }
+      ]
     },
     {
       "course_code": "CS2502A",
       "course_name": "数据结构A",
-      "teacher": "演示教师",
+      "teacher": "演示教师乙",
       "credits": 4.0,
-      "time": "周二 第8,9节",
+      "time": "周二 1~16周 第3-5节 09:45-12:10",
       "location": "3A313",
-      "semester": "2026年春季学期"
+      "semester": "2026-2027-1"
     },
     {
-      "course_code": "CS4024",
-      "course_name": "面向科学问题求解的编程实践",
-      "teacher": "演示教师",
-      "credits": 2.0,
-      "time": "周三 第6,7节",
-      "location": "3C101",
-      "semester": "2026年春季学期"
+      "course_code": "EE2506A",
+      "course_name": "模拟与数字电路A",
+      "teacher": "演示教师丙",
+      "credits": 4.0,
+      "time": "周四 1~16周 第6-7节 14:00-15:35",
+      "location": "3C301",
+      "semester": "2026-2027-1"
     },
     {
-      "course_code": "PHYS1001B",
-      "course_name": "力学B",
-      "teacher": "演示教师",
-      "credits": 2.5,
-      "time": "周四 第3,4节",
+      "course_code": "PHYS1002B",
+      "course_name": "电磁学B",
+      "teacher": "演示教师丁",
+      "credits": 4.0,
+      "time": "周五 1~16周 第8-10节 15:55-18:20",
       "location": "3A112",
-      "semester": "2026年春季学期"
+      "semester": "2026-2027-1"
+    },
+    {
+      "course_code": "MARX1002",
+      "course_name": "马克思主义基本原理",
+      "teacher": "演示教师戊",
+      "credits": 3.0,
+      "time": "周一 1~16周 第8-10节 15:55-18:20",
+      "location": "2105",
+      "semester": "2026-2027-1"
+    },
+    {
+      "course_code": "CS2003",
+      "course_name": "系统程序设计基础",
+      "teacher": "演示教师己",
+      "credits": 2.5,
+      "time": "周三 2~16(双)周 第11-13节 19:30-21:55",
+      "location": "3C302",
+      "semester": "2026-2027-1"
+    },
+    {
+      "course_code": "FL1002",
+      "course_name": "英语文化与沟通",
+      "teacher": "演示教师庚",
+      "credits": 2.0,
+      "time": "周四 1~16周 第3-4节 09:45-11:20",
+      "location": "2206",
+      "semester": "2026-2027-1"
+    },
+    {
+      "course_code": "PE1003",
+      "course_name": "游泳",
+      "teacher": "演示教师辛",
+      "credits": 1.0,
+      "time": "周二 1~16周 第6-7节 14:00-15:35",
+      "location": "中区游泳馆",
+      "semester": "2026-2027-1"
     }
   ],
   "program": {

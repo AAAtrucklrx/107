@@ -29,6 +29,7 @@ def _capabilities(principal: Principal) -> dict[str, bool]:
         "public_chat": True,
         "server_history": principal.history_owner_key is not None,
         "personal_academic": principal.is_authenticated,
+        "admin_console": principal.is_admin and principal.review_namespace is not None,
         "knowledge_review": principal.is_admin and principal.review_namespace is not None,
         "production_publish": principal.auth_mode == "cas" and principal.is_admin,
     }
@@ -125,6 +126,10 @@ async def reset_demo(
         raise ApiError(404, "AUTH_MODE_DISABLED", "演示恢复在当前运行模式下未启用。")
     request.app.state.chat_manager.cancel_owner(principal)
     deleted = request.app.state.store.reset_demo_owner(principal)
+    from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
+
+    request.app.state.campus_tool_store.reset_demo_namespace()
+    ensure_demo_campus_tool_seed(request.app.state.campus_tool_store)
     review_reset = False
     if principal.is_admin:
         from xiaowo_web.review.demo import ensure_demo_review_seed
@@ -138,6 +143,7 @@ async def reset_demo(
         "deleted": deleted,
         "review_namespace": "demo" if principal.is_admin else None,
         "review_reset": review_reset,
+        "campus_tools_reset": True,
     }
 
 

@@ -10,21 +10,22 @@
 |------|------|
 | 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
 | 🌐 联网证据 | 本地资料不足、权威性不足或问题要求“最新”时，经隐私清洗后使用 SearXNG + Crawl4AI 保底；达到一手权威来源或双独立可靠来源门槛后才输出确定结论 |
-| 📊 课业助手 | 成绩查询、课表查询（节次精确到分钟）、GPA 计算、空教室查询；CAS 登录后经 jw API 拉取**真实教务数据** |
+| 📊 课业助手 | 成绩查询、GPA、空教室与周课表；课表保留 1–13 小节、周次、星期、教室和真实起止时间，支持前周/本周/后周、当前时间线、重叠并排与待确认数据；CAS 登录后经 jw API 拉取**当前用户真实教务数据**，失败时明确标注本地缓存 |
 | 🔍 选课顾问 | 基于 icourse.club 真实评课数据（5667 个课程页 / 4.4 万条评论）与培养方案，按“必修 / 方案内选修 / 方向补充”推荐；本轮需求优先，课程范围和“只要/必须”是硬条件，其余偏好默认软排序；独立提供节次/周次级课表冲突检查与退补选压力评估 |
 | 🧭 培养方案 | 登录后只使用当前用户 CAS/成绩档案中的专业、年级和个人方案；个人方案不可用时可按已验证身份显示醒目标注的“专业通用参考，不是个人培养方案”，不会继承登录前的匿名预览选择 |
 | 📅 日程管理 | 日程记录与查询（自然语言时间解析："明天下午3点到4点"精确落点）、冲突检测、课表导入 |
 | 🎪 活动推荐 | **青春科大（第二课堂）实时数据**：对话直接查报名中活动；每日弹窗四因子个性化推荐（紧迫度/课表空闲/个性化/热度），个性化=平台兴趣标签+行为学习+**德智体美劳模块学时均衡补短板**；token 失效自动回退本地快照 |
 | 🔗 官方入口 | 强操作类诉求（选退课/评教/缴费等）给出**已核实**官方入口跳转 + 小蜗辅助（冲突检测/压力模拟）；校园服务工作区以 8 个配置驱动的高频方块和分类目录呈现 19 条官方工具与网站 |
+| 🧰 校园工具 | 校园服务内的社区工具宫格；匿名可浏览，Demo/CAS 用户可提交名称、公开 HTTPS 链接、分类和可选说明，并在“我的申请”查看审核状态、驳回/下架原因和站内通知 |
 | 🧩 生态工具 | 学生自制工具投稿接入（Spec + 函数三步，`eco:` 前缀强制署名，见 `tools/ecosystem/README.md`） |
 | 🛡 可靠性 | LLM 平台断网/变慢三层降级：不假死、工具摘要直出、熔断不传染 |
-| 🧾 知识审核 | 回答完成后异步清洗公开证据；审核者逐块明确批准或排除，随后以不可变 Chroma/BM25 generation 原子发布；任务合并与 embedding 缓存减少重复工作 |
+| 🧾 管理后台 | 独立 `/admin` 入口，默认进行校园工具审核，并在 `/admin/knowledge` 管理知识审核；复用管理员 RBAC、CSRF、Demo/Production 命名空间、不可变审计、乐观锁与 generation 发布约束 |
 
 所有降级/缓存数据均带有**来源标识**（实时数据 / 本地缓存 / 第三方工具），保证结果可追溯。
 
 ## 🛠 技术栈
 
-- **Web 应用**: React + Vite + TypeScript 四工作区前端，采用“冷色数字编目台”设计系统；FastAPI 模块化单体后端，SQLite 持久事件 + 进程内通知驱动的 SSE 流式状态与回答
+- **Web 应用**: React + Vite + TypeScript 三个用户工作区与独立管理后台，采用“冷色数字编目台”设计系统；课表使用 FullCalendar Standard TimeGrid 6.1.21；FastAPI 模块化单体后端，SQLite 持久事件 + 进程内通知驱动的 SSE 流式状态与回答
 - **过渡界面**: Streamlit 在迁移验收后的一个版本内只作为回退入口，不再并行发展为第二套生产 UI
 - **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮（规则 1-22）→ act → compose；确定性路由兜底）
 - **知识库**: ChromaDB 混合检索（向量 + BM25，维度不匹配自动降级 BM25-only）
@@ -50,7 +51,7 @@ python init_check.py
 python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000
 ```
 
-访问 `http://localhost:8000`。前后端分离开发时保留 `.env.example` 的 `http://localhost:5173`，另一个终端在 `frontend/` 运行 `npm run dev`。
+访问 `http://localhost:8000`。用户端路径为 `/`、`/academic`、`/campus`；管理员入口为 `/admin`，知识审核为 `/admin/knowledge`，旧 `/review` 仅作兼容重定向。前后端分离开发时保留 `.env.example` 的 `http://localhost:5173`，另一个终端在 `frontend/` 运行 `npm run dev`。
 
 比赛演示使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo` 和唯一合成身份 `PB25111691`；demo 管理员只能发布到 demo 索引。无 HTTPS 域名的公开 production 只能使用 anonymous，个人区和管理区均关闭。真实 CAS 只保留 Provider/API，必须等可信 HTTPS 来源与 CAS service 白名单就绪后启用。
 
@@ -64,7 +65,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 ├── services/        # 外部服务（CAS、jw、青春科大 young 客户端、活动推荐与偏好画像、LLM 熔断）
 ├── knowledge/       # 知识库文档（data/ 80 篇 md）与混合检索向量库
 ├── database/        # 应用/审核 SQLite Schema 与种子数据
-├── frontend/        # React/Vite/TypeScript 四工作区 Web 前端
+├── frontend/        # React/Vite/TypeScript 用户工作区与独立管理后台
 ├── xiaowo_web/      # FastAPI、认证、SSE、证据、审核发布与 worker
 ├── deploy/          # SearXNG/Crawl4AI 安全 sidecar 模板
 ├── tests/web/       # Web API、权限、安全、发布与集成测试
@@ -84,7 +85,8 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 - [docs/tool-specs.md](docs/tool-specs.md) — Tool 详细规格说明
 - [docs/小蜗_Web应用与联网RAG技术规格.md](docs/小蜗_Web应用与联网RAG技术规格.md) — 已确认的 Q1-Q80 Web/RAG 产品与技术契约
 - [docs/Web部署与数据迁移.md](docs/Web部署与数据迁移.md) — 运行模式、sidecar、worker、加密数据包和 generation 回滚 SOP
-- [docs/前端UI重构规格.md](docs/前端UI重构规格.md) — React 四工作区 UI 重构、可访问性与验收矩阵
+- [docs/前端UI重构规格.md](docs/前端UI重构规格.md) — React 用户端与独立管理后台 UI、可访问性和验收矩阵
+- [docs/课表校园工具与管理后台重构.md](docs/课表校园工具与管理后台重构.md) — 本轮开源调研、范围、数据流与安全边界
 - [DESIGN.md](DESIGN.md) — “冷色数字编目台”设计系统与组件约束
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
 - [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）

@@ -29,6 +29,7 @@ interface AppShellProps {
   onDemoLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
   onDemoReset: () => Promise<void>;
+  onOpenAdmin: () => void;
   busy: boolean;
 }
 
@@ -36,7 +37,6 @@ const workspaceMeta: Record<Workspace, { label: string; icon: typeof Bot }> = {
   chat: { label: "问小蜗", icon: Bot },
   academic: { label: "我的学业", icon: BookOpen },
   campus: { label: "校园服务", icon: Building2 },
-  review: { label: "知识审核", icon: SearchCheck },
 };
 
 function NavButton({
@@ -86,6 +86,7 @@ export function AppShell({
   onDemoLogin,
   onLogout,
   onDemoReset,
+  onOpenAdmin,
   busy,
 }: AppShellProps) {
   const authenticated = session.principal.authenticated;
@@ -120,7 +121,7 @@ export function AppShell({
               onDemoLogin={onDemoLogin}
               onLogout={onLogout}
               onDemoReset={onDemoReset}
-              onOpenReview={() => onWorkspaceChange("review")}
+              onOpenAdmin={onOpenAdmin}
               showReview={showReview}
               busy={busy}
             />
@@ -137,7 +138,7 @@ export function AppShell({
             onDemoLogin={onDemoLogin}
             onLogout={onLogout}
             onDemoReset={onDemoReset}
-            onOpenReview={() => onWorkspaceChange("review")}
+            onOpenAdmin={onOpenAdmin}
             showReview={showReview}
             busy={busy}
             compact
@@ -176,7 +177,7 @@ interface AccountMenuProps {
   onDemoLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
   onDemoReset: () => Promise<void>;
-  onOpenReview: () => void;
+  onOpenAdmin: () => void;
   showReview: boolean;
   busy: boolean;
   compact?: boolean;
@@ -190,7 +191,7 @@ function AccountMenu({
   onDemoLogin,
   onLogout,
   onDemoReset,
-  onOpenReview,
+  onOpenAdmin,
   showReview,
   busy,
   compact = false,
@@ -223,9 +224,9 @@ function AccountMenu({
             </div>
           )}
           {showReview && (
-            <DropdownMenu.Item className="account-menu__item" onSelect={onOpenReview}>
+            <DropdownMenu.Item className="account-menu__item" onSelect={onOpenAdmin}>
               <SearchCheck size={17} />
-              知识审核
+              管理后台
             </DropdownMenu.Item>
           )}
           <DropdownMenu.Item className="account-menu__item" onSelect={onThemeToggle}>

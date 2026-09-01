@@ -1,5 +1,7 @@
 import { AlertCircle, LoaderCircle, RefreshCw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { AdminShell } from "./components/AdminShell";
+import type { AdminPage } from "./components/AdminShell";
 import { AppShell } from "./components/AppShell";
 import { apiMutation, bootstrap } from "./lib/api";
 import { ChatWorkspace } from "./workspaces/ChatWorkspace";
@@ -7,6 +9,7 @@ import type { PublicConfig, SessionPayload, Theme, Workspace } from "./types";
 
 const AcademicWorkspace = lazy(() => import("./workspaces/AcademicWorkspace").then((module) => ({ default: module.AcademicWorkspace })));
 const CampusWorkspace = lazy(() => import("./workspaces/CampusWorkspace").then((module) => ({ default: module.CampusWorkspace })));
+const AdminToolsWorkspace = lazy(() => import("./workspaces/AdminToolsWorkspace").then((module) => ({ default: module.AdminToolsWorkspace })));
 const ReviewWorkspace = lazy(() => import("./workspaces/ReviewWorkspace").then((module) => ({ default: module.ReviewWorkspace })));
 
 function initialTheme(): Theme {
@@ -16,20 +19,36 @@ function initialTheme(): Theme {
 
 function workspaceFromPath(): Workspace {
   const value = window.location.pathname.replace(/^\/+|\/+$/g, "");
-  return value === "academic" || value === "campus" || value === "review" ? value : "chat";
+  return value === "academic" || value === "campus" ? value : "chat";
+}
+
+function adminPageFromPath(): AdminPage | null {
+  const value = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  if (value === "review") {
+    window.history.replaceState({}, "", "/admin/knowledge");
+    return "knowledge";
+  }
+  if (value === "admin" || value === "admin/tools") return "tools";
+  if (value === "admin/knowledge") return "knowledge";
+  return null;
 }
 
 const workspacePaths: Record<Workspace, string> = {
   chat: "/",
   academic: "/academic",
   campus: "/campus",
-  review: "/review",
+};
+
+const adminPaths: Record<AdminPage, string> = {
+  tools: "/admin",
+  knowledge: "/admin/knowledge",
 };
 
 export function App() {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>(workspaceFromPath);
+  const [adminPage, setAdminPage] = useState<AdminPage | null>(adminPageFromPath);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,8 +56,17 @@ export function App() {
   const [demoResetVersion, setDemoResetVersion] = useState(0);
 
   const navigateWorkspace = useCallback((next: Workspace, replace = false) => {
+    setAdminPage(null);
     setWorkspace(next);
     const path = workspacePaths[next];
+    if (window.location.pathname !== path) {
+      window.history[replace ? "replaceState" : "pushState"]({}, "", path);
+    }
+  }, []);
+
+  const navigateAdmin = useCallback((next: AdminPage, replace = false) => {
+    setAdminPage(next);
+    const path = adminPaths[next];
     if (window.location.pathname !== path) {
       window.history[replace ? "replaceState" : "pushState"]({}, "", path);
     }
@@ -69,7 +97,10 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    const onPopState = () => setWorkspace(workspaceFromPath());
+    const onPopState = () => {
+      setWorkspace(workspaceFromPath());
+      setAdminPage(adminPageFromPath());
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -77,8 +108,8 @@ export function App() {
   useEffect(() => {
     if (!session) return;
     if (workspace === "academic" && !session.capabilities.personal_academic) navigateWorkspace("chat", true);
-    if (workspace === "review" && !session.capabilities.knowledge_review) navigateWorkspace("chat", true);
-  }, [navigateWorkspace, session, workspace]);
+    if (adminPage && !session.capabilities.knowledge_review) navigateWorkspace("chat", true);
+  }, [adminPage, navigateWorkspace, session, workspace]);
 
   const handleDemoLogin = useCallback(async () => {
     if (!session) return;
@@ -135,8 +166,8 @@ export function App() {
     if (workspace === "academic") {
       return <AcademicWorkspace session={session} onAsk={(question) => { setSeededQuestion(question); navigateWorkspace("chat"); }} />;
     }
-    if (workspace === "campus") return <CampusWorkspace />;
-    return <ReviewWorkspace session={session} />;
+    if (workspace === "campus") return <CampusWorkspace session={session} />;
+    return <CampusWorkspace session={session} />;
   }, [config, demoResetVersion, navigateWorkspace, seededQuestion, session, workspace]);
 
   if (!config || !session) {
@@ -161,6 +192,24 @@ export function App() {
     );
   }
 
+  if (adminPage && session.capabilities.knowledge_review) {
+    return (
+      <AdminShell
+        config={config}
+        session={session}
+        page={adminPage}
+        onPageChange={navigateAdmin}
+        onExit={() => navigateWorkspace("chat")}
+        onLogout={handleLogout}
+        busy={busy}
+      >
+        <Suspense fallback={<div className="workspace-state" role="status"><LoaderCircle className="spin" size={20} /><span>正在载入管理后台</span></div>}>
+          {adminPage === "tools" ? <AdminToolsWorkspace session={session} /> : <ReviewWorkspace session={session} />}
+        </Suspense>
+      </AdminShell>
+    );
+  }
+
   return (
     <AppShell
       config={config}
@@ -172,6 +221,7 @@ export function App() {
       onDemoLogin={handleDemoLogin}
       onLogout={handleLogout}
       onDemoReset={handleDemoReset}
+      onOpenAdmin={() => navigateAdmin("tools")}
       busy={busy}
     >
       <div className="workspace-transition">

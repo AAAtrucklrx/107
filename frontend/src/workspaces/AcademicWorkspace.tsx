@@ -1,10 +1,29 @@
+import type { EventClickArg, EventContentArg, EventInput } from "@fullcalendar/core";
+import FullCalendar from "@fullcalendar/react";
+import timeGridPlugin from "@fullcalendar/timegrid";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
-import { BookOpenCheck, CalendarDays, GraduationCap, ListChecks, TrendingUp } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  BookOpenCheck,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  GraduationCap,
+  ListChecks,
+  MapPin,
+  TrendingUp,
+  UserRound,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AskXiaowoButton, Limitations, SourceBadge, WorkspaceEmpty, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
 import { apiGet } from "../lib/api";
 import type {
   AcademicCourses,
+  AcademicCourse,
+  AcademicMeeting,
   AcademicOverview,
   AcademicProgram,
   AcademicSchedule,
@@ -212,31 +231,269 @@ function CoursesView({ data, onAsk }: { data: AcademicCourses; onAsk: (question:
   );
 }
 
-const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const periodBands = [
+  ["第一节", "07:50-09:25"],
+  ["第二节", "09:45-12:10"],
+  ["第三节", "14:00-15:35"],
+  ["第四节", "15:55-18:20"],
+  ["晚间", "19:30-21:55"],
+] as const;
+
+type SelectedMeeting = {
+  course: AcademicCourse;
+  meeting: AcademicMeeting;
+  conflict: boolean;
+};
+
+function parseLocalDate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const result = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(result.getTime()) ? null : result;
+}
+
+function addDays(value: Date, days: number): Date {
+  const result = new Date(value);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function localDateKey(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shortDate(value: Date): string {
+  return `${String(value.getMonth() + 1).padStart(2, "0")}月${String(value.getDate()).padStart(2, "0")}日`;
+}
+
+function minutes(value: string): number {
+  const [hours, mins] = value.split(":").map(Number);
+  return hours * 60 + mins;
+}
+
+function renderCalendarEvent(info: EventContentArg) {
+  const details = info.event.extendedProps as SelectedMeeting;
+  const { course, meeting, conflict } = details;
+  return (
+    <div className="schedule-event-card" data-conflict={conflict || undefined}>
+      <div className="schedule-event-card__time">
+        <span>{meeting.start_time}</span>
+        {conflict && <AlertTriangle size={13} aria-label="与同时间课程重叠" />}
+      </div>
+      <strong>{course.course_name || "未命名课程"}</strong>
+      <span>{course.teacher || "教师待确认"}</span>
+      <span>{meeting.period_label || `${meeting.start_time}-${meeting.end_time}`}</span>
+      <span>{meeting.location || "教室待确认"}</span>
+      <time>{meeting.end_time}</time>
+    </div>
+  );
+}
 
 function ScheduleView({ data, onAsk }: { data: AcademicSchedule; onAsk: (question: string) => void }) {
+  const semesterStart = useMemo(() => parseLocalDate(data.semester_start) ?? new Date(), [data.semester_start]);
+  const totalWeeks = Math.max(1, data.total_weeks || 1);
+  const initialWeek = Math.min(totalWeeks, Math.max(1, data.current_week ?? 1));
+  const [selectedWeek, setSelectedWeek] = useState(initialWeek);
+  const [selectedMeeting, setSelectedMeeting] = useState<SelectedMeeting | null>(null);
+
+  useEffect(() => {
+    setSelectedWeek(Math.min(totalWeeks, Math.max(1, data.current_week ?? 1)));
+  }, [data.current_week, data.semester_code, totalWeeks]);
+
+  const weekStart = useMemo(
+    () => addDays(semesterStart, (selectedWeek - 1) * 7),
+    [selectedWeek, semesterStart],
+  );
+  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  const events = useMemo<EventInput[]>(() => {
+    const candidates: SelectedMeeting[] = [];
+    for (const course of data.courses) {
+      for (const meeting of course.meetings ?? []) {
+        if (meeting.week_numbers.includes(selectedWeek)) {
+          candidates.push({ course, meeting, conflict: false });
+        }
+      }
+    }
+    for (let left = 0; left < candidates.length; left += 1) {
+      for (let right = left + 1; right < candidates.length; right += 1) {
+        const a = candidates[left].meeting;
+        const b = candidates[right].meeting;
+        if (
+          a.weekday === b.weekday
+          && minutes(a.start_time) < minutes(b.end_time)
+          && minutes(b.start_time) < minutes(a.end_time)
+        ) {
+          candidates[left].conflict = true;
+          candidates[right].conflict = true;
+        }
+      }
+    }
+    return candidates.map((details) => {
+      const meetingDate = addDays(weekStart, details.meeting.weekday - 1);
+      const dateKey = localDateKey(meetingDate);
+      return {
+        id: `${details.meeting.meeting_id}-${selectedWeek}`,
+        title: details.course.course_name || "未命名课程",
+        start: `${dateKey}T${details.meeting.start_time}:00`,
+        end: `${dateKey}T${details.meeting.end_time}:00`,
+        classNames: [
+          "schedule-calendar-event",
+          ...(details.conflict ? ["schedule-calendar-event--conflict"] : []),
+        ],
+        extendedProps: details,
+      };
+    });
+  }, [data.courses, selectedWeek, weekStart]);
+
+  const onEventClick = useCallback((info: EventClickArg) => {
+    setSelectedMeeting(info.event.extendedProps as SelectedMeeting);
+  }, []);
+
   return (
-    <div className="academic-section">
-      <div className="schedule-heading"><div><h2>{data.semester || "课表"}</h2><span>当前学期</span></div><SourceBadge source={data.source} /></div>
-      <div className="week-grid" aria-label="周课表">
-        {weekdays.map((day) => (
-          <section className="day-column" key={day}>
-            <h3>{day}</h3>
-            <div className="day-column__courses">
-              {data.courses.filter((course) => course.time?.includes(day)).map((course, index) => (
-                <article className="schedule-course" key={`${course.course_code}-${index}`}>
-                  <span>{course.time?.replace(day, "").trim()}</span>
-                  <strong>{course.course_name}</strong>
-                  <small>{course.location || "地点待定"} · {course.teacher || "教师待定"}</small>
-                  <AskXiaowoButton compact question={`点评课表中的课程“${course.course_name || course.course_code}”`} onAsk={onAsk} />
-                </article>
-              ))}
-              {!data.courses.some((course) => course.time?.includes(day)) && <div className="day-column__empty">无课</div>}
-            </div>
-          </section>
+    <div className="academic-section schedule-section">
+      <div className="schedule-toolbar">
+        <div className="schedule-toolbar__title">
+          <span>{data.semester_code || data.semester || "当前学期"}</span>
+          <h2>第 {selectedWeek} 周</h2>
+          <p>{shortDate(weekStart)} - {shortDate(weekEnd)}</p>
+        </div>
+        <div className="schedule-toolbar__actions">
+          <SourceBadge source={data.source} />
+          <div className="schedule-week-controls" aria-label="教学周切换">
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="前一周"
+              title="前一周"
+              disabled={selectedWeek <= 1}
+              onClick={() => setSelectedWeek((value) => Math.max(1, value - 1))}
+            >
+              <ChevronLeft size={19} />
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={data.current_week === null}
+              onClick={() => data.current_week && setSelectedWeek(data.current_week)}
+            >
+              本周
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="后一周"
+              title="后一周"
+              disabled={selectedWeek >= totalWeeks}
+              onClick={() => setSelectedWeek((value) => Math.min(totalWeeks, value + 1))}
+            >
+              <ChevronRight size={19} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="schedule-period-key" aria-label="课时划分">
+        {periodBands.map(([label, range]) => (
+          <div key={label}><strong>{label}</strong><span>{range}</span></div>
         ))}
       </div>
+
+      {!events.length && (
+        <div className="schedule-week-empty" role="status">第 {selectedWeek} 周暂无可确认课程</div>
+      )}
+      <div className="schedule-calendar-scroll" aria-label={`第${selectedWeek}周课程表`}>
+        <div className="schedule-calendar">
+          <FullCalendar
+            key={localDateKey(weekStart)}
+            plugins={[timeGridPlugin]}
+            initialView="timeGridWeek"
+            initialDate={localDateKey(weekStart)}
+            firstDay={1}
+            weekends
+            allDaySlot={false}
+            headerToolbar={false}
+            dayHeaderContent={(info) => (
+              <span className="schedule-day-heading" data-today={info.isToday || undefined}>
+                <strong>{weekdayNames[info.date.getDay()]}</strong>
+                <small>{String(info.date.getMonth() + 1).padStart(2, "0")}/{String(info.date.getDate()).padStart(2, "0")}</small>
+              </span>
+            )}
+            slotMinTime="07:30:00"
+            slotMaxTime="22:15:00"
+            slotDuration="00:15:00"
+            slotLabelInterval="01:00:00"
+            slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
+            displayEventTime={false}
+            nowIndicator={selectedWeek === data.current_week}
+            slotEventOverlap={false}
+            eventMinHeight={54}
+            eventShortHeight={54}
+            expandRows
+            height="auto"
+            events={events}
+            eventContent={renderCalendarEvent}
+            eventClick={onEventClick}
+          />
+        </div>
+      </div>
+
+      {data.unparsed_courses.length > 0 && (
+        <section className="schedule-unparsed" aria-labelledby="schedule-unparsed-title">
+          <div className="schedule-unparsed__heading">
+            <AlertTriangle size={18} />
+            <div><h3 id="schedule-unparsed-title">待确认的排课</h3><p>以下课程缺少可验证的星期、周次或起止时间，未放入课表。</p></div>
+          </div>
+          <div className="schedule-unparsed__list">
+            {data.unparsed_courses.map((course, index) => (
+              <article key={`${course.course_code}-${index}`}>
+                <strong>{course.course_name || course.course_code || "未命名课程"}</strong>
+                <span>{course.raw_schedule || "暂无原始排课文本"}</span>
+                <small>{course.reason}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       <Limitations items={data.limitations} />
+
+      <Dialog.Root open={selectedMeeting !== null} onOpenChange={(open) => { if (!open) setSelectedMeeting(null); }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          {selectedMeeting && (
+            <Dialog.Content className="dialog-content schedule-detail-dialog">
+              <div className="dialog-heading">
+                <div>
+                  <Dialog.Title>{selectedMeeting.course.course_name || "未命名课程"}</Dialog.Title>
+                  <Dialog.Description>{selectedMeeting.course.course_code || "课程编号待确认"}</Dialog.Description>
+                </div>
+                <Dialog.Close className="icon-button" aria-label="关闭"><X size={18} /></Dialog.Close>
+              </div>
+              {selectedMeeting.conflict && (
+                <div className="schedule-conflict-notice" role="alert"><AlertTriangle size={17} />该课程与同一时间的另一门课程重叠，请核对教务课表。</div>
+              )}
+              <dl className="schedule-detail-list">
+                <div><dt><Clock3 size={16} />上课时间</dt><dd>{selectedMeeting.meeting.day} {selectedMeeting.meeting.start_time}-{selectedMeeting.meeting.end_time}<small>{selectedMeeting.meeting.period_label} · {selectedMeeting.meeting.weeks}</small></dd></div>
+                <div><dt><MapPin size={16} />上课地点</dt><dd>{selectedMeeting.meeting.location || "待确认"}</dd></div>
+                <div><dt><UserRound size={16} />授课教师</dt><dd>{selectedMeeting.course.teacher || "待确认"}</dd></div>
+              </dl>
+              <div className="schedule-detail-dialog__footer">
+                <SourceBadge source={data.source} />
+                <AskXiaowoButton
+                  question={`点评课表中的课程“${selectedMeeting.course.course_name || selectedMeeting.course.course_code}”`}
+                  onAsk={(question) => {
+                    setSelectedMeeting(null);
+                    onAsk(question);
+                  }}
+                />
+              </div>
+            </Dialog.Content>
+          )}
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

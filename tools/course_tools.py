@@ -5,6 +5,7 @@
 v3.0: 课表和成绩对接 jw 内部 API（需 CAS 登录），catalog API 对接空教室/考试/课程搜索
 """
 
+import json
 import sqlite3
 from datetime import date as Date
 from pathlib import Path
@@ -86,52 +87,71 @@ def _query_grades(student_id: str, course_name: str = None, semester: str = None
 _DAY_MAP = {"1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "7": "周日"}
 
 
-def _parse_schedule_group_str(s: str) -> dict:
+def _parse_schedule_groups(s: str) -> list[dict]:
     """
-    解析 jw 课表的 scheduleGroupStr，如：
+    解析 jw 课表的一个或多个 scheduleGroupStr 分段，如：
     '2~11周 西区电三楼406 :5(6,7,8,9) 徐伟'
-    返回 {weeks, location, day_str, periods, teacher_hint}
+    返回 [{weeks, week_numbers, location, day_str, day_num, periods, teacher_hint, raw}, ...]
     """
     import re as _re
 
     from utils.schedule_parse import parse_course_time
 
-    result = {"weeks": "", "location": "", "day_str": "", "periods": "", "teacher_hint": ""}
     if not s:
-        return result
+        return []
+    parts = [part.strip() for part in _re.split(r"(?:\r?\n|[;；])+", s) if part.strip()]
+    results: list[dict] = []
+    for part in parts:
+        result = {
+            "weeks": "",
+            "week_numbers": [],
+            "location": "",
+            "day_str": "",
+            "day_num": None,
+            "periods": "",
+            "teacher_hint": "",
+            "raw": part,
+        }
+        week_slot = next(
+            (slot for slot in parse_course_time(part) if slot.get("week_numbers") is not None),
+            None,
+        )
+        if week_slot:
+            result["weeks"] = week_slot["weeks_raw"]
+            result["week_numbers"] = list(week_slot.get("week_numbers") or [])
 
-    # 周次复用统一解析器，保留不连续周与单双周表达式。
-    week_slot = next(
-        (slot for slot in parse_course_time(s) if slot.get("week_numbers") is not None),
-        None,
-    )
-    if week_slot:
-        result["weeks"] = week_slot["weeks_raw"]
+        dm = _re.search(r":([1-7])\(([^)]+)\)", part)
+        if dm:
+            result["day_num"] = int(dm.group(1))
+            result["day_str"] = _DAY_MAP.get(dm.group(1), f"周{dm.group(1)}")
+            result["periods"] = dm.group(2).strip()
 
-    # 提取 :N(Periods) 部分
-    dm = _re.search(r':(\d)\(([^)]+)\)', s)
-    if dm:
-        day_num = dm.group(1)
-        result["day_str"] = _DAY_MAP.get(day_num, f"周{day_num}")
-        result["periods"] = dm.group(2)
+        loc_part = part[:dm.start()] if dm else part
+        if result["weeks"]:
+            loc_part = loc_part.replace(result["weeks"], "", 1)
+        result["location"] = loc_part.strip()
 
-    # 提取教室位置（在 :N 之前，周次之后）
-    loc_part = s
-    if dm:
-        loc_part = s[:dm.start()]
-    if result["weeks"]:
-        loc_part = loc_part.replace(result["weeks"], "", 1)
-    loc_part = loc_part.strip()
-    if loc_part:
-        result["location"] = loc_part
+        if dm:
+            result["teacher_hint"] = part[dm.end():].strip()
+        results.append(result)
+    return results
 
-    # 提取教师（在括号后面）
-    if dm:
-        after = s[dm.end():].strip()
-        if after:
-            result["teacher_hint"] = after
 
-    return result
+def _parse_schedule_group_str(s: str) -> dict:
+    """Compatibility projection for legacy scripts that only consume one meeting."""
+    parsed = _parse_schedule_groups(s)
+    if parsed:
+        return parsed[0]
+    return {
+        "weeks": "",
+        "week_numbers": [],
+        "location": "",
+        "day_str": "",
+        "day_num": None,
+        "periods": "",
+        "teacher_hint": "",
+        "raw": str(s or ""),
+    }
 
 
 def _fetch_real_schedule(cas_client, semester_id: int) -> list[dict] | None:
@@ -170,24 +190,48 @@ def _fetch_real_schedule(cas_client, semester_id: int) -> list[dict] | None:
         teacher_str = ",".join(teacher_names) if teacher_names else ""
 
         # 解析时间地点
-        schedule_str = lesson.get("scheduleGroupStr", "")
-        parsed = _parse_schedule_group_str(schedule_str)
+        schedule_str = str(lesson.get("scheduleGroupStr") or "")
+        parsed_groups = _parse_schedule_groups(schedule_str)
+        meetings = []
+        teacher_hints: list[str] = []
+        for parsed in parsed_groups:
+            periods_list = parse_periods(parsed["periods"])
+            time_range = periods_to_range(periods_list)
+            if parsed["teacher_hint"] and parsed["teacher_hint"] not in teacher_hints:
+                teacher_hints.append(parsed["teacher_hint"])
+            meetings.append({
+                "day": parsed["day_str"],
+                "weekday": parsed["day_num"],
+                "weeks": parsed["weeks"],
+                "week_numbers": parsed["week_numbers"],
+                "periods": periods_list,
+                "period_label": time_range["periods_text"] if time_range else "",
+                "start_time": time_range["start"] if time_range else "",
+                "end_time": time_range["end"] if time_range else "",
+                "location": parsed["location"],
+                "raw": parsed["raw"],
+            })
 
-        # 如果 teacher 为空，用 scheduleGroupStr 中提取的
-        if not teacher_str and parsed["teacher_hint"]:
-            teacher_str = parsed["teacher_hint"]
+        if not teacher_str and teacher_hints:
+            teacher_str = ",".join(teacher_hints)
 
-        time_str = f"{parsed['day_str']} {parsed['weeks']} 第{parsed['periods']}节" if parsed["day_str"] else schedule_str
-        location = parsed["location"]
-
-        # 节次编号 → 精确到分钟的起止时间（官方节次时间表）
-        periods_list = parse_periods(parsed["periods"])
-        time_range = periods_to_range(periods_list)
-        if time_range:
-            time_str = f"{time_str} {time_range['start']}-{time_range['end']}"
-            start_time, end_time = time_range["start"], time_range["end"]
-        else:
-            start_time, end_time = "", ""
+        rendered_times = []
+        for meeting in meetings:
+            rendered_times.append(" ".join(value for value in (
+                str(meeting.get("day") or ""),
+                str(meeting.get("weeks") or ""),
+                str(meeting.get("period_label") or ""),
+                (
+                    f"{meeting['start_time']}-{meeting['end_time']}"
+                    if meeting.get("start_time") and meeting.get("end_time") else ""
+                ),
+            ) if value))
+        time_str = "; ".join(rendered_times) or schedule_str
+        locations = list(dict.fromkeys(
+            str(meeting.get("location") or "") for meeting in meetings if meeting.get("location")
+        ))
+        location = " / ".join(locations)
+        first_meeting = meetings[0] if len(meetings) == 1 else {}
 
         courses.append({
             "course_code": course_code,
@@ -196,11 +240,12 @@ def _fetch_real_schedule(cas_client, semester_id: int) -> list[dict] | None:
             "credits": credits or 0,
             "time": time_str,
             "location": location,
-            "day": parsed["day_str"],
-            "weeks": parsed["weeks"],
-            "periods": parsed["periods"],
-            "start_time": start_time,
-            "end_time": end_time,
+            "day": first_meeting.get("day", ""),
+            "weeks": first_meeting.get("weeks", ""),
+            "periods": ",".join(str(value) for value in first_meeting.get("periods", [])),
+            "start_time": first_meeting.get("start_time", ""),
+            "end_time": first_meeting.get("end_time", ""),
+            "meetings": meetings,
             "compulsory": lesson.get("compulsory", True),
         })
 
@@ -215,10 +260,11 @@ def _sync_courses_to_db(student_id: str, courses: list[dict], semester: str) -> 
                      (student_id, semester))
         for c in courses:
             conn.execute(
-                "INSERT INTO student_courses (student_id, course_code, course_name, teacher, credits, time, location, semester) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO student_courses (student_id, course_code, course_name, teacher, credits, time, location, semester, schedule_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (student_id, c["course_code"], c["course_name"], c.get("teacher", ""),
-                 c.get("credits", 0), c.get("time", ""), c.get("location", ""), semester),
+                 c.get("credits", 0), c.get("time", ""), c.get("location", ""), semester,
+                 json.dumps(c.get("meetings") or [], ensure_ascii=False, separators=(",", ":"))),
             )
     log.info(f"已同步 {len(courses)} 门课表到数据库")
 
@@ -415,6 +461,10 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
     courses = _db().query(sql, tuple(params))
     for c in courses:
         c["credits"] = c.get("credits") or 0
+        try:
+            c["meetings"] = json.loads(c.get("schedule_json") or "[]")
+        except (TypeError, ValueError):
+            c["meetings"] = []
 
     return {"student_id": sid, "courses": courses, "count": len(courses),
             "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}

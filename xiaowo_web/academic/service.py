@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date as Date
 from pathlib import Path
 from typing import Any
 
@@ -96,9 +97,9 @@ class AcademicService:
         self._identity(principal)
         if principal.auth_mode == "demo":
             fixture = self._load_demo()
+            result = self._structured_schedule(fixture.get("courses") or [])
             return {
-                "semester": "2026年春季学期",
-                "courses": fixture.get("courses") or [],
+                **result,
                 "source": self._demo_source(),
                 "limitations": ["演示课表为合成数据，不用于真实到课判断。"],
             }
@@ -106,11 +107,147 @@ class AcademicService:
 
         with self._student_context(principal.principal_id):
             result = query_schedule.invoke({"student_id": principal.principal_id})
+        structured = self._structured_schedule(
+            result.get("courses") or [],
+            semester=str(result.get("semester") or ""),
+        )
         return {
-            "semester": result.get("semester") or "",
-            "courses": result.get("courses") or [],
+            **structured,
             "source": self._tool_source(result),
             "limitations": [result["message"]] if result.get("message") else [],
+        }
+
+    @staticmethod
+    def _structured_schedule(
+        courses: list[dict[str, Any]],
+        *,
+        semester: str = "",
+    ) -> dict[str, Any]:
+        from config import SEMESTER
+        from utils.course_periods import parse_periods, periods_to_range
+        from utils.schedule_parse import (
+            normalize_time_str,
+            parse_course_time,
+            slot_clock_range,
+            teaching_week,
+        )
+
+        semester_code = str(SEMESTER.get("name") or semester or "")
+        start_text = str(SEMESTER.get("start_date") or "")
+        total_weeks = int(SEMESTER.get("total_weeks") or 0)
+        try:
+            semester_start = Date.fromisoformat(start_text)
+        except ValueError:
+            semester_start = None
+        current_week = (
+            teaching_week(Date.today(), semester_start, total_weeks)
+            if semester_start is not None else None
+        )
+        day_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
+        structured_courses: list[dict[str, Any]] = []
+        unparsed_courses: list[dict[str, Any]] = []
+
+        for course_index, course in enumerate(courses):
+            base = {
+                "course_code": str(course.get("course_code") or ""),
+                "course_name": str(course.get("course_name") or "未命名课程"),
+                "teacher": str(course.get("teacher") or ""),
+                "credits": float(course.get("credits") or 0),
+                "semester": str(course.get("semester") or semester or semester_code),
+                "time": str(course.get("time") or ""),
+                "location": str(course.get("location") or ""),
+            }
+            raw_meetings: list[dict[str, Any]] = []
+            if isinstance(course.get("meetings"), list):
+                raw_meetings = [dict(item) for item in course["meetings"] if isinstance(item, dict)]
+            if not raw_meetings and course.get("schedule_json"):
+                try:
+                    decoded = json.loads(str(course["schedule_json"]))
+                    if isinstance(decoded, list):
+                        raw_meetings = [dict(item) for item in decoded if isinstance(item, dict)]
+                except (TypeError, ValueError):
+                    raw_meetings = []
+            if not raw_meetings and base["time"]:
+                slots = parse_course_time(normalize_time_str(base["time"].replace("\n", ";")))
+                for slot in slots:
+                    clock = slot_clock_range(slot)
+                    raw_meetings.append({
+                        "day": slot.get("day"),
+                        "weekday": slot.get("day_num"),
+                        "weeks": slot.get("weeks_raw") or "",
+                        "week_numbers": slot.get("week_numbers"),
+                        "periods": slot.get("periods") or [],
+                        "start_time": f"{clock[0] // 60:02d}:{clock[0] % 60:02d}" if clock else "",
+                        "end_time": f"{clock[1] // 60:02d}:{clock[1] % 60:02d}" if clock else "",
+                        "location": base["location"],
+                        "raw": slot.get("raw") or base["time"],
+                    })
+
+            meetings: list[dict[str, Any]] = []
+            incomplete_raw: list[str] = []
+            for meeting_index, raw in enumerate(raw_meetings):
+                try:
+                    weekday = int(raw.get("weekday") or raw.get("day_num") or 0)
+                except (TypeError, ValueError):
+                    weekday = 0
+                periods_value = raw.get("periods") or []
+                periods = (
+                    parse_periods(",".join(str(value) for value in periods_value))
+                    if isinstance(periods_value, list)
+                    else parse_periods(str(periods_value))
+                )
+                period_range = periods_to_range(periods)
+                start_time = str(raw.get("start_time") or (period_range or {}).get("start") or "")
+                end_time = str(raw.get("end_time") or (period_range or {}).get("end") or "")
+                raw_weeks = raw.get("week_numbers")
+                week_numbers: list[int] = []
+                if isinstance(raw_weeks, list):
+                    for value in raw_weeks:
+                        try:
+                            week = int(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if 1 <= week <= total_weeks:
+                            week_numbers.append(week)
+                if not week_numbers and raw.get("weeks"):
+                    week_slots = parse_course_time(f"周一 {raw['weeks']}")
+                    if week_slots:
+                        week_numbers = list(week_slots[0].get("week_numbers") or [])
+                week_numbers = sorted(set(week_numbers))
+                if weekday not in day_names or not start_time or not end_time or not week_numbers:
+                    incomplete_raw.append(str(raw.get("raw") or base["time"] or "排课信息不完整"))
+                    continue
+                period_label = str(raw.get("period_label") or (period_range or {}).get("periods_text") or "")
+                meetings.append({
+                    "meeting_id": f"{base['course_code'] or course_index}-{meeting_index}-{weekday}-{start_time}",
+                    "weekday": weekday,
+                    "day": day_names[weekday],
+                    "week_numbers": week_numbers,
+                    "weeks": str(raw.get("weeks") or ""),
+                    "periods": periods,
+                    "period_label": period_label,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "location": str(raw.get("location") or base["location"] or ""),
+                    "raw": str(raw.get("raw") or base["time"] or ""),
+                })
+            if meetings:
+                structured_courses.append({**base, "meetings": meetings})
+            if not meetings or incomplete_raw:
+                unparsed_courses.append({
+                    **base,
+                    "reason": "排课缺少可确认的星期、周次或起止时间。",
+                    "raw_schedule": "；".join(dict.fromkeys(incomplete_raw)) or base["time"],
+                })
+
+        return {
+            "semester": semester or semester_code,
+            "semester_code": semester_code,
+            "semester_start": start_text,
+            "total_weeks": total_weeks,
+            "current_week": current_week,
+            "courses": structured_courses,
+            "unparsed_courses": unparsed_courses,
         }
 
     def program(self, principal: Principal) -> dict[str, Any]:

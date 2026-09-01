@@ -1,0 +1,28 @@
+{
+  "fixture_version": 1,
+  "synthetic": true,
+  "items": [
+    {
+      "name": "课程目录速查（演示）",
+      "description": "集中查看课程目录与课程基本信息的演示快捷工具。",
+      "category": "study",
+      "url": "https://catalog.ustc.edu.cn/",
+      "status": "approved"
+    },
+    {
+      "name": "图书资源入口（演示）",
+      "description": "用于演示用户提交后等待管理员审核的状态。",
+      "category": "information",
+      "url": "https://lib.ustc.edu.cn/",
+      "status": "pending"
+    },
+    {
+      "name": "校园活动聚合（演示）",
+      "description": "用于演示审核驳回、原因通知与重新提交。",
+      "category": "community",
+      "url": "https://young.ustc.edu.cn/",
+      "status": "rejected",
+      "reason": "演示记录：功能说明尚不足以确认工具用途。"
+    }
+  ]
+}

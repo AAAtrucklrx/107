@@ -9,6 +9,9 @@ https://www.teach.ustc.edu.cn/calendar/19714.html
 # 上午：第1~5小节（课间 09:25~09:45 休息20分钟）
 # 下午：第6~10小节（课间 15:35~15:55 休息20分钟）
 # 晚上：第11~13小节
+import re
+
+
 PERIOD_TIMES = {
     1: ("07:50", "08:35"),
     2: ("08:40", "09:25"),
@@ -33,14 +36,20 @@ def parse_periods(period_str: str) -> list[int]:
     """
     if not period_str:
         return []
-    nums = []
-    for part in str(period_str).split(","):
-        part = part.strip()
-        if part.isdigit():
-            n = int(part)
-            if 1 <= n <= 13:
-                nums.append(n)
-    return sorted(nums)
+    nums: list[int] = []
+    normalized = str(period_str).replace("，", ",")
+    for part in re.split(r"[,\s]+", normalized):
+        token = part.strip()
+        if not token:
+            continue
+        bounds = re.split(r"[-~—至]", token, maxsplit=1)
+        if len(bounds) == 2 and all(value.strip().isdigit() for value in bounds):
+            start, end = (int(value.strip()) for value in bounds)
+            if start <= end:
+                nums.extend(range(start, end + 1))
+        elif token.isdigit():
+            nums.append(int(token))
+    return sorted({value for value in nums if 1 <= value <= 13})
 
 
 def periods_to_range(periods: list[int]) -> dict | None:

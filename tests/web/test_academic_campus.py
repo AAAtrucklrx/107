@@ -10,6 +10,8 @@ from xiaowo_web.academic import AcademicService
 from xiaowo_web.auth.models import Principal
 from xiaowo_web.errors import ApiError
 from xiaowo_web.main import create_app
+from tools.course_tools import _parse_schedule_groups
+from utils.schedule_parse import normalize_time_str, parse_course_time
 
 
 def test_anonymous_cannot_read_academic_workspace(tmp_path) -> None:
@@ -42,6 +44,57 @@ def test_demo_academic_workspace_is_bound_and_labelled(tmp_path) -> None:
         schedule = client.get("/api/v1/academic/schedule").json()
         assert schedule["courses"]
         assert schedule["source"]["demo"] is True
+        assert schedule["semester_code"] == "2026-2027-1"
+        assert schedule["semester_start"] == "2026-08-31"
+        assert schedule["total_weeks"] == 18
+        assert schedule["current_week"] == 1
+        assert schedule["unparsed_courses"] == []
+
+        meetings = [
+            meeting
+            for course in schedule["courses"]
+            for meeting in course["meetings"]
+        ]
+        assert {meeting["weekday"] for meeting in meetings} >= {1, 2, 3, 4, 5}
+        assert any(meeting["periods"] == [1, 2] and meeting["start_time"] == "07:50" for meeting in meetings)
+        assert any(meeting["periods"] == [3, 4, 5] and meeting["end_time"] == "12:10" for meeting in meetings)
+        assert any(meeting["periods"] == [11, 12, 13] and meeting["end_time"] == "21:55" for meeting in meetings)
+        evening = next(meeting for meeting in meetings if meeting["periods"] == [11, 12, 13])
+        assert evening["week_numbers"] == list(range(2, 17, 2))
+
+
+def test_real_schedule_groups_preserve_multiple_meetings_and_week_parity() -> None:
+    parsed = _parse_schedule_groups(
+        "2,6~18(双)周 2306 :3(1,2) 孙波\n"
+        "1~16周 3C201 :1(11,12,13) 李明"
+    )
+    assert len(parsed) == 2
+    assert parsed[0] == {
+        "weeks": "2,6~18(双)周",
+        "week_numbers": [2, 6, 8, 10, 12, 14, 16, 18],
+        "location": "2306",
+        "day_str": "周三",
+        "day_num": 3,
+        "periods": "1,2",
+        "teacher_hint": "孙波",
+        "raw": "2,6~18(双)周 2306 :3(1,2) 孙波",
+    }
+    assert parsed[1]["day_num"] == 1
+    assert parsed[1]["periods"] == "11,12,13"
+    assert parsed[1]["location"] == "3C201"
+
+
+def test_course_time_ranges_are_normalized_without_losing_periods() -> None:
+    samples = {
+        "周二 1~16周 第3-5节 09:45-12:10": [3, 4, 5],
+        "周四8—10节": [8, 9, 10],
+        "周三 第11~13节": [11, 12, 13],
+        "周五第1至2节": [1, 2],
+    }
+    for raw, expected in samples.items():
+        normalized = normalize_time_str(raw)
+        assert "第" in normalized
+        assert parse_course_time(normalized)[0]["periods"] == expected
 
 
 def test_cas_profile_mismatch_or_missing_fields_never_guess() -> None:

@@ -1,4 +1,4 @@
-export type Workspace = "chat" | "academic" | "campus" | "review";
+export type Workspace = "chat" | "academic" | "campus";
 export type RetrievalMode = "auto" | "web" | "local";
 export type Theme = "light" | "dark";
 
@@ -157,6 +157,26 @@ export interface AcademicCourse {
   time?: string;
   location?: string;
   semester?: string;
+  meetings?: AcademicMeeting[];
+}
+
+export interface AcademicMeeting {
+  meeting_id: string;
+  weekday: number;
+  day: string;
+  week_numbers: number[];
+  weeks: string;
+  periods: number[];
+  period_label: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  raw: string;
+}
+
+export interface AcademicUnparsedCourse extends AcademicCourse {
+  reason: string;
+  raw_schedule: string;
 }
 
 export interface GradeRecord {
@@ -226,7 +246,12 @@ export interface AcademicCourses {
 
 export interface AcademicSchedule {
   semester: string;
+  semester_code: string;
+  semester_start: string;
+  total_weeks: number;
+  current_week: number | null;
   courses: AcademicCourse[];
+  unparsed_courses: AcademicUnparsedCourse[];
   source: DataSource;
   limitations: string[];
 }
@@ -244,6 +269,94 @@ export interface CampusServices {
   items: CampusServiceItem[];
   categories: string[];
   source: DataSource;
+}
+
+export type CampusToolCategory = "study" | "life" | "information" | "community" | "other";
+export type CampusToolApplicationStatus = "pending" | "approved" | "rejected";
+
+export interface CampusToolItem {
+  tool_id: string;
+  application_id: string;
+  name: string;
+  description: string;
+  display_description: string;
+  category: CampusToolCategory;
+  url: string;
+  normalized_url: string;
+  status: "active" | "unpublished";
+  published_at: number;
+  version: number;
+}
+
+export interface CampusToolsDirectory {
+  items: CampusToolItem[];
+  categories: CampusToolCategory[];
+  source: DataSource;
+}
+
+export interface CampusToolApplication {
+  application_id: string;
+  applicant_principal_id: string;
+  applicant_name_snapshot: string;
+  name: string;
+  description: string;
+  display_description: string;
+  category: CampusToolCategory;
+  submitted_url: string;
+  normalized_url: string;
+  status: CampusToolApplicationStatus;
+  decision_reason: string | null;
+  reviewed_at: number | null;
+  version: number;
+  created_at: number;
+  updated_at: number;
+  tool_id: string | null;
+  tool_status: "active" | "unpublished" | null;
+  unpublish_reason: string | null;
+  unread: boolean;
+}
+
+export interface CampusToolApplicationsMine {
+  items: CampusToolApplication[];
+  unread_count: number;
+  namespace: "demo" | "production";
+}
+
+export interface CampusToolNotification {
+  notification_id: string;
+  notification_type: "tool_approved" | "tool_rejected" | "tool_unpublished";
+  title: string;
+  body: string;
+  application_id: string;
+  tool_id: string | null;
+  read_at: number | null;
+  created_at: number;
+}
+
+export interface CampusToolNotifications {
+  items: CampusToolNotification[];
+  namespace: "demo" | "production";
+}
+
+export interface ManagedCampusTool extends CampusToolItem {
+  applicant_principal_id: string;
+  applicant_name_snapshot: string;
+  unpublished_by: string | null;
+  unpublished_at: number | null;
+  unpublish_reason: string | null;
+}
+
+export interface CampusToolAuditEntry {
+  audit_id: string;
+  actor_key: string;
+  action: "application_submitted" | "application_approved" | "application_rejected" | "tool_unpublished";
+  object_type: "application" | "tool" | "notification";
+  object_id: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string | null;
+  request_id: string;
+  created_at: number;
 }
 
 export interface CampusActivity {

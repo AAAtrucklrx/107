@@ -87,15 +87,15 @@ query: str  # 用户自然语言问题，如 "学生证怎么补办"
 | 项目 | 内容 |
 |------|------|
 | **所属模块** | `tools/course_tools.py` |
-| **当前状态** | ⚠️ 模拟数据（student_courses 表只有种子数据） |
-| **升级计划** | ★ B2 — 对接真实课表 API |
+| **当前状态** | ✅ CAS 实时课表 + SQLite 明示缓存降级；Demo 为合成数据 |
+| **升级计划** | 真实 CAS 部署取决于可信 HTTPS 域名与白名单；不在前端猜测缺失排课 |
 
-**功能**：查询指定学生的课程表。
+**功能**：查询当前认证学生的全学期课表。优先从 jw 内部 API 获取真实数据，将每门课的多段排课结构化并同步 SQLite；接口不可用时仅返回带来源提示的当前用户缓存。
 
 **参数**：
 ```python
 student_id: str = None  # 学号（登录用户；未登录时查询锁定）
-week: int = None        # 周次（可选）
+week: int = None        # 兼容参数；工具层不据此裁剪，Web 端按结构化 week_numbers 切周
 day: str = None         # 星期几，如 "周一"（可选）
 ```
 
@@ -109,36 +109,31 @@ day: str = None         # 星期几，如 "周一"（可选）
             "course_name": "数学分析B2",
             "teacher": "李教授",
             "credits": 5,
-            "time": "周一3-4节;周三1-2节;周五3-4节",
+            "time": "周一 1~16周 第3-4节;周三 1~16周 第1-2节",
             "location": "三教3A101",
-            "semester": "2025-2026-2"
+            "semester": "2026-2027-1",
+            "meetings": [
+                {
+                    "weekday": 1,
+                    "week_numbers": [1, 2, 3, 4],
+                    "periods": [3, 4],
+                    "period_label": "第3-4节",
+                    "start_time": "09:45",
+                    "end_time": "11:20",
+                    "location": "三教3A101"
+                }
+            ]
         },
-        ...  # 最多5门（种子数据）
+        ...
     ],
-    "count": 5
+    "count": 5,
+    "source": "real"  # 或 fallback / locked
 }
 ```
 
-**当前实现**：
-```sql
-SELECT * FROM student_courses WHERE student_id = ? [AND time LIKE '%周一%']
-```
+**Web 投影**：`GET /api/v1/academic/schedule` 只接受当前服务端 principal，不接受客户端学号。它补充 `semester_code / semester_start / total_weeks / current_week`，并把无法确认星期、周次或起止时间的记录放入 `unparsed_courses`。Web 周视图只绘制完整 meeting；不完整记录如实显示为“待确认”。
 
-**★ B2 升级方案**：
-```
-真实数据源：CatalogAPI.get_courses(semester_id)
-API: /api/teach/lesson/list-for-teach/{semesterId}
-流程：
-  1. 调用 API 获取本学期全部开课数据
-  2. 与学生选课列表交叉匹配（需登录教务系统获取选课列表，暂不可行）
-  3. 回退方案：用 student_courses 表（种子数据）+ API 补充教室/时间信息
-```
-
-**关键决策点**：
-> ⚡ 真实课表需要学生登录教务系统才能获取个人选课列表。
-> 当前 catalog API 只能获取"全校开课信息"，无法知道某学生选了哪些课。
-> **建议**：B2 阶段保持 student_courses 表作为课表来源，用 API 补充教室占用等辅助信息。
-> 后续如需真实选课列表，再对接教务系统认证。
+**时间映射**：官方 1–13 小节由 `utils/course_periods.py` 统一映射，首末小节决定实际起止时间；3–5、8–10 和 11–13 不得截断为固定两小节。多段、单双周、不连续周与显式时钟由 `utils/schedule_parse.py` 解析。
 
 **Plan-and-Execute 兼容性**：
 - 常作为 Planner 的 Step 1（"先查课表再做安排"）
@@ -1094,9 +1089,9 @@ TOOL_REGISTRY = {
 | 历史 | `GET/POST /conversations`、删除单条、删除全部 |
 | 回答 | `POST /chat/runs`、`GET /chat/runs/{id}/events`、`POST /chat/runs/{id}/cancel` |
 | 学业 | `GET /academic/overview`、`/program`、`/courses`、`/schedule` |
-| 校园 | `GET /campus/services`、`GET /campus/activities` |
+| 校园 | `GET /campus/services`、`GET /campus/activities`、`GET /campus/tools`；登录用户另有工具申请、我的申请、通知与已读接口 |
 | 反馈 | `POST /answers/{id}/feedback` |
-| 审核 | 审核条目、版本、逐块批准、拒绝、撤回、复抓、发布重试、generation、来源规则建议 |
+| 管理 | `/admin` 下的校园工具申请/目录/审计，以及知识审核条目、版本、逐块批准、拒绝、撤回、复抓、发布重试、generation、来源规则建议 |
 
 SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。事件提交 SQLite 后通过进程内通知立即唤醒 SSE；每 1 秒读取 SQLite 作为多进程和漏通知兜底，不再以 0.1 秒固定轮询。
 
@@ -1128,6 +1123,15 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - 默认有效期：公告 7 天、动态办事信息 30 天、政策 90 天、稳定通识 180 天；到期退出有效检索但保留历史。
 - 来源白名单建议只导出 Git diff；实际等级变更必须修改 `config/source_trust.yaml`，经测试和 Git 审查后部署。
 - `approved` 是实际持久状态；发布 worker 领取关联任务后才转为 `pending_publish`。发布任务记录具体条目，失败只回写本任务目标。完成任务保留 7 天、死信保留 90 天，入队内容哈希墓碑和审核审计长期保留。
+
+### 校园工具申请与审核
+
+- 官方 `config/links.yaml` 与社区校园工具严格分开；社区工具不得标为官方配置，也不进入 LangGraph 工具注册表。
+- 匿名可读取当前 production 已上架目录；Demo 读取 demo 目录。只有 Demo/CAS 登录身份可提交，申请人学号由服务端 principal 绑定。
+- 申请字段为名称、公开 HTTPS URL、受控分类和可选说明。URL 校验拒绝 userinfo、敏感凭证参数、回环/私网/云元数据目标；展示外链使用 `noopener noreferrer`。
+- `campus_tool_applications -> campus_tools -> user_notifications` 与 `campus_tool_audit` 使用审核库 SQLite 事务。批准同时上架并通知；驳回/下架必须填写原因并通知。
+- 管理 API 复用 `require_reviewer(_mutation)`、CSRF 与 Origin 校验；namespace 只从 principal 推导。写操作使用 `expected_version` 乐观锁和 `X-Request-ID` 幂等边界，重复编号不得跨对象复用。
+- `/admin` 是独立管理入口，默认工具审核；`/admin/knowledge` 为知识审核；旧 `/review` 只作兼容重定向。
 
 ### Generation 发布约束
 

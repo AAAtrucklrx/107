@@ -4,7 +4,11 @@ deploy/sidecars/.env
 
 # 运行态数据库
 database/*.db
+database/*.db-shm
+database/*.db-wal
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/young_dialog_log.json
 data/morning_brief_log.json
 data/web_evidence/

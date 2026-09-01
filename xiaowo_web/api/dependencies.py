@@ -97,6 +97,13 @@ def require_authenticated(
     return principal
 
 
+def require_authenticated_mutation(request: Request) -> Principal:
+    principal = require_mutation(request)
+    if not principal.is_authenticated:
+        raise ApiError(401, "AUTH_REQUIRED", "此功能需要登录。")
+    return principal
+
+
 def require_reviewer(
     principal: Annotated[Principal, Depends(require_principal)],
 ) -> Principal:

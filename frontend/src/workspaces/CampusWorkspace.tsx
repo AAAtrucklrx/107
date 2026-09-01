@@ -17,15 +17,17 @@ import {
   Search,
   Sparkles,
   UserRound,
+  Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LaunchTile } from "../components/LaunchTile";
 import { Limitations, SourceBadge, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
 import { apiGet } from "../lib/api";
-import type { CampusActivities, CampusActivity, CampusServiceItem, CampusServices } from "../types";
+import type { CampusActivities, CampusActivity, CampusServiceItem, CampusServices, SessionPayload } from "../types";
+import { CampusToolsView } from "./CampusToolsView";
 
-type CampusTab = "services" | "activities";
+type CampusTab = "services" | "activities" | "tools";
 
 const namedServiceIcons: Record<string, LucideIcon> = {
   "本科生综合教务系统": GraduationCap,
@@ -135,7 +137,7 @@ function ServicesSkeleton() {
   );
 }
 
-export function CampusWorkspace() {
+export function CampusWorkspace({ session }: { session: SessionPayload }) {
   const mobileCatalog = useMobileCatalog();
   const [activeTab, setActiveTab] = useState<CampusTab>("services");
   const [services, setServices] = useState<CampusServices | null>(null);
@@ -214,14 +216,14 @@ export function CampusWorkspace() {
   );
   const activitiesFiltered = Boolean(activityQuery || activityCategory);
 
-  const currentSearch = activeTab === "services" ? serviceSearch : activitySearch;
-  const currentCategory = activeTab === "services" ? serviceCategory : activityCategory;
+  const currentSearch = activeTab === "services" ? serviceSearch : (activeTab === "activities" ? activitySearch : "");
+  const currentCategory = activeTab === "services" ? serviceCategory : (activeTab === "activities" ? activityCategory : "");
   const currentCategories = activeTab === "services" ? categories : activityCategories;
   const currentLoading = activeTab === "services" ? serviceLoading : activityLoading;
 
   const submitSearch = () => {
     if (activeTab === "services") void loadServices(serviceSearch, serviceCategory);
-    else void loadActivities(activitySearch, activityCategory);
+    else if (activeTab === "activities") void loadActivities(activitySearch, activityCategory);
   };
 
   const changeCategory = (category: string) => {
@@ -258,8 +260,8 @@ export function CampusWorkspace() {
   return (
     <Tabs.Root className="workspace-tabs campus-workspace" value={activeTab} onValueChange={(value) => setActiveTab(value as CampusTab)}>
       <header className="workspace-header campus-header">
-        <div><h1>校园服务</h1><p>经过核验的办事入口与公开活动</p></div>
-        <form className="campus-search" onSubmit={(event) => { event.preventDefault(); submitSearch(); }}>
+        <div><h1>校园服务</h1><p>官方入口、公开活动与审核通过的校园工具</p></div>
+        {activeTab !== "tools" && <form className="campus-search" onSubmit={(event) => { event.preventDefault(); submitSearch(); }}>
           <Search size={17} aria-hidden="true" />
           <input
             aria-label={activeTab === "services" ? "搜索校园服务" : "搜索校园活动"}
@@ -271,20 +273,21 @@ export function CampusWorkspace() {
             placeholder={activeTab === "services" ? "搜索办事入口" : "搜索公开活动"}
           />
           <button type="submit" disabled={currentLoading}>搜索</button>
-        </form>
+        </form>}
       </header>
       <div className="campus-toolbar">
         <Tabs.List className="tabs-list tabs-list--compact" aria-label="校园信息类型">
           <Tabs.Trigger value="services"><Landmark size={15} />办事入口</Tabs.Trigger>
           <Tabs.Trigger value="activities"><Sparkles size={15} />活动</Tabs.Trigger>
+          <Tabs.Trigger value="tools"><Wrench size={15} />校园工具</Tabs.Trigger>
         </Tabs.List>
-        <label className="compact-select">类别
+        {activeTab !== "tools" && <label className="compact-select">类别
           <select value={currentCategory} onChange={(event) => changeCategory(event.target.value)}>
             <option value="">全部</option>
             {currentCategories.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
-        </label>
-        {(currentSearch || currentCategory) && (
+        </label>}
+        {activeTab !== "tools" && (currentSearch || currentCategory) && (
           <button className="text-command" type="button" onClick={clearFilters}>清除筛选</button>
         )}
       </div>
@@ -401,6 +404,9 @@ export function CampusWorkspace() {
               <Limitations items={activities.limitations} />
             </>
           )}
+        </Tabs.Content>
+        <Tabs.Content value="tools" className="campus-content campus-content--tools">
+          <CampusToolsView session={session} />
         </Tabs.Content>
       </div>
     </Tabs.Root>

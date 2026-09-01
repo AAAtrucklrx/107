@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS student_courses (
     credits REAL,
     time TEXT,
     location TEXT,
-    semester TEXT DEFAULT '2025-2026-2'
+    semester TEXT DEFAULT '2025-2026-2',
+    schedule_json TEXT NOT NULL DEFAULT '[]'
 );
 
 -- 学生成绩表

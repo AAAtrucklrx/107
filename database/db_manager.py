@@ -56,6 +56,7 @@ class DatabaseManager:
         # 轻量迁移：为老库补充后加列（新库由 schema.sql 直接建全；重复列报错即忽略）
         for ddl in (
             "ALTER TABLE student_grades ADD COLUMN score_text TEXT",
+            "ALTER TABLE student_courses ADD COLUMN schedule_json TEXT NOT NULL DEFAULT '[]'",
         ):
             try:
                 conn.execute(ddl)

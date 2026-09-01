@@ -16,7 +16,8 @@ from xiaowo_web.api.routers import academic, admin, auth, campus, chat, conversa
 from xiaowo_web.auth.cas import CasProvider, ExistingCasProvider
 from xiaowo_web.auth.service import AuthService
 from xiaowo_web.chat import ChatManager, LegacyQaRunner, QaRunner
-from xiaowo_web.campus import CampusService
+from xiaowo_web.campus import CampusService, CampusToolStore
+from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
 from xiaowo_web.errors import ApiError, api_error_handler
 from xiaowo_web.evidence.clients import Crawl4AiClient, SearxngClient, SidecarHealthProvider
 from xiaowo_web.evidence.extractor import StructuredClaimExtractor
@@ -39,11 +40,13 @@ def create_app(
     sidecar_health_provider: Any | None = None,
     academic_service: AcademicService | None = None,
     campus_service: CampusService | None = None,
+    campus_tool_store: CampusToolStore | None = None,
     review_store: ReviewStore | None = None,
 ) -> FastAPI:
     resolved_settings = settings or WebSettings.from_env()
     store = WebStore(resolved_settings)
     resolved_review_store = review_store or ReviewStore(resolved_settings)
+    resolved_campus_tool_store = campus_tool_store or CampusToolStore(resolved_settings)
     auth_service = AuthService(resolved_settings, store)
     resolved_health_provider = sidecar_health_provider
     evidence_pipeline = None
@@ -95,6 +98,9 @@ def create_app(
     async def lifespan(_app: FastAPI):
         store.initialize()
         resolved_review_store.initialize()
+        resolved_campus_tool_store.initialize()
+        if resolved_settings.auth_mode is AuthMode.DEMO:
+            ensure_demo_campus_tool_seed(resolved_campus_tool_store)
         if (
             resolved_settings.auth_mode is AuthMode.DEMO
             and "PB25111691" in resolved_settings.admin_ids
@@ -125,6 +131,7 @@ def create_app(
     app.state.approved_retriever = approved_retriever
     app.state.academic_service = academic_service or AcademicService()
     app.state.campus_service = campus_service or CampusService()
+    app.state.campus_tool_store = resolved_campus_tool_store
 
     app.add_exception_handler(ApiError, api_error_handler)
 

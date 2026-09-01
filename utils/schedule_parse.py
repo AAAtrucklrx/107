@@ -31,12 +31,12 @@ _WEEKS_RE = re.compile(
     r"\s*(?:[（(]\s*([单双])\s*[）)])?\s*周"
     r"(?:\s*[（(]\s*([单双])\s*[）)])?"
 )
-_PERIODS_RE = re.compile(r"第([0-9,，\-]+)\s*节")
+_PERIODS_RE = re.compile(r"第([0-9,，\-~—至]+)\s*节")
 _CLOCK_RE = re.compile(r"(\d{1,2}:\d{2})\s*[~\-—至]\s*(\d{1,2}:\d{2})")
 
 # 无"第"前缀的节次写法（如"周一3-4节"）；lookbehind 排除已带"第"、时钟（含冒号）
 # 与列表中段的数字，避免误改"第19:00~19:30节"等时钟变体
-_ADD_DI_RE = re.compile(r"(?<![第:\d,，])(\d+(?:[-,，]\d+)*节)")
+_ADD_DI_RE = re.compile(r"(?<![第:\d,，\-~—至])(\d+(?:[-~—至,，]\d+)*节)")
 
 
 def normalize_time_str(time_str: str) -> str:
@@ -62,8 +62,9 @@ def _expand_periods(raw: str) -> list[int]:
         tok = tok.strip()
         if not tok:
             continue
-        if "-" in tok:
-            a, b = tok.split("-", 1)
+        bounds = re.split(r"[-~—至]", tok, maxsplit=1)
+        if len(bounds) == 2:
+            a, b = bounds
             if a.isdigit() and b.isdigit():
                 lo, hi = int(a), int(b)
                 if lo <= hi:
