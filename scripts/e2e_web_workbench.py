@@ -153,7 +153,7 @@ def check_anonymous(browser) -> None:
 
     page.locator("nav.mobile-bottom-nav").get_by_role("button", name="问小蜗").click()
     expect(page.get_by_role("heading", name="常见问题")).to_be_visible()
-    assert_grid_columns(page, ".starter-prompt-grid", 1)
+    assert_grid_columns(page, ".starter-prompt-grid", 2)
     assert_layout(page)
     page.screenshot(path=str(SCREENSHOTS / "anonymous-mobile-light.png"), full_page=False)
     assert not errors, errors
@@ -236,8 +236,8 @@ def check_surface_matrix(browser) -> None:
     viewports = (
         (1440, 1000, 3, 4),
         (1024, 768, 2, 3),
-        (390, 844, 1, 2),
-        (320, 740, 1, 2),
+        (390, 844, 2, 2),
+        (320, 740, 1, 1),
     )
     for theme in ("light", "dark"):
         context = browser.new_context(viewport={"width": 1440, "height": 1000}, color_scheme=theme)
