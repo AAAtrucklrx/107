@@ -111,7 +111,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 | `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
 | `python -m pytest tests/web -q` | 132 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
 | `npm test` / `npm run build`（`frontend/`） | 22/22；生产构建成功，主入口 136.8 kB + react-vendor 185.2 kB（框架层长效缓存），Markdown 按需块 152.7 kB，无 chunk 警告 |
-| `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、Chat 3/2/1 与 Campus 4/3/2 响应式方块、1440/1024/390/320 浅深主题、三态分块审核；需先起两个实例：8766=`XIAOWO_AUTH_MODE=anonymous`，8765=`XIAOWO_AUTH_MODE=demo XIAOWO_PUBLIC_ORIGIN=http://127.0.0.1:8765 XIAOWO_ADMIN_IDS=PB25111691`（origin 必须与实例端口一致，否则写操作被 CSRF 来源校验拒绝） |
+| `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、Chat 3/2/2/1 与 Campus 4/3/2/1 流式响应方块（auto-fill 自适应）、1440/1024/390/320 浅深主题、三态分块审核；需先起两个实例：8766=`XIAOWO_AUTH_MODE=anonymous`，8765=`XIAOWO_AUTH_MODE=demo XIAOWO_PUBLIC_ORIGIN=http://127.0.0.1:8765 XIAOWO_ADMIN_IDS=PB25111691`（origin 必须与实例端口一致，否则写操作被 CSRF 来源校验拒绝） |
 | `python scripts/verify_web_load.py` | 100 条真实消费中的 SSE、30 个并发回答、有界队列、`503 RUN_BUSY` 与 100 条完整终态 |
 | `python scripts/qa_consistency.py` / `qa_new_docs.py` | 需 LLM；最近一次已确认基线 12/12 · 10/10 |
 | 全模块 UI 问答实测 | 19 问 18 直接通过 + 1 断言误判（答案正确），见 docs/e2e_full_module_test.png |
