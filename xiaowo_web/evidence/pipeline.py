@@ -34,6 +34,16 @@ StageCallback = Callable[[str, str], None]
 # 公众号优先触发词（2026-09-01 用户确定）
 _WECHAT_TRIGGER_RE = re.compile(r"科大|中科大|USTC|中国科学技术大学")
 
+# 引用匹配归一化：去除空白与常见中英文标点，全角转半角，降低大小写。
+# LLM 抽取的 quote 常有标点/空格层面的改写，逐字匹配会导致大量可用证据被丢弃。
+_MATCH_NOISE_RE = re.compile(r"[\s，。；：、！？「」『』（）《》〈〉【】“”‘’…·,.;:!?()\[\]{}<>\"'—\-]+")
+_FULLWIDTH = str.maketrans("＂＂＇＇，。；：！？（）【】", '""\'\',.;:!?()[]')
+
+
+def _match_text(value: str) -> str:
+    normalized = value.translate(_FULLWIDTH).lower()
+    return _MATCH_NOISE_RE.sub("", normalized)
+
 
 class ClaimExtractor(Protocol):
     async def extract(
@@ -358,6 +368,10 @@ class EvidencePipeline:
     ) -> tuple[list[dict], list[str], list[str], dict[str, list[str]], list[str]]:
         pages = {record.source_id: record for record in page_records}
         citation_map = {record.source_id: index + 1 for index, record in enumerate(page_records)}
+        normalized_pages = {
+            source_id: _match_text(record.page.markdown)
+            for source_id, record in pages.items()
+        }
         claims: list[dict] = []
         confirmed_lines: list[str] = []
         conflict_lines: list[str] = []
@@ -373,8 +387,9 @@ class EvidencePipeline:
             for evidence in candidate.evidence:
                 record = pages.get(evidence.source_id)
                 quote = " ".join(evidence.quote.split()).strip()
-                page_text = " ".join(record.page.markdown.split()) if record else ""
-                if record is None or len(quote) < 12 or quote not in page_text:
+                if record is None or len(quote) < 12:
+                    continue
+                if _match_text(quote) not in normalized_pages[evidence.source_id]:
                     continue
                 if year_anchor:
                     published_year = self._published_year(record.page)
@@ -384,7 +399,7 @@ class EvidencePipeline:
                     if published_year is None:
                         seen_undated = True
                 excerpt_hash = hashlib.sha256(quote.encode("utf-8")).hexdigest()
-                near_hash = hashlib.sha256(page_text[:4000].encode("utf-8")).hexdigest()
+                near_hash = hashlib.sha256(" ".join(record.page.markdown.split())[:4000].encode("utf-8")).hexdigest()
                 evidence_sources.append(EvidenceSource(
                     source_id=record.source_id,
                     normalized_url=record.url.normalized_url,
