@@ -3975,6 +3975,53 @@ body::after {
   gap: 10px;
 }
 
+/* ---- 完全复刻方向稿：tile 造型 ---- */
+.launch-tile__index {
+  display: none;
+}
+
+.launch-tile__topline {
+  justify-content: flex-start;
+}
+
+.launch-tile__topline svg {
+  color: var(--primary);
+}
+
+.launch-tile--prompt .launch-tile__action {
+  display: none;
+}
+
+.launch-tile--prompt {
+  min-height: 96px;
+}
+
+.launch-tile--prompt .launch-tile__content {
+  justify-content: flex-start;
+  margin: 14px 0 10px;
+}
+
+.launch-tile--prompt .launch-tile__content strong {
+  font-size: 16px;
+}
+
+/* ---- 完全复刻方向稿：侧栏导航胶囊化 + rail 加宽 ---- */
+:root {
+  --rail-width: 232px;
+}
+
+.workspace-nav__item {
+  border-left-width: 0;
+  border-radius: 10px;
+}
+
+.workspace-nav__item[data-active="true"] {
+  border-left-color: transparent;
+  background: var(--glass-strong);
+  color: var(--primary);
+  box-shadow: var(--gshadow);
+}
+
 /* ---- 呼吸感：向方向稿排版靠拢（疏朗字号与间距） ---- */
 .markdown-body {
   font-size: 14px;
