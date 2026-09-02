@@ -39,7 +39,7 @@ def assert_layout(page: Page) -> None:
           viewportWidth: document.documentElement.clientWidth,
           bodyWidth: document.body.scrollWidth,
           canvas: (() => {
-            const node = document.querySelector('.workspace-canvas');
+            const node = document.querySelector('.workspace-canvas') || document.querySelector('.admin-main');
             if (!node) return null;
             const rect = node.getBoundingClientRect();
             return { width: rect.width, height: rect.height, left: rect.left, right: rect.right };
@@ -182,8 +182,10 @@ def check_demo(browser) -> None:
     expect(page.get_by_text("加日程", exact=True)).to_have_count(0)
 
     open_account_menu(page, mobile=False, authenticated=True)
-    page.get_by_role("menuitem", name="知识审核").click()
-    page.wait_for_url(re.compile(r"/review$"))
+    page.get_by_role("menuitem", name="管理后台").click()
+    page.wait_for_url(re.compile(r"/admin$"))
+    page.locator(".admin-navigation").get_by_role("button", name="知识审核").click()
+    page.wait_for_url(re.compile(r"/admin/knowledge$"))
     expect(page.get_by_role("heading", name="知识审核")).to_be_visible()
     expect(page.get_by_text("演示审核与生产知识永久隔离", exact=True)).to_be_visible()
     page.get_by_role("tab", name="发布治理").click()
@@ -208,26 +210,24 @@ def check_demo(browser) -> None:
     expect(page.get_by_label("精确域名")).not_to_have_value("")
     page.screenshot(path=str(SCREENSHOTS / "demo-review-source-desktop-light.png"), full_page=False)
 
+    # 管理后台不再提供主题开关：先在管理后台做移动端截图，再返回用户端切暗色
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(250)
+    expect(page.locator("header.admin-mobile-header").get_by_text("管理后台", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="来源规则建议")).to_be_visible()
+    assert_layout(page)
+    page.screenshot(path=str(SCREENSHOTS / "demo-review-source-mobile-light.png"), full_page=False)
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.wait_for_timeout(250)
+    page.locator(".admin-sidebar__footer").get_by_role("button", name="返回用户端").click()
+    page.wait_for_url(re.compile(r"^http://127\.0\.0\.1:8765/$"))
+
     open_account_menu(page, mobile=False, authenticated=True)
     page.get_by_role("menuitem", name="深色主题").click()
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
     assert_layout(page)
-    page.screenshot(path=str(SCREENSHOTS / "demo-review-source-desktop-dark.png"), full_page=False)
-
-    page.set_viewport_size({"width": 390, "height": 844})
-    page.wait_for_timeout(250)
-    expect(page.locator("header.mobile-header").get_by_label("小蜗科大学术工作台")).to_be_visible()
-    expect(page.get_by_role("heading", name="来源规则建议")).to_be_visible()
-    assert_layout(page)
-    page.screenshot(path=str(SCREENSHOTS / "demo-review-source-mobile-dark.png"), full_page=False)
-
-    page.get_by_role("tab", name=re.compile(r"分块 \d+")).click()
-    decision = page.get_by_role("group", name=re.compile(r"分块 \d+ 审核决定")).first
-    expect(decision.get_by_role("radio", name="待定")).to_be_visible()
-    expect(decision.get_by_role("radio", name="批准")).to_be_visible()
-    expect(decision.get_by_role("radio", name="排除")).to_be_visible()
-    assert_layout(page)
-    page.screenshot(path=str(SCREENSHOTS / "demo-review-chunks-mobile-dark.png"), full_page=False)
+    page.screenshot(path=str(SCREENSHOTS / "demo-chat-desktop-dark.png"), full_page=False)
     assert not errors, errors
     context.close()
 

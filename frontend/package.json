@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-sc": "latest",
-    "@fontsource-variable/noto-serif-sc": "latest",
     "@fullcalendar/core": "^6.1.21",
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
@@ -23,7 +22,6 @@
     "@radix-ui/react-tabs": "latest",
     "@radix-ui/react-tooltip": "latest",
     "lucide-react": "latest",
-    "motion": "latest",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "latest",
