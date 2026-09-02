@@ -83,7 +83,6 @@ class EvidencePipeline:
         self.extractor = extractor
         self.rewriter = rewriter or QueryRewriter()
         self.wechat = wechat
-        self._last_claims: list[dict] | None = None
 
     async def answer(
         self,
@@ -120,7 +119,7 @@ class EvidencePipeline:
             if bundle is not None and bundle.articles:
                 pages = await self._wechat_pages(bundle.articles)
                 if pages:
-                    confirmed = await self._assess_and_answer(
+                    confirmed, claims = await self._assess_and_answer(
                         pages, sanitized.text, limitations_acc, year_anchor, on_stage,
                     )
                     if confirmed is not None:
@@ -128,7 +127,7 @@ class EvidencePipeline:
                     # 公众号内容已查看但不达门槛：以公众号来源收束（不再叠加通用两轮，守住总预算）
                     sources = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
                     limitations_acc.append("已查看公众号内容，但尚无声明达到确定性证据门槛。")
-                    return self._insufficient(sources, limitations_acc, claims=self._last_claims)
+                    return self._insufficient(sources, limitations_acc, claims=claims)
 
         queries = await self._candidate_queries(sanitized.text)
         max_rounds = max(1, self.settings.web_search_max_rounds)
@@ -197,13 +196,15 @@ class EvidencePipeline:
                 continue
 
             sources_accext = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
-            confirmed = await self._assess_and_answer(
+            confirmed, claims = await self._assess_and_answer(
                 pages, sanitized.text, limitations_acc, year_anchor, on_stage,
             )
-            sources_acc.extend(sources_accext)
+            # insufficient 收束只保留最后一轮 sources（与 claims 同源）：
+            # 跨轮累计会导致 citation 每轮从 1 重复编号，声明与来源对不上号
+            sources_acc = sources_accext
             if confirmed is not None:
                 return confirmed
-            claims_acc = getattr(self, "_last_claims", claims_acc)
+            claims_acc = claims
 
         return self._insufficient(sources_acc, limitations_acc, claims=claims_acc)
 
@@ -215,8 +216,11 @@ class EvidencePipeline:
         limitations: list[str],
         year_anchor: str | None,
         on_stage: StageCallback | None,
-    ) -> AnswerBundle | None:
-        """抽取 + 置信裁决 + 组装回答；确认/分歧返回 Bundle，不够则追加 limitation 返回 None。"""
+    ) -> tuple[AnswerBundle | None, list[dict] | None]:
+        """抽取 + 置信裁决 + 组装回答；确认/分歧返回 Bundle，不够则追加 limitation 返回 None。
+
+        返回 (bundle_or_none, claims)：claims 按调用返回（局部变量），
+        不再落实例属性——EvidencePipeline 是全局单例，实例属性会在并发请求间串改。"""
         self._stage(on_stage, "evidence_check", "正在核验证据")
         try:
             extracted = await self.extractor.extract(
@@ -241,13 +245,12 @@ class EvidencePipeline:
         )
         if year_notes:
             limitations.extend(item for item in year_notes if item not in limitations)
-        self._last_claims = claims
         if not confirmed_lines and not conflict_lines:
             limitations.append("已找到公开来源，但尚无声明达到确定性证据门槛。")
-            return None
+            return None, claims
         if not confirmed_lines:
             limitations.append("已找到来源但声明存在分歧，继续核验。")
-            return None
+            return None, claims
         sources = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
         sections: list[str] = [s for s in confirmed_lines if s]
         if conflict_lines:
@@ -259,7 +262,7 @@ class EvidencePipeline:
             limitations=limitations,
             terminal_reason="web_evidence_confirmed",
             ingestion_candidates=self._ingestion_candidates(pages, ingestion_spans),
-        )
+        ), claims
 
     async def _wechat_pages(self, articles) -> list[_PageRecord]:
         from datetime import UTC, datetime

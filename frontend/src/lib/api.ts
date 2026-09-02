@@ -103,7 +103,12 @@ export async function streamRunEvents(
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trimStart());
       if (dataLines.length) {
-        options.onEvent(JSON.parse(dataLines.join("\n")) as SseEnvelope);
+        // 坏帧容错：单帧畸形数据不应让整条流失败（run 本身可能正常完成）
+        try {
+          options.onEvent(JSON.parse(dataLines.join("\n")) as SseEnvelope);
+        } catch (error) {
+          console.warn("丢弃无法解析的 SSE 帧", error);
+        }
       }
       boundary = buffer.indexOf("\n\n");
     }

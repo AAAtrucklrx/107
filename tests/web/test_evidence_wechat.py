@@ -79,6 +79,22 @@ def test_extract_pure_fields() -> None:
     assert pure["images"][0].endswith("AAAA/0")
 
 
+def test_extract_pure_keeps_nested_div_content() -> None:
+    """js_content 嵌套 div/section 时正文不得在第一个内层 </div> 截断。"""
+    nested = """
+    <html><body>
+    <div id="js_content">
+      <div><section>第一段：选课通知已发布。</section></div>
+      <p>第二段：请按时完成。</p>
+    </div>
+    <div class="rich_media_tool">工具栏不应被计入正文</div>
+    </body></html>
+    """
+    text = extract_pure(nested)["text"]
+    assert "第一段" in text and "第二段" in text
+    assert "工具栏" not in text
+
+
 def test_official_account_whitelist() -> None:
     assert is_official_account("中国科学技术大学") is True
     assert is_official_account("蜗壳小道消息") is True

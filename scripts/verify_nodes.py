@@ -256,6 +256,68 @@ def main() -> None:
     t("工具摘要-压力分支", "evaluate_selection_pressure" in _s_p and "31.0" in _s_p
       and "模拟后" in _s_p and "建议" in _s_p, _s_p[:150])
 
+    # ── 2026-09-02 审查修复回归 ──
+    from agents.qa import state as _qa_state
+    from agents.qa.nodes import act as _act, compose as _compose, _think_fallback
+
+    # P0-1: QaState 必须声明 personal_qa（langgraph 1.2.9 静默过滤 schema 外的键）
+    t("QaState 声明 personal_qa 键（静默吞键回归）",
+      "personal_qa" in _qa_state.QaState.__annotations__, "")
+
+    # P0-1 连带: compose 内 personal 检查优先于闲聊（接住被误分类为闲聊的个人信息问题）
+    _c1 = _compose({"query": "我大几", "intent": "闲聊", "personal_qa": "grade",
+                    "tool_results": [], "candidates": [], "user_profile": {}, "student_id": ""})
+    t("compose-personal模板优先于闲聊文案",
+      "我在的，有什么可以帮你" not in _c1["answer"]
+      and ("学籍" in _c1["answer"] or "登录" in _c1["answer"]), _c1["answer"][:60])
+
+    # P1-5: compose 敏感词第二道防线（不依赖意图分类正确）
+    _c2 = _compose({"query": "怎么改成绩", "intent": "查成绩",
+                    "tool_results": [], "candidates": [], "student_id": "", "user_profile": {}})
+    _c3 = _compose({"query": "帮我作弊", "intent": "知识问答",
+                    "tool_results": [], "candidates": [], "student_id": "", "user_profile": {}})
+    t("compose-敏感词第二道防线(改成绩误分类场景)",
+      "无法提供帮助" in _c2["answer"], _c2["answer"][:40])
+    t("compose-敏感词第二道防线(知识问答意图)",
+      "无法提供帮助" in _c3["answer"], _c3["answer"][:40])
+
+    # P2-6: 降级路径失败工具收敛（熔断下不逐轮重撞）
+    # 选课推荐意图的降级计划会包含 recommend_courses；该工具已失败 → 必须被过滤
+    _f1 = _think_fallback({"query": "推荐几门课", "intent": "选课推荐", "rounds": 0,
+                           "tool_results": [{"tool": "recommend_courses", "status": "error",
+                                             "result": {"error": "boom"}}],
+                           "thought_log": [], "student_id": "", "user_profile": {}})
+    _f1_plan = _f1.get("tool_calls") or []
+    t("降级-失败工具不再重试",
+      all(p["tool"] != "recommend_courses" for p in _f1_plan)
+      and (_f1["decision"] != "call_tool" or bool(_f1_plan)),
+      f"decision={_f1['decision']} plan={[p['tool'] for p in _f1_plan]}")
+    _f2 = _think_fallback({"query": "我的成绩", "intent": "查成绩", "rounds": 2,
+                           "tool_results": [], "thought_log": [],
+                           "student_id": "PB1", "user_profile": {}})
+    t("降级-已试2轮收敛compose", _f2["decision"] == "compose", "")
+
+    # P3-10: act 略形 args 防御（字符串 args 不应中断图执行）
+    _a1 = _act({"decision": "call_tool", "rounds": 0,
+                "tool_calls": [{"tool": "search_faq", "args": "查课表"}],
+                "tool_results": [], "student_id": "", "user_profile": {}})
+    t("act-略形args不崩溃且产出error结果",
+      len(_a1.get("tool_results") or []) == 1
+      and _a1["tool_results"][0]["status"] == "error", str(_a1.get("tool_results"))[:80])
+
+    # P3-14: 个人方案树缓存 TTL 过期后不再命中
+    from agents.qa.nodes import _PERSONAL_TREE_CACHE, _load_personal_tree
+    _PERSONAL_TREE_CACHE["VERIFY_SID"] = ({"tree": True}, __import__("time").time() - 4000)
+    _lt = _load_personal_tree("VERIFY_SID")
+    t("个人方案树缓存-TTL过期后重新拉取(不命中旧值)",
+      _lt is None and "VERIFY_SID" not in _PERSONAL_TREE_CACHE, str(_lt))
+
+    # P0-2: run_qa 顶层异常文案脱敏（源码级回归护栏）
+    import inspect
+    _graph_src = inspect.getsource(__import__("agents.qa.graph", fromlist=["run_qa"]).run_qa)
+    t("run_qa-顶层异常不透出原文",
+      "处理请求时出错" not in _graph_src and "请稍后重试" in _graph_src, "")
+
     print(f"\n结果: 通过 {len(TOTAL) - len(FAILURES)}/{len(TOTAL)}")
 
 

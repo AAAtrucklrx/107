@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -139,7 +141,9 @@ def _enrich_recommend_args(args: dict, state: QaState, sid: str) -> None:
 
 
 # 个人方案树 per-student 缓存（进程内，避免 QA 循环内多次经 CAS 重复拉取阻塞数秒）
-_PERSONAL_TREE_CACHE: dict[str, dict | list] = {}
+# 带 TTL：长驻 Web 进程下学生当日改培养方案后不至终日读旧数据
+_PERSONAL_TREE_CACHE: dict[str, tuple[dict | list, float]] = {}
+_PERSONAL_TREE_TTL_SECONDS = 1800
 
 
 def clear_personal_tree_cache(student_id: str | None = None) -> None:
@@ -156,7 +160,10 @@ def _load_personal_tree(student_id: str | None = None):
         return None
     cached = _PERSONAL_TREE_CACHE.get(student_id)
     if cached is not None:
-        return cached
+        tree, cached_at = cached
+        if time.time() - cached_at <= _PERSONAL_TREE_TTL_SECONDS:
+            return tree
+        _PERSONAL_TREE_CACHE.pop(student_id, None)
     try:
         from services.service_container import ServiceContainer
         sc = ServiceContainer()
@@ -167,7 +174,7 @@ def _load_personal_tree(student_id: str | None = None):
             return None
         if sc.cas_client.student_id != student_id:
             return None
-        _PERSONAL_TREE_CACHE[student_id] = tree
+        _PERSONAL_TREE_CACHE[student_id] = (tree, time.time())
         return tree
     except Exception:
         return None
@@ -284,8 +291,7 @@ def embedding_parse(state: QaState) -> dict:
     found = bool(state.get("candidates_found"))
     retrieval_log = list(state.get("retrieval_log") or [])
     try:
-        from knowledge.vector_store import FAQVectorStore
-        res = FAQVectorStore().search(query, top_k=12)
+        res = _get_faq_store().search(query, top_k=12)
         seen = {
             str(candidate.get("id") or candidate.get("chunk_id") or "")
             for candidate in candidates
@@ -622,6 +628,22 @@ def _valid_tools() -> frozenset:
     return _REGISTRY_CACHE
 
 
+# FAQVectorStore 进程级单例：BM25 索引随实例缓存，避免每次问答全库重建
+#（QA 在线程池并发跑，用锁保护初始化）
+_FAQ_STORE = None
+_FAQ_STORE_LOCK = threading.Lock()
+
+
+def _get_faq_store():
+    global _FAQ_STORE
+    if _FAQ_STORE is None:
+        with _FAQ_STORE_LOCK:
+            if _FAQ_STORE is None:
+                from knowledge.vector_store import FAQVectorStore
+                _FAQ_STORE = FAQVectorStore()
+    return _FAQ_STORE
+
+
 def _check_tool_choice(tool: str, done_tools: set) -> str:
     """校验 LLM 选择的工具：''=空 'done'=已有结果 'unknown'=不在注册表 'ok'=可用"""
     if not tool:
@@ -807,6 +829,16 @@ def _think_fallback(state: QaState) -> dict:
                     "round": rounds + 1, "decision": "compose", "reason": "降级规则(已有结果)",
                 }]}
 
+    # 降级收敛：失败过的工具不再重试（避免熔断下逐轮重撞同一失败工具），
+    # 且降级模式已试 2 轮即收敛合成（熔断初衷是避免分钟级假死）
+    failed_tools = {r.get("tool") for r in results if r.get("status") == "error"}
+    if rounds >= 2:
+        log.info("think 降级规则：降级模式已试 2 轮，收敛合成")
+        return {"decision": "compose", "tool_calls": [],
+                "thought_log": (state.get("thought_log") or []) + [{
+                    "round": rounds + 1, "decision": "compose", "reason": "降级规则(试过2轮收敛)",
+                }]}
+
     if intent == "闲聊":
         plan, decision = [], "compose"
     elif intent == "选课推荐":
@@ -823,6 +855,12 @@ def _think_fallback(state: QaState) -> dict:
             if major:
                 faq_query = f"{major} 学院 教学秘书 联系方式"
         plan, decision = [{"tool": "search_faq", "args": {"query": faq_query}}], "call_tool"
+
+    # 过滤已失败工具：过滤后为空则转 compose，不再重撞
+    if failed_tools and plan:
+        plan = [p for p in plan if p["tool"] not in failed_tools]
+        if not plan:
+            decision = "compose"
 
     log.info(f"think 降级规则[{intent}]: {[p['tool'] for p in plan]}")
     return {"decision": decision, "tool_calls": plan,
@@ -1178,18 +1216,24 @@ def act(state: QaState) -> dict:
         candidates = list(state.get("candidates") or [])
         retrieval_log = list(state.get("retrieval_log") or [])
         try:
-            from knowledge.vector_store import FAQVectorStore
-            store = FAQVectorStore()
-            seen = {(c.get("id") or c.get("chunk_id")) for c in candidates}
+            store = _get_faq_store()
+            seen: set[str] = set()
+            for c in candidates:
+                identity = str(c.get("id") or c.get("chunk_id") or "")
+                if identity:
+                    seen.add(identity)
             for q in queries:
                 res = store.search(q, top_k=12)
                 added = 0
                 for c in res.get("results") or []:
-                    cid = c.get("id") or c.get("chunk_id")
-                    if cid not in seen:
-                        candidates.append(c)
-                        seen.add(cid)
-                        added += 1
+                    # 口径与 embedding_parse 一致：空 id 不入 seen，不参与去重
+                    identity = str(c.get("id") or c.get("chunk_id") or "")
+                    if identity and identity in seen:
+                        continue
+                    candidates.append(c)
+                    if identity:
+                        seen.add(identity)
+                    added += 1
                 retrieval_log.append({
                     "round": rounds, "decision": "retrieve",
                     "reason": f"重新检索「{q[:20]}」: 新增 {added} 条候选",
@@ -1210,7 +1254,9 @@ def act(state: QaState) -> dict:
 
         for call in plan:
             tool_name = call.get("tool", "")
-            args = dict(call.get("args") or {})
+            # 畸形 args 防御：推理模型偶发输出字符串/列表，dict() 会中断整个图执行
+            raw_args = call.get("args")
+            args = dict(raw_args) if isinstance(raw_args, dict) else {}
             # 认证身份是唯一可信来源。未登录时也覆盖为空，拒绝模型伪造学号。
             if tool_name in _PERSONAL_TOOLS:
                 args["student_id"] = sid
@@ -1306,13 +1352,17 @@ def compose(state: QaState) -> dict:
     candidates = state.get("candidates") or []
     error = state.get("error") or ""
 
-    if intent == "敏感拒绝" and any(w in query for w in _SENSITIVE_WORDS):
+    # 第二道防线：compose 是用户最终可见输出，问题含敏感词一律固定拒绝，
+    # 不依赖意图分类正确（think 层守卫带 intent 条件是为防误伤正常教务问题）
+    if any(w in query for w in _SENSITIVE_WORDS):
         return {"answer": _sensitive_refusal(), "error": error, "truncated": False}
-    if intent == "闲聊" and not results and not candidates:
-        return {"answer": _chitchat(query), "error": error, "truncated": False}
+    # personal 检查必须在闲聊之前：快速通道的目的就是接住被误分类为闲聊的
+    # 个人信息问题，若先走闲聊分支则防线落空
     personal_field = state.get("personal_qa")
     if personal_field:
         return {"answer": _personal_qa_answer(personal_field, state), "error": error, "truncated": False}
+    if intent == "闲聊" and not results and not candidates:
+        return {"answer": _chitchat(query), "error": error, "truncated": False}
 
     tool_summary = _build_tool_summary(results)
     candidates_summary = _build_candidates_summary(candidates)
@@ -1742,7 +1792,8 @@ def _fallback_answer(results: list[dict], candidates: list[dict]) -> str:
     for r in done:
         res = r.get("result") or {}
         if res.get("error"):
-            lines.append(f"提示：{res['error']}")
+            # 错误文案脱敏：工具 error 可能含内部异常细节，不透出原文
+            lines.append(f"[{r.get('tool', '工具')}] 查询暂时失败，请稍后重试。")
         elif isinstance(res.get("results"), list) and res.get("found"):
             top = res["results"][0]
             content = str(top.get("content", ""))

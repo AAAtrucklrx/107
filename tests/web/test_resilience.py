@@ -56,6 +56,18 @@ class TerminalRaceStore:
     def __init__(self) -> None:
         self.reads = 0
 
+    def poll_run(self, _run_id: str, _cursor: int) -> tuple[list[dict], Any]:
+        self.reads += 1
+        if self.reads == 1:
+            # 第一次快照：终态已置但事件尚未读到（run 完成于事件读与状态读之间）
+            return [], SimpleNamespace(status="completed")
+        # 关流前的最后一次 drain：终态事件在此带出
+        return [{
+            "id": 4,
+            "type": "answer.completed",
+            "data": {"stage": "completed"},
+        }], SimpleNamespace(status="completed")
+
     def list_events(self, _run_id: str, _cursor: int) -> list[dict]:
         self.reads += 1
         if self.reads == 1:

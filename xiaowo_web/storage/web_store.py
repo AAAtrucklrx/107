@@ -458,6 +458,38 @@ class WebStore:
             "data": payload,
         }
 
+    def poll_run(
+        self, run_id: str, after_sequence: int = 0
+    ) -> tuple[list[dict[str, Any]], RunRecord | None]:
+        """SSE 流单次快照：同一连接/事务内读事件 + run 状态。
+
+        _event_stream 每秒轮询一次；合并后每个 tick 只开一条 SQLite 连接，
+        替代原先在线程上分开的 list_events + get_run 两次连接开销。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT sequence, event_type, payload_json, created_at
+                FROM web_chat_events
+                WHERE run_id = ? AND sequence > ?
+                ORDER BY sequence ASC
+                """,
+                (run_id, after_sequence),
+            ).fetchall()
+            row = conn.execute(
+                "SELECT * FROM web_chat_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        events = [
+            self._event_envelope(
+                run_id,
+                int(item["sequence"]),
+                item["event_type"],
+                json.loads(item["payload_json"] or "{}"),
+                float(item["created_at"]),
+            )
+            for item in rows
+        ]
+        return events, self._run_from_row(row) if row is not None else None
+
     def list_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(

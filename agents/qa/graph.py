@@ -136,7 +136,9 @@ def run_qa(query: str, module_signal: str = "自动判断",
         finally:
             reset_student(_ctx_token)
     except Exception as e:
-        log.error(f"QA 流程执行失败: {e}")
+        # 错误文案脱敏：answer 面向用户必须用固定文案，原始异常只进 error 诊断字段
+        # 与日志（str(e) 可能含 pydantic schema/SQL/内部路径，不得透出）
+        log.error(f"QA 流程执行失败: {e}", exc_info=True)
         return {
             "query": query,
             "module_signal": module_signal or "自动判断",
@@ -156,7 +158,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "rounds": 0,
             "thought_log": [],
             "clarify_question": "",
-            "answer": f"处理请求时出错：{e}",
+            "answer": "抱歉，处理您的问题时出现了临时故障，请稍后重试或换个说法。",
             "truncated": False,
             "error": str(e),
         }

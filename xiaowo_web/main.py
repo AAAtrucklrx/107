@@ -58,8 +58,11 @@ def create_app(
         resolved_settings,
     )
     if resolved_runner is None:
+        # 执行池容量与准入并发对齐（或其合理有界子集）：信号量放行 30 个 run
+        # 而池只有 4 线程时，LLM 变慢会让后续 run 在队列里空等到超时——可用性塔缩
         local_runner = LegacyQaRunner(
-            approved_retriever=approved_retriever
+            approved_retriever=approved_retriever,
+            max_workers=min(resolved_settings.max_concurrent_runs, 16),
         )
         if resolved_settings.web_search_enabled:
             search_client = SearxngClient(

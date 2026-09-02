@@ -23,6 +23,7 @@ import html
 import re
 import time
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from typing import Any
 
 import httpx
@@ -46,6 +47,9 @@ _ARTICLE_TITLE_RE = re.compile(r'<meta property="og:title" content="([^"]+)"')
 _ARTICLE_AUTHOR_RE = re.compile(r'<meta property="og:article:author" content="([^"]+)"')
 _ARTICLE_FALLBACK_TITLE_RE = re.compile(r"<h1[^>]*id=\"activity-name\"[^>]*>([^<]+)<")
 _JS_URL_FRAG_RE = re.compile(r"url \+= '([^']*)'")
+# 反爬判定特征：仅匹配验证码/拦截页特征串，不再用宽泛的 "verify"
+#（正常页面 JS 里的 verified/unverified 会误触发，连续 3 次即熔断 600s）
+_ANTISPIDER_RE = re.compile(r"antispider|seccode|snssimid|/website/antispider", re.I)
 _IMAGE_RE = re.compile(r"https?://mmbiz\.qpic\.cn/[A-Za-z0-9_./=-]+")
 _HREF_RE = re.compile(r'href="(/link\?url=[^"]+)"')
 _ACCOUNT_RE = re.compile(r'class="account"[^>]*>([^<]+)<')
@@ -290,7 +294,7 @@ class WechatClient:
         url = f"https://weixin.sogou.com/weixin?type=2&query={quote(query)}&page={max(1, int(page))}"
         resp = await self._client.get(url)
         text = resp.text if resp.status_code == 200 else ""
-        if "antispider" in text or "verify" in text or resp.status_code != 200:
+        if _ANTISPIDER_RE.search(text) or resp.status_code != 200:
             # 桌面端点被反爬（2026-09-02 实测 302→antispider）：回退 WAP 端点（独立反爬策略）
             try:
                 resp = await self._client.get(
@@ -301,7 +305,9 @@ class WechatClient:
                 self._search_ref = url.replace("/weixin?", "/weixinwap?")
             except httpx.HTTPError:
                 text = ""
-        if not text or "antispider" in text or "verify" in text:
+        else:
+            self._search_ref = url
+        if not text or _ANTISPIDER_RE.search(text):
             raise WechatBlocked("sogou search antispider")
         hits: list[WechatSearchHit] = []
         # 桌面(article_title_x)与 WAP(data-uigs="article_title_x")统一匹配；账号：all-time-y2 或 data-sourcename
@@ -327,7 +333,7 @@ class WechatClient:
             hit.link, headers={"Referer": self._search_ref or "https://weixin.sogou.com/"},
         )
         body = resp.text
-        if "antispider" in body or "verify" in body:
+        if _ANTISPIDER_RE.search(body):
             raise WechatBlocked("resolve antispider")
         real_url = "".join(_JS_URL_FRAG_RE.findall(body)).strip()
         if not real_url:
@@ -340,8 +346,23 @@ class WechatClient:
             raise WechatUnavailable("article URL domain not allowed")
         await self._bucket.wait("article", self._article_throttle)
         headers = {"Referer": "https://weixin.qq.com/"}
+        # 手动逐跳跟随：每跳先过域白名单再请求，杜绝中间跳指向内网的盲 SSRF
+        #（follow_redirects=True 会先实际请求中间跳，之后才校验最终域名）
+        current = url
         try:
-            resp = await self._client.get(url, headers=headers, follow_redirects=True)
+            resp = await self._client.get(current, headers=headers, follow_redirects=False)
+            for _ in range(5):
+                if not resp.is_redirect:
+                    break
+                nxt = str(resp.next_request.url) if resp.next_request is not None else ""
+                if not nxt or not (
+                    self._domain_ok(nxt, _ALLOWED_JUMP_DOMAINS)
+                    or self._domain_ok(nxt, _ALLOWED_FINAL_DOMAINS)
+                ):
+                    self.last_error = "redirect target not allowed: " + nxt[:60]
+                    return None
+                current = nxt
+                resp = await self._client.get(current, headers=headers, follow_redirects=False)
         except httpx.HTTPError as exc:
             self.last_error = f"fetch error: {type(exc).__name__}"
             return None
@@ -350,7 +371,7 @@ class WechatClient:
             raise WechatBlocked("article environment-anti-bot")
         if resp.status_code != 200:
             return None
-        final = str(resp.url)
+        final = current
         if not self._domain_ok(final, _ALLOWED_FINAL_DOMAINS):
             self.last_error = "redirect target not allowed: " + final[:60]
             return None
@@ -421,7 +442,79 @@ class WechatClient:
         return host in allowed
 
 
-# ── 提取工具（纯函数，便于单测） ───────────────────────────────
+# ── 提取工具（纯函数，便于单测） ─────────────────────────────
+
+# HTML 空元素（无闭合标签）：不参与嵌套深度计数
+_VOID_TAGS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
+class _JsContentTextParser(HTMLParser):
+    """提取 id="js_content" 节点内的全部文本。
+
+    公众号正文普遍嵌套 div/section，旧的非贪婪正则 `(.*?)</div>` 会在
+    第一个内层闭合标签处截断，导致正文大量丢失、quote 校验命中率骤降。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._capture = False
+        self._depth = 0
+        self._skip = 0  # js_content 内部 script/style 内容不计入正文
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if not self._capture:
+            for key, value in attrs:
+                if key == "id" and value == "js_content":
+                    self._capture = True
+                    self._depth = 0
+                    self._skip = 0
+                    break
+            return
+        if tag in _VOID_TAGS:
+            return
+        self._depth += 1
+        if tag in ("script", "style"):
+            self._skip += 1
+
+    def handle_endtag(self, tag):
+        if not self._capture:
+            return
+        if self._skip and tag in ("script", "style"):
+            self._skip -= 1
+            return
+        if self._depth == 0:
+            self._capture = False
+        else:
+            self._depth -= 1
+
+    def handle_startendtag(self, tag, attrs):
+        # 自闭合标签（<br/> 等）不改变嵌套深度
+        pass
+
+    def handle_data(self, data):
+        if self._capture and not self._skip and data:
+            self.parts.append(data)
+
+
+def _extract_js_content(html_text: str) -> str:
+    """提取 js_content 正文；解析器异常时回退到结束锚点正则。"""
+    parser = _JsContentTextParser()
+    try:
+        parser.feed(html_text)
+        parser.close()
+    except Exception:  # noqa: BLE001  # html.parser 对残缺标签宽容，仍防御性兜底
+        parser.parts = []
+        anchor_m = re.search(
+            r'id="js_content"[^>]*>([\s\S]*?)</div>\s*(?:<script|<div class="rich_media_tool)',
+            html_text,
+        )
+        if anchor_m:
+            return anchor_m.group(1)
+    return " ".join(parser.parts)
+
 
 def extract_pure(html_text: str) -> dict[str, Any]:
     m = _ARTICLE_TITLE_RE.search(html_text)
@@ -431,8 +524,7 @@ def extract_pure(html_text: str) -> dict[str, Any]:
         title = html.unescape(m2.group(1)).strip() if m2 else ""
     author_m = _ARTICLE_AUTHOR_RE.search(html_text)
     author = author_m.group(1).strip() if author_m else ""
-    content_m = re.search(r'id="js_content"[^>]*>(.*?)</div>', html_text, re.S)
-    content = content_m.group(1) if content_m else ""
+    content = _extract_js_content(html_text)
     text = re.sub(r"<[^>]+>", " ", content)
     text = re.sub(r"\s+", " ", text).strip()
     images = list(dict.fromkeys(_IMAGE_RE.findall(html_text)))

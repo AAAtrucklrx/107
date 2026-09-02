@@ -62,16 +62,17 @@ async def _event_stream(request: Request, run_id: str, after_sequence: int) -> A
     while True:
         if await request.is_disconnected():
             return
-        events = store.list_events(run_id, cursor)
+        # 单次 to_thread 快照：事件 + 状态一次连接读完，不在事件循环线程上直接做 SQLite I/O
+        events, run = await asyncio.to_thread(store.poll_run, run_id, cursor)
         for event in events:
             cursor = int(event["id"])
             yield _encode_sse(event)
-        run = store.get_run(run_id)
         if run is None or run.status in _TERMINAL_STATES:
             # The terminal event and terminal run state commit atomically. A run
-            # can finish between the first event read and this status read, so
+            # can finish between the snapshot read and the status read, so
             # drain once more before closing the stream.
-            for event in store.list_events(run_id, cursor):
+            events, _ = await asyncio.to_thread(store.poll_run, run_id, cursor)
+            for event in events:
                 cursor = int(event["id"])
                 yield _encode_sse(event)
             return
