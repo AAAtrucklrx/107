@@ -102,7 +102,7 @@ class EvidencePipeline:
             try:
                 bundle = await asyncio.wait_for(
                     self.wechat.collect(sanitized.text),
-                    timeout=max(15.0, min(25.0, self.settings.run_timeout_seconds * 0.4)),
+                    timeout=max(15.0, min(35.0, self.settings.run_timeout_seconds * 0.5)),
                 )
             except asyncio.TimeoutError:
                 bundle = None

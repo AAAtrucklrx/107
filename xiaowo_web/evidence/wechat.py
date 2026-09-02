@@ -48,7 +48,7 @@ _ACCOUNT_RE = re.compile(r'class="account"[^>]*>([^<]+)<')
 _BLOCK_SPLIT_RE = re.compile(r'class="(?:txt-box|news-box|news-bigbox)"')
 
 _OCR_MIN_CHARS = 30
-_OCR_MAX_IMAGES_PER_ARTICLE = 2
+_OCR_MAX_IMAGES_PER_ARTICLE = 3
 _MAX_ARTICLES = 5
 _OCR_THROTTLE_SECONDS = 2.5
 _SOGOU_THROTTLE_SECONDS = 3.0
@@ -180,9 +180,8 @@ class WechatClient:
                     return WechatBundle([], blocked=True)
                 if article is None:
                     continue
-                if ocr_budget > 0 and len(article.markdown) < 400:
-                    # 正文已足够（>400 字）时不再 OCR：长文数字往往已在正文；只在“图主导”短文上跑 OCR
-                    spans, used = await self._ocr_images(article.raw_html, min(ocr_budget, _OCR_MAX_IMAGES_PER_ARTICLE))
+                if ocr_budget > 0:
+                    spans, used = await self._ocr_images(article.raw_html, ocr_budget)
                     ocr_budget -= used
                     article.ocr_spans = spans
                 articles.append(article)
@@ -316,7 +315,7 @@ class WechatClient:
             resp = await self._client.post(
                 base.rstrip("/") + "/chat/completions", json=payload,
                 headers=_llm_auth_header(),
-                timeout=httpx.Timeout(15.0),
+                timeout=httpx.Timeout(90.0),
             )
             if resp.status_code != 200:
                 self.last_error = f"ocr HTTP {resp.status_code}"
