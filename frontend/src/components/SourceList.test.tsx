@@ -17,7 +17,8 @@ test("source details expose trust and timestamps only after expansion", async ()
     citation: 1,
   }]} />);
 
-  expect(screen.queryByText("教务处公开通知")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /教务处公开通知/ })).toBeInTheDocument();
+  expect(screen.queryByText("官方一手")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /来源 1/ }));
   expect(screen.getByRole("link", { name: /教务处公开通知/ })).toHaveAttribute(
     "href",

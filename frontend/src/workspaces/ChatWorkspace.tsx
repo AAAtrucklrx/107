@@ -109,6 +109,14 @@ function greetingParts(now = new Date()): { greet: string; date: string } {
   return { greet, date };
 }
 
+function withStage(message: ChatMessage, stage: string): ChatMessage {
+  return {
+    ...message,
+    stage,
+    stages: message.stages?.includes(stage) ? message.stages : [...(message.stages ?? []), stage],
+  };
+}
+
 interface TodayCourse {
   name: string;
   start: string;
@@ -290,14 +298,17 @@ function RetrievalControl({ value, disabled, webEnabled, onChange }: {
   );
 }
 
-function StageStrip({ stage }: { stage?: string }) {
-  if (!stage || stage === "completed") return null;
-  const isWeb = stage === "web_search" || stage === "web_fetch";
+function StageStrip({ message }: { message: ChatMessage }) {
+  if (message.status === "completed") return null;
+  const stages = message.stages?.length ? message.stages : message.stage ? [message.stage] : [];
+  if (!stages.length) return null;
   return (
     <div className="stage-strip" role="status">
-      <span className="stage-strip__pulse" />
-      {isWeb ? <Globe2 size={14} /> : <Search size={14} />}
-      <span>{stageLabels[stage] ?? "正在处理"}</span>
+      {stages.map((stage, index) => {
+        const current = index === stages.length - 1;
+        const label = stageLabels[stage] ?? "正在处理";
+        return <span key={`${stage}-${index}`} className={current ? "stage-chip doing" : "stage-chip done"}>{label}</span>;
+      })}
     </div>
   );
 }
@@ -553,7 +564,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   const handleEvent = useCallback((event: SseEnvelope, assistantId: string, conversationId: string | null, selectedMode: RetrievalMode) => {
     const data = event.data as Record<string, unknown>;
     if (event.type === "stage.changed" || event.type === "run.created") {
-      updateAssistant(assistantId, (message) => ({ ...message, stage: String(data.stage ?? "queued") }));
+      updateAssistant(assistantId, (message) => withStage(message, String(data.stage ?? "queued")));
       return;
     }
     if (event.type === "source.found") {
@@ -576,8 +587,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     }
     if (event.type === "answer.segment") {
       updateAssistant(assistantId, (message) => ({
-        ...message,
-        stage: "answering",
+        ...withStage(message, "answering"),
         content: `${message.content}${String(data.markdown ?? "")}`,
       }));
       return;
@@ -587,9 +597,8 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       setBusy(false);
       setMessages((current) => {
         const next = current.map((message) => message.id === assistantId ? {
-          ...message,
+          ...withStage(message, "completed"),
           answerId: String(data.answer_id ?? ""),
-          stage: "completed",
           status: "completed" as const,
           sources: (data.sources as Source[] | undefined) ?? message.sources ?? [],
           claims: (data.claims as ChatMessage["claims"]) ?? [],
@@ -606,7 +615,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     if (event.type === "run.cancelled") {
       activeRun.current = null;
       setBusy(false);
-      updateAssistant(assistantId, (message) => ({ ...message, stage: "cancelled", status: "cancelled", content: message.content || "已停止生成。" }));
+      updateAssistant(assistantId, (message) => ({ ...withStage(message, "cancelled"), status: "cancelled", content: message.content || "已停止生成。" }));
       return;
     }
     if (event.type === "run.failed") {
@@ -629,7 +638,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     if (!authenticated && !activeId) setActiveId(localId);
     const userMessage: ChatMessage = { id: randomId("user"), role: "user", content: clean, createdAt: nowIso(), mode: selectedMode, status: "completed" };
     const assistantId = randomId("assistant");
-    const assistantMessage: ChatMessage = { id: assistantId, role: "assistant", content: "", createdAt: nowIso(), mode: selectedMode, stage: "queued", status: "streaming" };
+    const assistantMessage: ChatMessage = { id: assistantId, role: "assistant", content: "", createdAt: nowIso(), mode: selectedMode, stage: "queued", stages: ["queued"], status: "streaming" };
     setMessages((current) => [...current, userMessage, assistantMessage]);
 
     try {
@@ -731,7 +740,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       streamController.current?.abort();
       activeRun.current = null;
       setBusy(false);
-      setMessages((current) => current.map((message) => message.runId === runId ? { ...message, stage: "cancelled", status: "cancelled" } : message));
+      setMessages((current) => current.map((message) => message.runId === runId ? { ...withStage(message, "cancelled"), status: "cancelled" } : message));
     }
   }, [session.csrf_token]);
 
@@ -839,7 +848,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
             <article key={message.id} className={`message message--${message.role}`}>
               <div className="message__identity">{message.role === "assistant" ? <><Bot size={15} />小蜗</> : "你"}</div>
               <div className="message__body">
-                {message.role === "assistant" && <StageStrip stage={message.stage} />}
+                {message.role === "assistant" && <StageStrip message={message} />}
                 {message.role === "user" && (message.editing ? (
                   <UserMessageEditor message={message} onCancel={cancelEdit} onSave={saveEdit} />
                 ) : (

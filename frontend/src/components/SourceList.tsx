@@ -26,8 +26,23 @@ function formatTime(value: string | null): string {
 export function SourceList({ sources }: { sources: Source[] }) {
   const [open, setOpen] = useState(false);
   if (!sources.length) return null;
+  const shortTitle = (title: string) => (title.length > 16 ? `${title.slice(0, 16)}…` : title);
   return (
     <Collapsible.Root className="source-section" open={open} onOpenChange={setOpen}>
+      <div className="source-pills">
+        {sources.map((source) => (
+          <button
+            key={source.source_id}
+            type="button"
+            className="source-pill"
+            title={source.title}
+            onClick={() => setOpen(true)}
+          >
+            <span className="source-pill__num">{source.citation}</span>
+            {shortTitle(source.title)}
+          </button>
+        ))}
+      </div>
       <Collapsible.Trigger className="source-section__trigger">
         <span>
           <FileCheck2 size={16} aria-hidden="true" />

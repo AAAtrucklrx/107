@@ -65,7 +65,8 @@ test("chat renders verified complete segments, citations, and saves anonymous hi
   const input = screen.getByRole("textbox", { name: "向小蜗提问" });
   await user.type(input, "公开校历是什么？");
   await user.click(screen.getByRole("button", { name: "发送" }));
-  await waitFor(() => expect(screen.getByText("已核验的完整回答。[1]")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/已核验的完整回答/)).toBeInTheDocument());
+  expect(document.querySelector(".markdown-body sup.cite")).not.toBeNull();
   expect(screen.queryByText("核验证据")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /来源 1/ }));
   expect(screen.getByRole("link", { name: /教务处来源/ })).toBeInTheDocument();
@@ -80,7 +81,7 @@ test("public starter prompt fills and focuses the composer without sending", asy
   const input = screen.getByRole("textbox", { name: "向小蜗提问" });
   expect(input).toHaveValue("请查询本学期校历安排，并列出开学、考试周和重要教学节点。");
   await waitFor(() => expect(input).toHaveFocus());
-  expect(screen.queryByText("已核验的完整回答。[1]")).not.toBeInTheDocument();
+  expect(screen.queryByText(/已核验的完整回答/)).not.toBeInTheDocument();
 });
 
 test("personal academic capability selects valid personal starter prompts", () => {

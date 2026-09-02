@@ -22,6 +22,8 @@
   --primary-soft: #e2ecf7;
   --retrieval: #087680;
   --retrieval-soft: #dceff0;
+  --blue-soft: rgb(3 78 161 / 0.1);
+  --cyan-soft: rgb(8 118 128 / 0.1);
   --success: #267553;
   --success-soft: #e0f0e8;
   --warning: #9a650e;
@@ -69,6 +71,8 @@
   --primary-soft: #16283c;
   --retrieval: #4fc8ce;
   --retrieval-soft: #123a3e;
+  --blue-soft: rgb(91 155 224 / 0.14);
+  --cyan-soft: rgb(79 200 206 / 0.12);
   --success: #71c39a;
   --success-soft: #18382c;
   --warning: #e2af5d;
@@ -4241,6 +4245,176 @@ body::after {
 
 .message--assistant .message__body {
   padding: 16px 20px;
+}
+
+/* ---- P1 消息骨架：去身份列，user 气泡靠右 ---- */
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 980px;
+  margin: 0 auto 20px;
+}
+
+.message__identity {
+  display: none;
+}
+
+.message--user {
+  align-self: flex-end;
+}
+
+/* ---- P2 阶段条 chip 链 ---- */
+.stage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+  margin-bottom: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.stage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stage-chip.done {
+  border: 1px solid rgb(8 118 128 / 0.25);
+  background: var(--cyan-soft);
+  color: var(--retrieval);
+}
+
+.stage-chip.doing {
+  border: 1px solid rgb(3 78 161 / 0.25);
+  background: var(--blue-soft);
+  color: var(--primary);
+}
+
+.stage-chip.doing::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border: 2px solid var(--primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+:root[data-theme="dark"] .stage-chip.done {
+  color: #8fe3e6;
+}
+
+:root[data-theme="dark"] .stage-chip.doing {
+  color: #8fbef0;
+}
+
+/* ---- P3 来源横排 pill ---- */
+.source-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.source-pill {
+  display: inline-flex;
+  max-width: 260px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-weak);
+  padding: 5px 12px;
+  color: var(--ink-2, var(--muted));
+  font-size: 12.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.source-pill:hover {
+  border-color: rgb(3 78 161 / 0.35);
+  background: var(--glass);
+}
+
+.source-pill__num {
+  display: inline-grid;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--blue-soft);
+  color: var(--primary);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+/* ---- P4 cite 角标药丸 ---- */
+.markdown-body sup.cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  margin: 0 1px;
+  border-radius: 6px;
+  background: var(--blue-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+  padding: 0 4px;
+}
+
+:root[data-theme="dark"] .markdown-body sup.cite {
+  color: var(--primary-hover);
+}
+
+/* ---- P5 markdown 表格玻璃化 ---- */
+.markdown-body table {
+  display: table;
+  width: 100%;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 12px;
+  background: var(--glass-weak);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.markdown-body th {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gborder-soft);
+}
+
+.markdown-body tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---- P6/P7 微调 ---- */
+.message--assistant .message__body {
+  padding: 16px 20px;
+}
+
+.send-button {
+  width: 38px;
+  height: 38px;
 }
 
 /* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */
