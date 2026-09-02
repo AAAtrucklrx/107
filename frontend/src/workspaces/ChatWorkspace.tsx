@@ -468,6 +468,13 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("auto");
   const [historyOpen, setHistoryOpen] = useState(false);
+  
+    // 顶条/移动顶栏的历史按钮通过全局事件打开抽屉（状态在本组件内）
+    useEffect(() => {
+      const open = () => setHistoryOpen(true);
+      window.addEventListener("xiaowo:open-history", open);
+      return () => window.removeEventListener("xiaowo:open-history", open);
+    }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starterPromptsSuppressed, setStarterPromptsSuppressed] = useState(Boolean(seededQuestion));
@@ -908,8 +915,8 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
           <div ref={endAnchor} />
         </div>
         {showJumpToLatest && (
-          <button className="jump-to-latest" type="button" onClick={jumpToLatest}>
-            <ArrowDown size={16} />回到最新
+          <button className="jump-to-latest" type="button" onClick={jumpToLatest} aria-label="回到最新">
+            <ArrowDown size={18} />
           </button>
         )}
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void submitQuestion(draft, mode); }}>

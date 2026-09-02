@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleUserRound,
   FlaskConical,
+  History,
   LogIn,
   LogOut,
   Moon,
@@ -15,6 +16,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Brand } from "./Brand";
 import type { PublicConfig, SessionPayload, Theme, Workspace } from "../types";
 
@@ -38,6 +40,18 @@ const workspaceMeta: Record<Workspace, { label: string; icon: typeof Bot }> = {
   academic: { label: "我的学业", icon: BookOpen },
   campus: { label: "校园服务", icon: Building2 },
 };
+
+function openHistoryDrawer() {
+  window.dispatchEvent(new CustomEvent("xiaowo:open-history"));
+}
+
+function topbarGreeting(profile: { name?: string | null } | null | undefined, authenticated: boolean) {
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
+  const name = authenticated && profile?.name ? profile.name : "游客";
+  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
+  return `${greet}，${name} · ${date}`;
+}
 
 function NavButton({
   workspace,
@@ -94,11 +108,99 @@ export function AppShell({
   const showReview = session.capabilities.knowledge_review;
   const profile = session.principal.profile;
 
+  // 侧栏展开/收起：Web 默认展开，移动端默认收起；记住上次选择。
+  // 收起态点品牌色块 → 抽屉浮层；常驻态点品牌色块 → 收起。
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("xiaowo-rail");
+      if (saved === "collapsed") return true;
+      if (saved === "expanded") return false;
+      return window.matchMedia?.("(max-width: 760px)")?.matches ?? false;
+    } catch {
+      return false;
+    }
+  });
+  const [railDrawerOpen, setRailDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("xiaowo-rail", railCollapsed ? "collapsed" : "expanded");
+    } catch {
+      /* 隐私模式下静默 */
+    }
+  }, [railCollapsed]);
+
+  useEffect(() => {
+    if (!railDrawerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [railDrawerOpen]);
+
   return (
     <Tooltip.Provider delayDuration={500}>
-      <div className="app-shell">
-        <aside className="desktop-rail">
-          <Brand />
+      <div className={`app-shell${railCollapsed ? " app-shell--rail-collapsed" : ""}`}>
+        {railCollapsed && (
+          <header className="rail-topbar">
+            <button
+              type="button"
+              className="rail-brand-toggle"
+              onClick={() => setRailDrawerOpen(true)}
+              aria-label="展开导航栏"
+              aria-expanded={railDrawerOpen}
+            >
+              <Brand />
+            </button>
+            <div className="rail-topbar__greeting" role="status">
+              {topbarGreeting(profile, authenticated)}
+            </div>
+            <button
+              type="button"
+              className="icon-button rail-topbar__theme"
+              onClick={openHistoryDrawer}
+              aria-label="会话历史"
+            >
+              <History size={17} />
+            </button>
+            <button
+              type="button"
+              className="icon-button rail-topbar__theme"
+              onClick={onThemeToggle}
+              aria-label={theme === "light" ? "深色主题" : "浅色主题"}
+            >
+              {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
+            </button>
+          </header>
+        )}
+        {railCollapsed && railDrawerOpen && (
+          <div className="rail-scrim" onClick={() => setRailDrawerOpen(false)} aria-hidden="true" />
+        )}
+        <aside
+          className={`desktop-rail${railCollapsed ? " desktop-rail--drawer" : ""}`}
+          data-open={railCollapsed ? railDrawerOpen : true}
+          aria-hidden={railCollapsed && !railDrawerOpen ? true : undefined}
+        >
+          <button
+            type="button"
+            className="rail-brand-toggle"
+            onClick={() => {
+              if (!railCollapsed) {
+                setRailCollapsed(true);
+              } else if (railDrawerOpen) {
+                // 抽屉态点品牌：固定侧栏，回到常驻展开
+                setRailCollapsed(false);
+                setRailDrawerOpen(false);
+              } else {
+                setRailDrawerOpen(false);
+              }
+            }}
+            aria-label={!railCollapsed ? "收起导航栏" : railDrawerOpen ? "固定导航栏" : "关闭导航栏"}
+            aria-expanded={railCollapsed ? railDrawerOpen : true}
+          >
+            <Brand />
+          </button>
           {config.environment !== "production" && (
             <div className="environment-stamp" aria-label={config.environment === "competition" ? "比赛环境" : "开发环境"}>
               <FlaskConical size={14} aria-hidden="true" />
@@ -130,7 +232,16 @@ export function AppShell({
 
         <header className="mobile-header">
           <Brand compact />
-          <AccountMenu
+          <div className="mobile-header__actions">
+            <button
+              type="button"
+              className="icon-button"
+              onClick={openHistoryDrawer}
+              aria-label="会话历史"
+            >
+              <History size={18} />
+            </button>
+            <AccountMenu
             config={config}
             session={session}
             theme={theme}
@@ -143,6 +254,7 @@ export function AppShell({
             busy={busy}
             compact
           />
+          </div>
         </header>
 
         <div className="workbench">

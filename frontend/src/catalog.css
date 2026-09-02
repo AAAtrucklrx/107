@@ -1,4 +1,4 @@
-@import "./index.css";
+﻿@import "./index.css";
 
 /*
  * Xiaowo liquid glass (晨雾 × 夜航)
@@ -44,6 +44,7 @@
   --glass: rgb(255 255 255 / 0.55);
   --glass-strong: rgb(255 255 255 / 0.85);
   --glass-weak: rgb(255 255 255 / 0.38);
+  --glass-rail: rgb(240 245 251 / 0.92);
   --glass-solid: #f3f6fb;
   --gborder: rgb(255 255 255 / 0.65);
   --gborder-soft: rgb(255 255 255 / 0.45);
@@ -90,6 +91,7 @@
   --glass: rgb(24 33 46 / 0.55);
   --glass-strong: rgb(30 41 56 / 0.85);
   --glass-weak: rgb(24 33 46 / 0.38);
+  --glass-rail: rgb(14 20 30 / 0.92);
   --glass-solid: #131b26;
   --gborder: rgb(255 255 255 / 0.09);
   --gborder-soft: rgb(255 255 255 / 0.07);
@@ -890,9 +892,63 @@ select:focus-visible,
   color: #ffffff;
 }
 
+.conversation-pane {
+  position: relative;
+}
+
+/* 校园服务搜索框：玻璃胶囊化（聚焦提示由边框变蓝承担，无矩形轮廓） */
+.campus-search {
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+  transition: border-color var(--tt);
+}
+
+.campus-search:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--gborder-soft));
+}
+
+.campus-search input:focus-visible,
+.campus-search input:focus {
+  outline: none;
+}
+
+.campus-search form > button,
+.campus-search button {
+  border-radius: 100px;
+  font-size: 11.5px;
+}
+
 .jump-to-latest {
-  border-radius: 5px;
-  box-shadow: var(--shadow-low);
+  position: absolute;
+  right: 30px;
+  bottom: 122px;
+  z-index: 6;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-strong);
+  color: var(--ink);
+  cursor: pointer;
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+  box-shadow: var(--gshadow);
+  transition: border-color var(--tt), transform var(--tt);
+}
+
+.jump-to-latest:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--gborder-soft));
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.jump-to-latest:active {
+  transform: translateY(0);
 }
 
 /* Academic workspace */
@@ -1059,7 +1115,7 @@ select:focus-visible,
   min-width: 56px;
   height: 30px;
   margin-right: 4px;
-  border-radius: 4px;
+  border-radius: 100px;
   background: var(--primary);
   color: #ffffff;
 }
@@ -1072,7 +1128,35 @@ select:focus-visible,
 }
 
 .compact-select select {
-  border-radius: 4px;
+  border-radius: 100px;
+}
+
+/* 类别下拉：玻璃胶囊化，聚焦提示由边框变蓝承担（去原生青色轮廓） */
+.compact-select select {
+  border: 1px solid var(--gborder-soft);
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+  color: var(--ink);
+  font-size: 12px;
+  transition: border-color var(--tt);
+}
+
+.compact-select select:focus-visible,
+.compact-select select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--gborder-soft));
+}
+
+/* tabs 区的类别下拉：压过 index.css 共享组的 line-strong 方框 */
+.tabs-list .compact-select select {
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-weak);
+}
+
+.tabs-list .compact-select select:focus-visible,
+.tabs-list .compact-select select:focus {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--gborder-soft));
 }
 
 .activity-item {
@@ -3817,7 +3901,7 @@ body::after {
 
 .desktop-rail {
   border-color: var(--gborder-soft);
-  background: var(--glass-weak);
+  background: var(--glass-rail);
   backdrop-filter: var(--gblur);
   -webkit-backdrop-filter: var(--gblur);
 }
@@ -4509,6 +4593,419 @@ body::after {
 
   .tabs-list .compact-select {
     min-width: 0;
+  }
+}
+
+/* ---- 移动端完全复刻方向稿手机壳（424 基线）----
+   参数源自 draft_c_dual.html .p-* 段；依据 Material 3 / iOS HIG：
+   展示性图标视觉 18px，触控目标由整卡承担（≥44px）。 */
+@media (max-width: 760px) {
+  /* tile 紧凑化：padding 12 / 高 84 / 圆角 14 / 图标 18 / 标题 13 / 描述 11 双行截断 */
+  .starter-prompt-grid,
+  .launch-grid--featured,
+  .launch-grid--directory {
+    gap: 9px;
+  }
+
+  .launch-tile {
+    padding: 12px;
+    min-height: 84px;
+    border-radius: 14px;
+  }
+
+  .launch-tile__topline svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 活动方块：移动端 2 列小卡，与办事入口方块节奏一致（在活动方块段之后重复声明以胜出） */
+  .catalog-rows--tiles {
+    grid-template-columns: repeat(auto-fill, minmax(min(158px, 100%), 1fr)) !important;
+    gap: 9px;
+  }
+
+  .catalog-rows--tiles .activity-item.catalog-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 7px 8px !important;
+    padding: 12px 13px !important;
+  }
+
+  /* 重置旧移动适配的 grid-column:2 钉位（会在单列卡里创建隐式第二列导致文字竖排） */
+  .catalog-rows--tiles .activity-item__date,
+  .catalog-rows--tiles .activity-item__footer,
+  .catalog-rows--tiles .activity-item.catalog-row > a,
+  .catalog-rows--tiles .catalog-row__unavailable {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .catalog-rows--tiles .activity-item .activity-item__summary {
+    -webkit-line-clamp: 2;
+  }
+
+  .launch-tile__content {
+    margin: 10px 0 8px;
+  }
+
+  .launch-tile__content strong,
+  .launch-tile--prompt .launch-tile__content strong {
+    font-size: 13px;
+  }
+
+  .launch-tile__content small,
+  .launch-tile small {
+    font-size: 11px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 问候条收纳：隐藏历史抽屉按钮（移动端不提供），隐私文案单行省略，消除竖排乱象 */
+  .conversation-header__history {
+    display: none;
+  }
+
+  .privacy-note {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .conversation-greeting strong {
+    font-size: 15px;
+  }
+
+  .conversation-greeting span {
+    font-size: 11.5px;
+  }
+
+  /* 顶栏：logo 30 / 字名 15（方向稿 .p-top） */
+  .mobile-header .brand__logo {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+
+  .mobile-header .brand__text strong {
+    font-size: 15px;
+  }
+
+  /* 底部导航：胶囊浮岛 + 图标 18 / 标签 10.5（方向稿 .p-nav） */
+  .mobile-bottom-nav {
+    margin: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    border: 1px solid var(--gborder-soft);
+    border-radius: 100px;
+    background: var(--glass);
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
+    box-shadow: var(--gshadow);
+  }
+
+  .mobile-bottom-nav svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mobile-bottom-nav button {
+    font-size: 10.5px;
+    gap: 3px;
+  }
+
+  /* 激活态=内嵌淡蓝药丸，与胶囊容器同心（去掉桌面白玻璃药丸+顶条的叠加残留） */
+  .mobile-bottom-nav .workspace-nav__item {
+    min-height: 0;
+    margin: 3px 6px;
+    padding: 6px 0;
+    border: 0;
+    border-radius: 100px;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+  }
+
+  .mobile-bottom-nav .workspace-nav__item[data-active="true"] {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  /* 顶栏右侧动作组：历史 + 头像菜单 */
+  .mobile-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-header .icon-button {
+    color: var(--ink);
+  }
+
+  /* composer：发送键 34px（方向稿 .p-composer） */
+  .send-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  /* 今日课程条 chips 11px（方向稿 .p-today） */
+  .today-strip b {
+    font-size: 12px;
+  }
+
+  .course-chip {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+}
+
+/* ---- 活动方块化 + 多彩底色（2026-09-02 用户定稿） ---- */
+.catalog-rows--tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  gap: 12px;
+}
+
+.catalog-rows--tiles .activity-item.catalog-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-height: 0;
+  align-items: start;
+  padding: 13px 15px;
+  border: 1px solid var(--gborder-soft);
+  border-bottom: 1px solid var(--gborder-soft);
+  border-radius: 14px;
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color var(--tt), transform var(--tt);
+}
+
+.catalog-rows--tiles .activity-item.catalog-row:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--gborder-soft));
+  transform: translateY(-1px);
+}
+
+.activity-item__title {
+  display: block;
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.activity-item__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+/* 5 色低饱和底，对应方向稿 course-chip 色相（蓝/青/杏/紫/玫） */
+.catalog-rows--tiles .activity-item[data-accent="0"] {
+  background: rgb(3 78 161 / 0.07);
+}
+
+.catalog-rows--tiles .activity-item[data-accent="1"] {
+  background: rgb(8 118 128 / 0.08);
+}
+
+.catalog-rows--tiles .activity-item[data-accent="2"] {
+  background: rgb(196 116 43 / 0.09);
+}
+
+.catalog-rows--tiles .activity-item[data-accent="3"] {
+  background: rgb(122 96 204 / 0.09);
+}
+
+.catalog-rows--tiles .activity-item[data-accent="4"] {
+  background: rgb(196 60 92 / 0.08);
+}
+
+:root[data-theme="dark"] .catalog-rows--tiles .activity-item[data-accent="0"] {
+  background: rgb(24 84 160 / 0.24);
+}
+
+:root[data-theme="dark"] .catalog-rows--tiles .activity-item[data-accent="1"] {
+  background: rgb(17 96 102 / 0.24);
+}
+
+:root[data-theme="dark"] .catalog-rows--tiles .activity-item[data-accent="2"] {
+  background: rgb(128 62 44 / 0.24);
+}
+
+:root[data-theme="dark"] .catalog-rows--tiles .activity-item[data-accent="3"] {
+  background: rgb(84 48 122 / 0.24);
+}
+
+:root[data-theme="dark"] .catalog-rows--tiles .activity-item[data-accent="4"] {
+  background: rgb(140 52 76 / 0.22);
+}
+
+.catalog-rows--tiles .activity-item .activity-item__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 活动详情弹窗 */
+.activity-detail__body {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.85;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.activity-detail__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  padding: 9px 18px;
+  border-radius: 100px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+/* ---- 侧栏收起/抽屉态（Web 默认展开，移动端默认收起；localStorage 记忆） ---- */
+.app-shell--rail-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 收起态顶条：图一的紧凑玻璃条（品牌色块可点开抽屉） */
+.rail-topbar {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px 7px 14px;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 16px;
+  background: var(--glass);
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+  box-shadow: var(--gshadow);
+}
+
+.rail-brand-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.rail-brand-toggle:hover .brand__logo {
+  filter: brightness(1.08);
+}
+
+.rail-topbar .brand__logo {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
+.rail-topbar .brand__text strong {
+  font-size: 15px;
+}
+
+/* 问候信息（融入顶条，替代独立问候条） */
+.rail-topbar__greeting {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 收起态：chat 问候条融入顶条，不再单独占一行 */
+.app-shell--rail-collapsed .conversation-header--greeting {
+  display: none;
+}
+
+/* 收起态下主区给顶条让位 */
+.app-shell--rail-collapsed .workbench {
+  padding-top: 62px;
+}
+
+/* 抽屉态：侧栏变浮层滑出，常驻态不受影响 */
+.desktop-rail--drawer {
+  position: fixed;
+  top: 70px;
+  left: 10px;
+  bottom: 10px;
+  width: min(var(--rail-width), calc(100vw - 20px));
+  z-index: 60;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 18px;
+  background: var(--glass-rail);
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+  box-shadow: var(--gshadow-lg);
+  transform: translateX(calc(-100% - 24px));
+  transition: transform 0.24s ease;
+}
+
+.desktop-rail--drawer[data-open="true"] {
+  transform: none;
+}
+
+.rail-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  border: 0;
+  background: rgb(10 15 22 / 0.28);
+  animation: rail-scrim-in 0.2s ease;
+}
+
+@keyframes rail-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  /* 移动端无桌面侧栏概念：顶条与抽屉都不出现 */
+  .rail-topbar,
+  .rail-scrim,
+  .desktop-rail--drawer {
+    display: none;
+  }
+
+  /* 移动端默认即收起态，但没有顶条，不需要顶垫 */
+  .app-shell--rail-collapsed .workbench {
+    padding-top: 0;
   }
 }
 

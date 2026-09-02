@@ -1,8 +1,8 @@
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   BookOpen,
   Briefcase,
-  CalendarRange,
   ChevronDown,
   CreditCard,
   ExternalLink,
@@ -18,6 +18,7 @@ import {
   Sparkles,
   UserRound,
   Wrench,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -60,6 +61,17 @@ function readableTime(value: unknown): string {
 
 function activityTitle(item: CampusActivity): string {
   return String(item.title || item.name || "未命名活动");
+}
+
+/** 青春科大描述里的实体与换行标记转为可读文本（不使用 innerHTML，避免注入）。 */
+function decodeRichText(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/&ldquo;/g, "“")
+    .replace(/&rdquo;/g, "”")
+    .replace(/&middot;/g, "·")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
 }
 
 function groupBy<T>(items: T[], getKey: (item: T) => string): Array<[string, T[]]> {
@@ -154,6 +166,7 @@ export function CampusWorkspace({ session }: { session: SessionPayload }) {
   const [activityError, setActivityError] = useState<string | null>(null);
   const [serviceLoading, setServiceLoading] = useState(true);
   const [activityLoading, setActivityLoading] = useState(true);
+  const [selectedActivity, setSelectedActivity] = useState<CampusActivity | null>(null);
 
   const loadServices = useCallback(async (search = "", category = "") => {
     const cleanSearch = search.trim();
@@ -384,16 +397,21 @@ export function CampusWorkspace({ session }: { session: SessionPayload }) {
                   {activityGroups.map(([category, items]) => (
                     <section className="catalog-group" key={category}>
                       <header className="catalog-group__heading"><h3>{category}</h3><span>{items.length} 条活动</span></header>
-                      <div className="catalog-rows">
+                      <div className="catalog-rows catalog-rows--tiles">
                         {items.map((activity, index) => {
-                          const url = typeof activity.url === "string" ? activity.url : "";
                           return (
-                            <article className="activity-item catalog-row catalog-row--activity" key={String(activity.id ?? `${activityTitle(activity)}-${index}`)}>
-                              <div className="activity-item__date"><CalendarRange size={16} /><span>{readableTime(activity.start_time || activity.deadline)}</span></div>
-                              <div className="catalog-row__body"><h3>{activityTitle(activity)}</h3>{activity.description && <p>{String(activity.description)}</p>}</div>
-                              <div className="activity-item__footer"><span><MapPin size={14} />{String(activity.location || "地点待核验")}</span></div>
-                              {url ? <a href={url} target="_blank" rel="noreferrer"><ExternalLink size={16} /><span>来源</span></a> : <span className="catalog-row__unavailable">暂无链接</span>}
-                            </article>
+                            <button
+                              className="activity-item catalog-row catalog-row--activity"
+                              data-accent={index % 5}
+                              type="button"
+                              key={String(activity.id ?? `${activityTitle(activity)}-${index}`)}
+                              onClick={() => setSelectedActivity(activity)}
+                            >
+                              <span className="activity-item__title">{activityTitle(activity)}</span>
+                              {activity.description && (
+                                <span className="activity-item__summary">{decodeRichText(String(activity.description))}</span>
+                              )}
+                            </button>
                           );
                         })}
                       </div>
@@ -405,6 +423,35 @@ export function CampusWorkspace({ session }: { session: SessionPayload }) {
             </>
           )}
         </Tabs.Content>
+        <Dialog.Root open={selectedActivity !== null} onOpenChange={(open) => { if (!open) setSelectedActivity(null); }}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="dialog-overlay" />
+            <Dialog.Content className="dialog-content activity-detail">
+              {selectedActivity && (
+                <>
+                  <div className="dialog-heading">
+                    <div>
+                      <Dialog.Title>{activityTitle(selectedActivity)}</Dialog.Title>
+                      <Dialog.Description>
+                        {readableTime(selectedActivity.start_time || selectedActivity.deadline)}
+                        {selectedActivity.location ? ` · ${String(selectedActivity.location)}` : ""}
+                      </Dialog.Description>
+                    </div>
+                    <Dialog.Close className="icon-button" aria-label="关闭"><X size={18} /></Dialog.Close>
+                  </div>
+                  {selectedActivity.description && (
+                    <p className="activity-detail__body">{decodeRichText(String(selectedActivity.description))}</p>
+                  )}
+                  {typeof selectedActivity.url === "string" && selectedActivity.url && (
+                    <a className="command-button activity-detail__link" href={selectedActivity.url} target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} />查看活动来源
+                    </a>
+                  )}
+                </>
+              )}
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
         <Tabs.Content value="tools" className="campus-content campus-content--tools">
           <CampusToolsView session={session} />
         </Tabs.Content>
