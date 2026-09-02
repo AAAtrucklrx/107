@@ -18,6 +18,49 @@ log = get_logger("xiaowo.tools.activities")
 
 _CACHE_TTL = 600  # 秒
 _cache: dict = {"ts": 0.0, "acts": None, "err": ""}
+# 详情补全缓存（item_id -> detail dict，进程级；避免重复打平台）
+_detail_cache: dict = {}
+
+
+def _enrich_places(acts, max_fill: int = 4, gap: float = 0.6):
+    """列表缺地点/联系方式时用详情接口（/mobile/item/queryItemById）逐个兜底。
+
+    实测 2026-09-02：仅 needPlaceApply=1 的活动在列表带 placeInfo，其余需详情查询；
+    详情 142 字段包含 placeInfo/xq/linkMan/tel/formName。最多补 max_fill 条、
+    每次间隔 gap 秒防打爆平台；任何异常只跳过该条（不阻断主流程）。
+    """
+    from services.young_client import YoungService
+    svc = YoungService.from_token(YOUNG_TOKEN)
+    filled = 0
+    for a in acts:
+        if filled >= max_fill:
+            break
+        item_id = getattr(a, "id", "")
+        if not item_id or getattr(a, "place_info", ""):
+            continue
+        detail = _detail_cache.get(item_id)
+        if detail is None:
+            try:
+                detail = svc.fetch_item_detail(item_id)
+            except Exception as e:  # noqa: BLE001
+                log.debug(f"活动详情补全失败 {item_id}: {e}")
+                detail = None
+            if detail:
+                _detail_cache[item_id] = detail
+            time.sleep(gap)
+        if not isinstance(detail, dict):
+            continue
+        if not a.place_info:
+            a.place_info = str(detail.get("placeInfo") or "")
+        if not a.xq:
+            a.xq = str(detail.get("xq") or "")
+        if not a.contact:
+            parts = [str(x).strip() for x in (detail.get("linkMan"), detail.get("tel")) if x]
+            a.contact = " ".join(parts)
+        if not a.form:
+            a.form = str(detail.get("formName") or "")
+        filled += 1
+    return acts
 
 
 def _fetch_enrolment_cached():
@@ -61,6 +104,8 @@ def _load_snapshot_activities():
             module=a.get("module", ""), fav_count=a.get("fav_count", 0),
             people_num=a.get("people_num", 0), service_hour=a.get("service_hour", ""),
             description=a.get("description", ""),
+            place_info=a.get("place_info", ""), xq=a.get("xq", ""),
+            contact=a.get("contact", ""), form=a.get("form", ""),
         ) for a in snap.get("enrolment") or []]
         return acts, snap.get("fetched_at", "")
     except Exception as e:  # noqa: BLE001
@@ -134,6 +179,10 @@ def query_activities(keyword: str = "", category: str = "",
 
     out = out[: max(1, min(int(limit or 8), 20))]
 
+    # 2026-09-02：展示集补全地点/联系人（仅实时模式；快照回退时 token 多已失效，详情接口同样不可用）
+    if not err:
+        out = _enrich_places(out)
+
     # P4-C 埋点：对话追问（asked）计入偏好画像（最多记 3 条防爆）
     if student_id:
         try:
@@ -154,7 +203,12 @@ def query_activities(keyword: str = "", category: str = "",
             "category": a.category,
             "start": a.start_time,
             "end": a.end_time,
+            "apply_start": a.apply_start,
             "apply_end": a.apply_end,
+            "place": a.place_info,
+            "campus": a.xq,
+            "contact": a.contact,
+            "form": a.form,
             "people_num": a.people_num,
             "service_hour": a.service_hour,
             "description": (a.description or "")[:120],

@@ -117,6 +117,10 @@ def show_activity_dialog(recs: list, all_activities: list):
                 st.markdown(f"**{i}. {act.name}**")
                 st.caption(f"🏛 {act.organizer or act.sponsor or '校团委'}")
                 st.caption(f"📅 {_fmt_activity_time(act)}")
+                if getattr(act, "place_info", ""):
+                    st.caption(f"📍 {act.place_info}")
+                if getattr(act, "contact", ""):
+                    st.caption(f"📞 {act.contact}")
                 if act.service_hour:
                     st.caption(f"⏱ 志愿时长 {act.service_hour} 小时")
                 st.markdown(f"💡 *{rec['reason']}*")
@@ -125,7 +129,8 @@ def show_activity_dialog(recs: list, all_activities: list):
         for act in all_activities:
             org = act.organizer or act.sponsor or "校团委"
             dl = act.apply_end or "未知"
-            st.markdown(f"- **{act.name}**（{org}）· 报名截止 {dl[:16]}")
+            place = f"· 📍{act.place_info}" if getattr(act, "place_info", "") else ""
+            st.markdown(f"- **{act.name}**（{org}）· 报名截止 {dl[:16]}{place}")
         st.caption("活动数据来自青春科大智慧团学平台（young.ustc.edu.cn）")
 
 

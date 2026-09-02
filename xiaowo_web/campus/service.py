@@ -77,8 +77,26 @@ class CampusService:
             }
         source_text = str(result.get("source") or "")
         stale = "缓存" in source_text or "快照" in source_text
+        # 前端 CampusActivity 契约：start_time/end_time/deadline/location（2026-09-02
+        # 对齐；此前 API 直透 start/end/apply_end/place 导致卡片时间/地点恒显示"待核验"）
+        items = []
+        for a in (result.get("activities") or []):
+            items.append({
+                "id": a.get("id") or (a.get("name") or ""),
+                "title": a.get("name") or "",
+                "name": a.get("name") or "",
+                "category": a.get("category") or "",
+                "description": a.get("description") or "",
+                "location": a.get("place") or "",
+                "start_time": a.get("start") or None,
+                "end_time": a.get("end") or None,
+                "deadline": a.get("apply_end") or None,
+                "organizer": a.get("organizer") or "",
+                "contact": a.get("contact") or "",
+                "form": a.get("form") or "",
+            })
         return {
-            "items": result.get("activities") or [],
+            "items": items,
             "fetched_at": result.get("fetched_at"),
             "source": {
                 "kind": "young_snapshot" if stale else "young_live",

@@ -1035,8 +1035,8 @@ TOOL_REGISTRY = {
 |---|---|
 | 功能 | 查询青春科大（第二课堂）当前可报名活动（实时，10 分钟 TTL 缓存） |
 | 参数 | `keyword`（匹配名称/简介/主办方）、`category`、`time_window`（"即将截止"/"周末"/"本周"）、`limit`、`student_id`（自动注入） |
-| 返回 | `{"count", "total_enrolment", "activities": [{name/organizer/category/start/end/apply_end/people_num/service_hour/description}], "fetched_at", "source"}` |
-| 数据源 | `services/young_client.py`（报名中列表）；**token 失效自动回退快照**（source 标"本地缓存"） |
+| 返回 | `{"count", "total_enrolment", "activities": [{name/organizer/category/start/end/apply_start/apply_end/place/campus/contact/form/people_num/service_hour/description}], "fetched_at", "source"}` |
+| 数据源 | `services/young_client.py`（报名中列表）；**token 失效自动回退快照**（source 标"本地缓存"）；展示集缺地点/联系人时经详情接口 `fetch_item_detail`（queryItemById）兜底补全（最多 4 条/次，0.6s 节流，进程级缓存） |
 | 副作用 | 返回项计入偏好画像 asked 流水（最多 3 条/次） |
 | 决策 | THINK 规则 22 + intents「活动推荐」意图；报名入口走规则 21 |
 
@@ -1062,7 +1062,7 @@ TOOL_REGISTRY = {
 
 ### 配套服务（非注册工具）
 
-- **`services/young_client.py`（12 方法）**：fetch_enrolment_activities / fetch_end_activities / fetch_my_profile（五维成绩+学时+社团）/ fetch_my_labels（兴趣标签）/ fetch_my_favorites / fetch_my_followed_depts / fetch_tobe_involved（type 必传）；AES-128-CBC 协议，token ~7 天。
+- **`services/young_client.py`（13 方法）**：fetch_enrolment_activities / fetch_end_activities / fetch_item_detail（`/mobile/item/queryItemById`，142 字段，含 placeInfo/xq/linkMan/tel/formName，2026-09-02 实测）/ fetch_my_profile（五维成绩+学时+社团）/ fetch_my_labels（兴趣标签）/ fetch_my_favorites / fetch_my_followed_depts / fetch_tobe_involved（type 必传）；AES-128-CBC 协议，token ~7 天。**公开性分类（2026-09-02 实测）：门户 young.ustc.edu.cn/main.htm 及栏目页公开可浏览；全部数据接口（/mobile/*、/item/*）无 token 一律 500 Token失效，需 X-Access-Token**。
 - **`services/activity_profile.py`**：画像（平台标签冷启动 + 模块学时 d德z智t体m美l劳 + 行为权重 90 天窗口）；`personal_score` 三路命中（行为/标签词/均衡补短板，缺口≥20% 计分封顶 0.85，最高模块不加持）。
 - **`services/activity_recommender.py`**：四因子 urgency0.30/freetime0.25/personal0.30/hotness0.15（无画像退回三因子）+ MMR；FreeTimeMatcher 已改 schedule_parse 解析。
 - **`scripts/crawl_young.py`**：个人快照（`scripts/data/young_personal/young_snapshot.json`）。

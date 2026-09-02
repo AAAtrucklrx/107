@@ -1687,10 +1687,12 @@ def _build_tool_summary(results: list[dict]) -> str:
                          f"（{_src(res)}，拉取于 {res.get('fetched_at', '')}）:")
             for a in acts[:12]:
                 dl = f"，报名截止 {a.get('apply_end')}" if a.get("apply_end") else ""
+                place = f"，地点 {a.get('place')}" if a.get("place") else ""
+                contact = f"，联系 {a.get('contact')}" if a.get("contact") else ""
                 lines.append(f"- {a.get('name', '?')} | {a.get('organizer', '')} | "
-                             f"{a.get('category', '')} | {a.get('start', '')}~{a.get('end', '')}{dl} | "
+                             f"{a.get('category', '')} | {a.get('start', '')}~{a.get('end', '')}{dl}{place}{contact} | "
                              f"人数 {a.get('people_num', 0)} | 工时 {a.get('service_hour', '')}")
-            lines.append("  （转述要求：逐条如实呈现名称/主办方/时间/报名截止，不得增删编造；报名入口见 render_link/young.ustc.edu.cn）")
+            lines.append("  （转述要求：逐条如实呈现名称/主办方/时间/报名截止/地点/联系方式，不得增删编造；报名入口见 render_link/young.ustc.edu.cn）")
         elif tool == "render_link":
             if res.get("found"):
                 lines.append(f"[{tool}] 官方入口：{res.get('name')} {res.get('url')}"

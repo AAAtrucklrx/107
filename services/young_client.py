@@ -54,6 +54,12 @@ def _to_int(v) -> int:
         return 0
 
 
+def _contact_text(link_man, tel) -> str:
+    """联系人+电话拼接（如 "徐小航 13391061820"），双方留空则空串。"""
+    parts = [str(x).strip() for x in (link_man, tel) if x not in (None, "")]
+    return " ".join(parts)
+
+
 @dataclass
 class YoungActivity:
     """标准化的活动模型（与 young 平台原始字段解耦）"""
@@ -72,6 +78,11 @@ class YoungActivity:
     people_num: int = 0
     service_hour: str = ""
     description: str = ""    # baseContent 活动简介
+    # 2026-09-02 实测补充：地点/校区/联系人/参与形式（列表字段；无值时可查详情）
+    place_info: str = ""     # placeInfo 地点（教室号/场地名，needPlaceApply=1 时才有）
+    xq: str = ""             # xq 校区（大多为空，平台少填）
+    contact: str = ""        # linkMan(tel) 联系人+电话
+    form: str = ""           # form_dictText 参与形式（现场参与/提交作品）
     raw: dict = field(default_factory=dict)
 
     @property
@@ -165,6 +176,10 @@ class EncryptedHttpProvider(BaseYoungProvider):
                     people_num=_to_int(r.get("peopleNum") or r.get("sumPersons")),
                     service_hour=r.get("serviceHour", "") or "",
                     description=r.get("baseContent", "") or "",
+                    place_info=(r.get("placeInfo") or ""),
+                    xq=str(r.get("xq") or ""),
+                    contact=_contact_text(r.get("linkMan"), r.get("tel")),
+                    form=(r.get("form_dictText") or ""),
                     raw=r,
                 ))
             if len(records) < page_size:
@@ -221,6 +236,21 @@ class EncryptedHttpProvider(BaseYoungProvider):
         return [{k: r.get(k) for k in ("id", "itemId", "itemName", "name", "st", "et", "state")}
                 for r in records if isinstance(r, dict)]
 
+    # ── 2026-09-02 实测新增：活动详情（列表缺地点/联系方式时兜底）───────────
+
+    def fetch_item_detail(self, item_id: str) -> Optional[dict]:
+        """活动详情（GET /mobile/item/queryItemById?id={item_id}）。
+
+        实测 2026-09-02：返回 142 字段 result，含 placeInfo/xq/linkMan/tel/formName/
+        conceive（完整方案文本）等；列表接口的 placeInfo/itemPlaceDTO 常为空，
+        需场地申请（needPlaceApply=1）的活动才填 placeInfo。
+        """
+        if not item_id:
+            return None
+        data = self._get("/mobile/item/queryItemById", {"id": item_id})
+        result = data.get("result")
+        return result if isinstance(result, dict) else None
+
 
 class YoungService:
     """入口：按配置选择数据源 Provider（测试期 token 方式，预留官方 API 切换）"""
@@ -267,3 +297,8 @@ class YoungService:
         if self.provider is None:
             raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
         return self.provider.fetch_tobe_involved(page_size)
+
+    def fetch_item_detail(self, item_id: str) -> Optional[dict]:
+        if self.provider is None:
+            raise RuntimeError("Young 数据源未配置（YOUNG_TOKEN 缺失）")
+        return self.provider.fetch_item_detail(item_id)

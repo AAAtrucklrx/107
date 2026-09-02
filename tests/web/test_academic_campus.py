@@ -149,3 +149,47 @@ def test_campus_services_are_public_and_curated(tmp_path) -> None:
             "就业发展",
             "社区工具",
         ]
+
+
+def test_campus_activities_mapped_to_frontend_contract() -> None:
+    """CampusService.activities 把工具字段（start/end/apply_end/place）映射为
+    前端 CampusActivity 契约（start_time/end_time/deadline/location）。"""
+    from xiaowo_web.campus.service import CampusService
+
+    svc = CampusService(activity_provider=lambda **kw: {
+        "activities": [{
+            "id": "a1", "name": "开题讲座", "start": "2026-09-11 19:30:00",
+            "end": "2026-09-11 20:30:00", "apply_end": "2026-09-11 17:00:00",
+            "place": "3C301", "contact": "张三 123", "organizer": "学生社团",
+            "category": "系列项目", "description": "讲座简介",
+        }],
+        "source": "实时数据（青春科大 young.ustc.edu.cn）",
+        "fetched_at": "2026-09-02 22:00:00",
+    })
+    got = svc.activities()
+    item = got["items"][0]
+    assert item["title"] == "开题讲座"
+    assert item["location"] == "3C301"
+    assert item["start_time"] == "2026-09-11 19:30:00"
+    assert item["end_time"] == "2026-09-11 20:30:00"
+    assert item["deadline"] == "2026-09-11 17:00:00"
+    assert item["contact"] == "张三 123"
+    assert got["source"]["kind"] == "young_live"
+    assert got["source"]["stale"] is False
+
+
+def test_campus_activities_snapshot_is_stale_labelled() -> None:
+    from xiaowo_web.campus.service import CampusService
+
+    svc = CampusService(activity_provider=lambda **kw: {
+        "activities": [{"name": "快照活动", "start": "2026-08-01 10:00:00",
+                        "apply_end": "2026-07-31 23:59:00", "place": "",
+                        "description": ""}],
+        "source": "本地缓存（青春科大快照）——实时拉取失败",
+        "fetched_at": "2026-08-01 00:00:00",
+    })
+    got = svc.activities()
+    assert got["source"]["kind"] == "young_snapshot"
+    assert got["source"]["stale"] is True
+    assert any("快照" in lim for lim in got["limitations"])
+    assert got["items"][0]["location"] == ""

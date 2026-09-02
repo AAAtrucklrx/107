@@ -31,6 +31,8 @@ def _act_min(a) -> dict:
         "organizer": a.organizer, "category": a.category, "module": a.module,
         "fav_count": a.fav_count, "people_num": a.people_num,
         "service_hour": a.service_hour, "description": a.description[:200],
+        "place_info": a.place_info, "xq": a.xq,
+        "contact": a.contact, "form": a.form,
     }
 
 
