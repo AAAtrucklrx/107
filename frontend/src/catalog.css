@@ -4417,6 +4417,65 @@ body::after {
   height: 38px;
 }
 
+/* ---- composer 胶囊协调化：压缩空态高度 + 模式选择器玻璃化 ---- */
+.composer textarea {
+  min-height: 30px;
+  max-height: 132px;
+  resize: none;
+  padding: 16px 20px 4px;
+  font-size: 14px;
+}
+
+.composer__footer {
+  min-height: 40px;
+  padding: 2px 10px 8px 16px;
+}
+
+.retrieval-control {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-weak);
+  padding: 3px;
+}
+
+.retrieval-control button {
+  display: inline-flex;
+  min-width: 0;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  padding: 0 12px;
+}
+
+.retrieval-control button:hover {
+  color: var(--ink);
+}
+
+.retrieval-control button[data-active="true"] {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgb(3 78 161 / 0.28);
+}
+
+.retrieval-control button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+:root[data-theme="dark"] .retrieval-control button[data-active="true"] {
+  background: linear-gradient(135deg, #1c5fa8, #2a86b8);
+  color: #ffffff;
+}
+
 /* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .desktop-rail,
