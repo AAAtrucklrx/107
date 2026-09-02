@@ -296,3 +296,11 @@ WAP_SEARCH_HTML = """
 <p class="time"><span class="s2" data-openid="oIWsF" data-sourcename="安庆天天直播" data-headimage="x"></span></p>
 </div></li></ul></div></div>
 """
+
+
+def test_collect_account_filters_by_sourcename() -> None:
+    client = WechatClient(client=httpx.AsyncClient(transport=_transport()), sogou_throttle=0, article_throttle=0, ocr_throttle=0)
+    articles = _run(client.collect_account("中国科学技术大学", pages=1, limit=3))
+    _run(client.close())
+    assert articles and all(a.author == "中国科学技术大学" for a in articles)
+    assert articles[0].url.startswith("https://mp.weixin.qq.com/")

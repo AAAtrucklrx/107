@@ -55,6 +55,16 @@ DEFAULT_QUERIES = [
     "科大 创新 创业 2026",
 ]
 
+# 账号定向：目标公众号 → 该号文章特征查询组（官方号内容需用其主题词钓出，号名裸查无效）
+ACCOUNT_QUERIES = {
+    "中国科学技术大学": ["郭沫若奖学金", "中国科学技术大学 校庆", "中国科学技术大学 科研",
+                        "中国科学技术大学 新闻", "中国科学技术大学 开学", "中国科学技术大学 2026"],
+    "蜗壳小道消息": ["蜗壳小道消息 2026", "蜗壳小道消息 通知", "蜗壳小道消息"],
+    "中国科大本科招生": ["中国科大本科招生 2026", "中国科大本科招生 通知", "中国科大本科招生 夏令营"],
+    "中国科大研究生": ["中国科大研究生 2026", "中国科大研究生 招生", "中国科大研究生 复试"],
+    "中国科大校友": ["中国科大校友", "中国科大校友 2026"],
+}
+
 # 时效判定：含 2026年 / published 2026 / 全文无任何旧年标记（20XX年）→ 视为新文
 _YEAR_RE = __import__("re").compile(r"(20\d{2})年")
 
@@ -80,6 +90,9 @@ def main() -> int:
     parser.add_argument("--queries", type=int, default=8)
     parser.add_argument("--ocr", type=int, default=12, help="总 OCR 图片预算")
     parser.add_argument("--namespace", default="demo")
+    parser.add_argument("--account", default="", help="指定公众号名定向采集（绕过关键词模式，按账号过滤+分页）")
+    parser.add_argument("--account-pages", type=int, default=2)
+    parser.add_argument("--account-limit", type=int, default=30)
     args = parser.parse_args()
 
     from xiaowo_web.review import ReviewStore
@@ -94,6 +107,16 @@ def main() -> int:
     async def run() -> list[dict]:
         articles: dict[str, object] = {}
         total_ocr = args.ocr
+        if args.account:
+            got = await client.collect_account(
+                args.account,
+                queries=ACCOUNT_QUERIES.get(args.account, DEFAULT_QUERIES[: max(args.queries, 8)]),
+                pages=args.account_pages,
+                limit=args.account_limit,
+            )
+            for a in got:
+                articles[hashlib.sha256(f"{a.title}|{a.author}".encode()).hexdigest()[:16]] = a
+            return enqueued_from(articles)
         for query in DEFAULT_QUERIES[: args.queries]:
             got = await client.collect_many(query, limit=args.limit, ocr_budget=min(6, total_ocr))
             total_ocr = max(0, total_ocr - 6)
@@ -103,6 +126,9 @@ def main() -> int:
                     articles[key] = a
             await asyncio.sleep(1.0)
 
+        return enqueued_from(articles)
+
+    def enqueued_from(articles):
         enqueued: list[dict] = []
         for a in articles.values():
             if not (_is_campus_related(a) and _is_new_enough(a)):

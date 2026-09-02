@@ -202,7 +202,49 @@ class WechatClient:
             self._note(False)
             return WechatBundle([], blocked=self.circuit_open)
 
-    async def collect_many(self, query: str, *, limit: int = 3, ocr_budget: int = 6) -> list[WechatArticle]:
+    async def collect_account(
+        self,
+        account_name: str,
+        *,
+        queries: list[str] | None = None,
+        pages: int = 2,
+        limit: int = 30,
+    ) -> list[WechatArticle]:
+        """账号定向采集：以目标公众号名为查询词（可多词）分页检索 → 按 sourcename 过滤 → 全量解析+抓取。"""
+        if self.circuit_open:
+            return []
+        found: dict[str, WechatSearchHit] = {}
+        try:
+            for q in (queries or [account_name]):
+                for page in range(1, max(1, pages) + 1):
+                    for hit in await self._search(q, page=page):
+                        if hit.link not in found:
+                            found[hit.link] = hit
+                    await asyncio.sleep(0.5)
+        except (WechatBlocked, WechatUnavailable, httpx.HTTPError, OSError):
+            return []
+        # WAP 结果常缺 sourcename → 统一抓取后按文章真实作者（og:article:author）判定归属
+        articles: list[WechatArticle] = []
+        for link, hit in list(found.items())[: limit * 3]:
+            try:
+                article = await self._resolve_and_fetch(hit)
+            except WechatBlocked:
+                self._note(False)
+                break
+            if article is not None and article.author == account_name:
+                articles.append(article)
+            if len(articles) >= limit:
+                break
+        self._note(True)
+        return articles
+
+    async def collect_many(
+        self,
+        query: str,
+        *,
+        limit: int = 3,
+        ocr_budget: int = 6,
+    ) -> list[WechatArticle]:
         """批量采集：搜索→解析→抓取→（图主导时）OCR，用于知识入库（无熔断限制，供采集脚本用）。"""
         if self.circuit_open:
             return []
@@ -241,11 +283,11 @@ class WechatClient:
 
     # ── 内部实现 ──────────────────────────────────────────────
 
-    async def _search(self, query: str) -> list[WechatSearchHit]:
+    async def _search(self, query: str, *, page: int = 1) -> list[WechatSearchHit]:
         await self._bucket.wait("sogou", self._sogou_throttle)
         from urllib.parse import quote
 
-        url = f"https://weixin.sogou.com/weixin?type=2&query={quote(query)}"
+        url = f"https://weixin.sogou.com/weixin?type=2&query={quote(query)}&page={max(1, int(page))}"
         resp = await self._client.get(url)
         text = resp.text if resp.status_code == 200 else ""
         if "antispider" in text or "verify" in text or resp.status_code != 200:
