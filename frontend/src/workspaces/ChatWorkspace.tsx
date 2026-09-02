@@ -16,12 +16,14 @@ import {
   Library,
   Menu,
   MessageSquarePlus,
+  Moon,
   Pencil,
   RotateCcw,
   Search,
   Send,
   Sparkles,
   Square,
+  Sun,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -52,6 +54,7 @@ import type {
   SessionPayload,
   Source,
   SseEnvelope,
+  Theme,
   ThoughtStep,
 } from "../types";
 
@@ -63,6 +66,8 @@ const ClaimCheckList = lazy(() => loadClaimCheckList().then((module) => ({ defau
 interface ChatWorkspaceProps {
   config: PublicConfig;
   session: SessionPayload;
+  theme?: Theme;
+  onThemeToggle?: () => void;
   seededQuestion?: string;
   onSeedConsumed?: () => void;
 }
@@ -443,7 +448,7 @@ function FeedbackDialog({
   );
 }
 
-export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed }: ChatWorkspaceProps) {
+export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQuestion, onSeedConsumed }: ChatWorkspaceProps) {
   const authenticated = session.capabilities.server_history;
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [localConversations, setLocalConversations] = useState<LocalConversation[]>([]);
@@ -795,20 +800,25 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
               <Tooltip.Portal><Tooltip.Content className="tooltip">新建对话</Tooltip.Content></Tooltip.Portal>
             </Tooltip.Root>
             <div className="privacy-note"><History size={13} />{authenticated ? "服务端保留 90 天" : "仅保存在此浏览器"}</div>
+            {onThemeToggle && (
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <button className="icon-button" type="button" onClick={onThemeToggle} aria-label={theme === "light" ? "深色主题" : "浅色主题"}>
+                    {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Portal><Tooltip.Content className="tooltip">{theme === "light" ? "深色主题" : "浅色主题"}</Tooltip.Content></Tooltip.Portal>
+              </Tooltip.Root>
+            )}
           </div>
         </header>
         {error && <div className="conversation-error" role="alert"><AlertTriangle size={15} />{error}</div>}
         <div className="message-scroll" ref={messageScroll} onScroll={handleMessageScroll} aria-label="对话内容">
           {messages.length === 0 ? (
             <div className="chat-empty">
-              <div className="chat-empty__mark"><Bot size={27} /></div>
-              <h1>今天从哪里开始？</h1>
               {!starterPromptsSuppressed && (
                 <section className="starter-prompts" aria-labelledby="starter-prompts-title">
-                  <header className="starter-prompts__heading">
-                    <span>{session.capabilities.personal_academic ? "PERSONAL ACADEMIC" : "PUBLIC CAMPUS"}</span>
-                    <h2 id="starter-prompts-title">常见问题</h2>
-                  </header>
+                  <h2 id="starter-prompts-title" className="sr-only">常见问题</h2>
                   <div className="starter-prompt-grid">
                     {starterPrompts.map((prompt, index) => (
                       <StarterPromptTile
@@ -897,7 +907,7 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
           <textarea
             ref={composerInput}
             aria-label="向小蜗提问"
-            placeholder="向小蜗提问"
+            placeholder="问问小蜗：课表、成绩、选课、空教室、校园办事……"
             maxLength={8000}
             rows={1}
             value={draft}

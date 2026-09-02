@@ -3969,6 +3969,33 @@ body::after {
   gap: 10px;
 }
 
+/* ---- 完全复刻方向稿：内容列宽度与空态布局 ---- */
+.message {
+  max-width: 980px;
+}
+
+.composer {
+  width: min(980px, calc(100% - 48px));
+}
+
+.chat-empty {
+  width: 100%;
+  max-width: 1028px;
+  margin: 0 auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 28px 24px 70px;
+  text-align: left;
+}
+
+.starter-prompt-grid {
+  width: 100%;
+}
+
+.today-strip {
+  margin-top: 18px;
+}
+
 /* ---- 完全复刻方向稿：tile 造型 ---- */
 .launch-tile__index {
   display: none;

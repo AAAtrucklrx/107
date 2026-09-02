@@ -161,7 +161,7 @@ export function App() {
   const workspaceContent = useMemo(() => {
     if (!config || !session) return null;
     if (workspace === "chat") {
-      return <ChatWorkspace key={`chat-${demoResetVersion}`} config={config} session={session} seededQuestion={seededQuestion} onSeedConsumed={() => setSeededQuestion(undefined)} />;
+      return <ChatWorkspace key={`chat-${demoResetVersion}`} config={config} session={session} theme={theme} onThemeToggle={() => setTheme((value) => value === "light" ? "dark" : "light")} seededQuestion={seededQuestion} onSeedConsumed={() => setSeededQuestion(undefined)} />;
     }
     if (workspace === "academic") {
       return <AcademicWorkspace session={session} onAsk={(question) => { setSeededQuestion(question); navigateWorkspace("chat"); }} />;
