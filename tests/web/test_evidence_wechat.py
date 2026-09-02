@@ -263,3 +263,36 @@ def test_wechat_trigger_gate_and_switch(tmp_path) -> None:
     )
     _run(pipeline.answer("今天天气怎么样？"))  # 非触发 → 不走微信
     assert wechat.calls == 0
+
+
+def test_collect_many_returns_articles_in_order() -> None:
+    client = WechatClient(client=httpx.AsyncClient(transport=_transport()), sogou_throttle=0, article_throttle=0, ocr_throttle=0)
+    articles = _run(client.collect_many("中国科学技术大学 选课通知", limit=2, ocr_budget=0))
+    _run(client.close())
+    assert len(articles) == 2
+    assert articles[0].author == "中国科学技术大学"  # 官方号优先
+    assert articles[0].title.startswith("中国科学技术大学")
+
+
+def test_search_falls_back_to_wap_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "weixinwap" in request.url.path:
+            return httpx.Response(200, text=WAP_SEARCH_HTML)
+        return httpx.Response(302, text="<html>antispider</html>")
+
+    client = WechatClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sogou_throttle=0, article_throttle=0, ocr_throttle=0)
+    hits = asyncio.run(client._search("中国科学技术大学"))
+    _run(client.close())
+    assert len(hits) == 1
+    assert hits[0].account == "安庆天天直播"
+    assert "落户" in hits[0].title
+
+
+WAP_SEARCH_HTML = """
+<div class="results"><div class="vrResult"><ul><li>
+<div class="list-txt"><h4>
+<a href="/link?url=dn9a_wap123" data-uigs="article_title_0"><div>落户包河!<em>中科大</em>全新园区上线</div></a>
+</h4>
+<p class="time"><span class="s2" data-openid="oIWsF" data-sourcename="安庆天天直播" data-headimage="x"></span></p>
+</div></li></ul></div></div>
+"""

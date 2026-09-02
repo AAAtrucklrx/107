@@ -81,8 +81,17 @@ class FAQVectorStore:
             self._embed_method = method
             return model
 
+        # 模式开关：XIAOWO_EMBEDDING_MODE = auto（默认，探针优先）| api 强制 | local 强制
+        _mode = os.getenv("XIAOWO_EMBEDDING_MODE", "auto").strip().casefold()
+
         # 策略1: OpenAI 兼容 API（熔断窗内直接跳过探测）
-        if not llm_circuit_open() and self._probe_embedding_api():
+        if _mode == "local":
+            _use_api = False
+        elif _mode == "api":
+            _use_api = True
+        else:
+            _use_api = not llm_circuit_open() and self._probe_embedding_api()
+        if _use_api:
             from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
             ef = OpenAIEmbeddingFunction(
                 api_key=LLM_CONFIG["api_key"],

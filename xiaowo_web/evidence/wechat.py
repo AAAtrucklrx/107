@@ -34,6 +34,10 @@ _ALLOWED_JUMP_DOMAINS = frozenset({"weixin.sogou.com", "mp.weixin.qq.com"})
 # 官方号白名单（账号名匹配，2026-09-01 用户确定：中科大/中国科大/蜗壳）
 _OFFICIAL_ACCOUNT_RE = re.compile(r"中国科学技术大学|中科大|中国科大|蜗壳")
 
+_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
 _BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -198,6 +202,40 @@ class WechatClient:
             self._note(False)
             return WechatBundle([], blocked=self.circuit_open)
 
+    async def collect_many(self, query: str, *, limit: int = 3, ocr_budget: int = 6) -> list[WechatArticle]:
+        """批量采集：搜索→解析→抓取→（图主导时）OCR，用于知识入库（无熔断限制，供采集脚本用）。"""
+        if self.circuit_open:
+            return []
+        try:
+            hits = await self._search(query)
+        except (WechatBlocked, WechatUnavailable, httpx.HTTPError, OSError):
+            return []
+        hits.sort(key=lambda h: (0 if is_official_account(h.account) else 1,))
+        articles: list[WechatArticle] = []
+        seen: set[str] = set()
+        for hit in hits[: max(limit * 3, limit)]:
+            if len(articles) >= limit:
+                break
+            if hit.link in seen:
+                continue
+            seen.add(hit.link)
+            try:
+                article = await self._resolve_and_fetch(hit)
+            except WechatBlocked:
+                self._note(False)
+                break
+            if article is None:
+                continue
+            if ocr_budget > 0 and len(article.markdown) < 400:
+                spans, used = await self._ocr_images(
+                    article.raw_html, min(ocr_budget, _OCR_MAX_IMAGES_PER_ARTICLE),
+                )
+                ocr_budget -= used
+                article.ocr_spans = spans
+            articles.append(article)
+        self._note(True)
+        return articles
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -209,24 +247,31 @@ class WechatClient:
 
         url = f"https://weixin.sogou.com/weixin?type=2&query={quote(query)}"
         resp = await self._client.get(url)
-        if resp.status_code != 200:
-            raise WechatUnavailable(f"sogou search HTTP {resp.status_code}")
-        self._search_ref = url
-        text = resp.text
-        if "antispider" in text or "verify" in text:
+        text = resp.text if resp.status_code == 200 else ""
+        if "antispider" in text or "verify" in text or resp.status_code != 200:
+            # 桌面端点被反爬（2026-09-02 实测 302→antispider）：回退 WAP 端点（独立反爬策略）
+            try:
+                resp = await self._client.get(
+                    url.replace("/weixin?", "/weixinwap?"),
+                    headers={"User-Agent": _MOBILE_UA},
+                )
+                text = resp.text if resp.status_code == 200 else ""
+                self._search_ref = url.replace("/weixin?", "/weixinwap?")
+            except httpx.HTTPError:
+                text = ""
+        if not text or "antispider" in text or "verify" in text:
             raise WechatBlocked("sogou search antispider")
         hits: list[WechatSearchHit] = []
+        # 桌面(article_title_x)与 WAP(data-uigs="article_title_x")统一匹配；账号：all-time-y2 或 data-sourcename
         TITLE_RE = re.compile(r'href="(/link\?url=[^"]+)"[^>]*uigs="article_title_\d+"[^>]*>([\s\S]*?)</a>')
-        ACC_RE = re.compile(r'class="all-time-y2">([^<]+)<')
-        for block in _BLOCK_SPLIT_RE.split(text)[1:]:
-            link_m = TITLE_RE.search(block)
-            if not link_m:
-                continue
-            acc = ACC_RE.search(block)
-            account = html.unescape(acc.group(1)).strip() if acc else ""
+        ACC_RE = re.compile(r'class="all-time-y2">([^<]+)<|data-sourcename="([^"]+)"')
+        for link_m in TITLE_RE.finditer(text):
             title = html.unescape(re.sub(r"<[^>]+>", "", link_m.group(2))).strip()
             if not title:
                 continue
+            tail = text[link_m.end(): link_m.end() + 600]
+            acc = ACC_RE.search(tail)
+            account = html.unescape((acc.group(1) or acc.group(2) or "")).strip() if acc else ""
             hits.append(WechatSearchHit(
                 title=title[:80],
                 account=account[:40],
