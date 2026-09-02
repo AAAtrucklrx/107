@@ -4486,6 +4486,32 @@ body::after {
   color: #ffffff;
 }
 
+/* ---- 手机自适应网格：auto-fill 流式列替代写死单列（424px→2列，320px→1列） ---- */
+@media (max-width: 760px) {
+  .starter-prompt-grid,
+  .launch-grid--featured,
+  .launch-grid--directory {
+    grid-template-columns: repeat(auto-fill, minmax(min(148px, 100%), 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  }
+
+  .metric-card {
+    min-height: 0;
+  }
+
+  .tabs-list {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .tabs-list .compact-select {
+    min-width: 0;
+  }
+}
+
 /* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .desktop-rail,
