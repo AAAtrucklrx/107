@@ -42,6 +42,7 @@ import {
 } from "../lib/anonymousHistory";
 import { apiDelete, apiGet, apiMutation, streamRunEvents } from "../lib/api";
 import type {
+  AcademicSchedule,
   ChatMessage,
   ChatRunCreated,
   ConversationDetail,
@@ -101,6 +102,68 @@ function greetingParts(now = new Date()): { greet: string; date: string } {
   const greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
   const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(now);
   return { greet, date };
+}
+
+interface TodayCourse {
+  name: string;
+  start: string;
+  end: string;
+  location: string;
+}
+
+function todaysCourses(schedule: AcademicSchedule): TodayCourse[] {
+  if (schedule.current_week == null) return [];
+  const jsDay = new Date().getDay();
+  const weekday = jsDay === 0 ? 7 : jsDay;
+  return schedule.courses
+    .flatMap((course) =>
+      (course.meetings ?? [])
+        .filter((meeting) => meeting.weekday === weekday && meeting.week_numbers.includes(schedule.current_week as number))
+        .map((meeting) => ({
+          name: course.course_name ?? "课程",
+          start: meeting.start_time,
+          end: meeting.end_time,
+          location: meeting.location,
+        })),
+    )
+    .sort((a, b) => a.start.localeCompare(b.start));
+}
+
+function TodayStrip({ session }: { session: SessionPayload }) {
+  const [schedule, setSchedule] = useState<AcademicSchedule | null>(null);
+  const personal = session.capabilities.personal_academic;
+
+  useEffect(() => {
+    if (!personal) return;
+    let alive = true;
+    Promise.resolve(apiGet<AcademicSchedule>("/academic/schedule"))
+      .then((data) => {
+        if (alive && data) setSchedule(data);
+      })
+      .catch(() => {
+        /* 静默：条仅在有数据时出现 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [personal]);
+
+  if (!personal || !schedule) return null;
+  const courses = todaysCourses(schedule);
+  return (
+    <section className="today-strip" aria-label="今日课程">
+      <b>今日{schedule.semester ? ` · ${schedule.semester}` : ""}{schedule.current_week != null ? ` 第${schedule.current_week}周` : ""}</b>
+      {courses.length === 0 ? (
+        <span className="today-strip__free">今日无课</span>
+      ) : (
+        courses.map((course, index) => (
+          <span key={`${course.start}-${course.name}-${index}`} className={`course-chip cc${(index % 5) + 1}`}>
+            {course.start} {course.name} · {course.location}
+          </span>
+        ))
+      )}
+    </section>
+  );
 }
 
 function randomId(prefix: string): string {
@@ -760,6 +823,7 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
                   </div>
                 </section>
               )}
+              <TodayStrip session={session} />
             </div>
           ) : messages.map((message, index) => (
             <article key={message.id} className={`message message--${message.role}`}>

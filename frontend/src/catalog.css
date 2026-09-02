@@ -3906,12 +3906,6 @@ body::after {
 
 /* ---- 桌面端质感拉满（≥1024px；手机保持无 blur 预算） ---- */
 @media (min-width: 1024px) {
-  .launch-tile {
-    backdrop-filter: var(--gblur);
-    -webkit-backdrop-filter: var(--gblur);
-    box-shadow: var(--gshadow-lg);
-  }
-
   .composer {
     border-radius: 100px;
   }
@@ -3978,6 +3972,101 @@ body::after {
 /* ---- 完全复刻方向稿：tile 造型 ---- */
 .launch-tile__index {
   display: none;
+}
+
+/* 用户授权移动端同步复刻：tile blur 不再限桌面 */
+.launch-tile {
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+  box-shadow: var(--gshadow-lg);
+}
+
+/* ---- 今日课程条（真实数据：/academic/schedule） ---- */
+.today-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  border: 1px solid var(--gborder-soft);
+  border-radius: var(--r);
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.today-strip b {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  margin-right: 4px;
+}
+
+.today-strip__free {
+  color: var(--ink-3, var(--faint));
+  font-size: 13px;
+}
+
+.course-chip {
+  padding: 5px 12px;
+  border-radius: 100px;
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.course-chip.cc1 {
+  background: rgb(3 78 161 / 0.12);
+  color: #023a79;
+}
+
+.course-chip.cc2 {
+  background: rgb(8 118 128 / 0.12);
+  color: #05565d;
+}
+
+.course-chip.cc3 {
+  background: rgb(224 122 52 / 0.14);
+  color: #8a4a14;
+}
+
+.course-chip.cc4 {
+  background: rgb(105 155 60 / 0.14);
+  color: #44621c;
+}
+
+.course-chip.cc5 {
+  background: rgb(122 86 180 / 0.13);
+  color: #55378a;
+}
+
+:root[data-theme="dark"] .course-chip.cc1 {
+  background: rgb(91 155 224 / 0.16);
+  color: #8fbef0;
+}
+
+:root[data-theme="dark"] .course-chip.cc2 {
+  background: rgb(79 200 206 / 0.14);
+  color: #8fe3e6;
+}
+
+:root[data-theme="dark"] .course-chip.cc3 {
+  background: rgb(240 150 80 / 0.15);
+  color: #f0b78a;
+}
+
+:root[data-theme="dark"] .course-chip.cc4 {
+  background: rgb(120 200 90 / 0.14);
+  color: #a8dc8f;
+}
+
+:root[data-theme="dark"] .course-chip.cc5 {
+  background: rgb(170 120 230 / 0.15);
+  color: #c8a8f0;
 }
 
 .launch-tile__topline {
