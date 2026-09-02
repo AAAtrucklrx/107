@@ -2,37 +2,37 @@
 name: 小蜗科大学术工作台
 description: 安静、精确、可核验的科大校园智能工作台
 colors:
-  primary: "#0757a6"
-  primary-hover: "#06498c"
-  primary-soft: "#e1edf8"
-  retrieval: "#008b94"
-  retrieval-soft: "#dff1f1"
-  canvas: "#f2f5f7"
-  surface: "#f9fbfc"
+  primary: "#034ea1"
+  primary-hover: "#023a79"
+  primary-soft: "#e2ecf7"
+  retrieval: "#087680"
+  retrieval-soft: "#dceff0"
+  canvas: "#eef2f8"
+  surface: "#f7f9fc"
   surface-raised: "#ffffff"
-  surface-muted: "#e9eef2"
-  ink: "#14212a"
+  surface-muted: "#e9eef5"
+  ink: "#1c2430"
   muted: "#566672"
-  faint: "#788792"
-  line: "#d3dce2"
+  faint: "#5f6e7a"
+  line: "#d5dde6"
   line-strong: "#aebbc4"
   rail: "#17242d"
   rail-raised: "#21323d"
   rail-ink: "#eef4f7"
-  success: "#267553"
-  success-soft: "#e0f0e8"
-  warning: "#9a650e"
-  warning-soft: "#f5ead4"
-  danger: "#b33e49"
-  danger-soft: "#f8e4e6"
-  dark-canvas: "#0d141a"
-  dark-surface: "#111b22"
-  dark-surface-raised: "#17232c"
-  dark-ink: "#edf3f6"
+  glass: "rgb(255 255 255 / 0.55)"
+  glass-strong: "rgb(255 255 255 / 0.85)"
+  glass-weak: "rgb(255 255 255 / 0.38)"
+  glass-solid: "#f3f6fb"
+  gblur-light: "blur(14px) saturate(170%)"
+  gblur-dark: "blur(16px) saturate(150%)"
+  dark-canvas: "#0a0f16"
+  dark-surface: "#10161f"
+  dark-surface-raised: "#161e2a"
+  dark-ink: "#e8eef6"
   dark-muted: "#a8b6bf"
   dark-line: "#2b3a44"
-  dark-primary: "#78afea"
-  dark-retrieval: "#5fc4c7"
+  dark-primary: "#5b9be0"
+  dark-retrieval: "#4fc8ce"
 typography:
   headline:
     fontFamily: '"Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif'
@@ -115,18 +115,16 @@ components:
 
 ## Overview
 
-**Creative North Star: "冷色数字编目台"**
+**Creative North Star: "晨雾 × 夜航 · 液态玻璃"**
 
-小蜗是一张持续工作的科大学术编目台：深色索引脊提供稳定方位，冷白工作面承载问答、学业、校园目录和知识治理。界面安静、精确、信息密度适中，品牌存在于定制字标、规则线、连续数据带和可信状态中，而不是营销式构图或装饰插画。
-
-系统优先呈现身份、来源、时效和审核状态。视觉层级通过字体重量、表面明度、1px 结构线和留白建立；主操作色保持稀少，演示数据与真实数据之间必须有持续、可读且不只依赖颜色的区分。
+小蜗是一张持续工作的科大学术工作台：浅色主题（晨雾）在暖白画布上铺低饱和彩色光斑，侧栏、顶栏、对话输入与浮层以半透明玻璃悬浮其上；深色主题（夜航）用三层 charcoal 灰阶与暗色玻璃承载同一结构。界面安静、精确、信息密度适中，玻璃只用于关键层，正文与数据保持高可读实底。品牌存在于定制字标、玻璃质感、连续数据带和可信状态中，而不是营销式构图。
 
 **Key Characteristics:**
 
-- 深色索引脊与连续冷白工作面
-- 精选启动方块、分类目录、数据带和账簿式信息组织
-- 蓝色主操作、青色证据、独立状态色
-- 浅色默认与完整深色主题
+- 关键层液态玻璃（侧栏/顶栏/输入区/浮层/移动底栏），内容主体保持可读实底
+- 零 filter 彩斑背景（纯 CSS radial-gradient 双层 crossfade，明暗双份）
+- 精选启动方块、分类目录、数据带和账簿式信息组织（半透明面板质感）
+- 蓝色主操作、青色证据、独立状态色；明暗双主题同等层级
 - 定制“小蜗”字标，不使用官方校徽或卡通吉祥物
 
 ## Colors
@@ -151,7 +149,7 @@ components:
 - **连续工作面** (`surface`, `surface-raised`, `surface-muted`): 正文、浮层和次级数据带。
 - **墨色正文** (`ink`, `muted`, `faint`): 主文、辅助文和低优先级元数据。
 - **编目规则线** (`line`, `line-strong`): 分区、表格和组件边界。
-- **索引脊** (`rail`, `rail-raised`, `rail-ink`): 桌面导航的固定深色基座。
+- **索引脊** (`rail`, `rail-raised`, `rail-ink`): 桌面导航基座；浅色主题为白玻璃（`--glass-weak` + blur），深色主题为暗玻璃。
 - **夜间工作面** (`dark-canvas`, `dark-surface`, `dark-surface-raised`, `dark-ink`, `dark-muted`, `dark-line`): 深色主题的对应层级；操作蓝和证据青分别切换为 `dark-primary` 与 `dark-retrieval`。
 
 **The One Meaning Per Accent Rule.** 蓝色只表示当前状态或主操作，青色只表示检索与证据，演示数据始终使用 warning 语义；不要互换。
@@ -182,12 +180,23 @@ components:
 
 ## Elevation & Depth
 
-系统平面优先。静态页面依靠明度层级和结构线分层，普通目录行、数据带和工作区不使用漂浮阴影。阴影只出现在账号菜单、确认对话框、聊天输入框和临时反馈等确实离开工作面的元素上。
+系统以“玻璃关键层 + 平面内容层”分层：离工作面的元素（桌面索引脊、输入区、账号菜单、确认对话框、移动顶栏与底栏）使用半透明玻璃材质（`--glass` 系列 + `backdrop-filter: var(--gblur)` + `--gshadow`），静态页面内容依靠半透明面板（`--glass-weak`，无 blur）、明度层级和 1px 玻璃边框分层，普通目录行和数据带不使用漂浮阴影。
+
+### Glass Budget（性能硬预算，为 Mate 70 Pro+ 等移动设备保帧）
+
+- 手机常驻 backdrop-filter 层 ≤ 2（顶栏 + 底部导航；composer 用半透明实底）
+- 桌面常驻 backdrop-filter 层 ≤ 3（索引脊 + 输入区 + 临时浮层）
+- 消息列表内卡片 0 层 blur：用 `--glass-weak` 半透明填充 + 1px `--gborder-soft` 边框
+- blur 半径上限：浅 14px / 深 16px；禁止 transition backdrop-filter 与 box-shadow
+- 彩斑背景零 filter：纯 CSS radial-gradient 双伪层，主题切换只过渡 opacity
+- 不支持 backdrop-filter 或用户偏好低透明度时，全部玻璃表面回退 `--glass-solid` 实底
+- ⚠ 祖先链禁改：`.app-shell`/`.workspace-transition` 到 body 之间不得加 filter/transform/opacity<1/contain:paint，否则切断 backdrop 采样
 
 ### Shadow Vocabulary
 
-- **低层浮起** (`0 7px 22px rgb(31 48 59 / 0.08)`): 输入框、轻量反馈和悬浮操作。
-- **覆盖层** (`0 16px 42px rgb(31 48 59 / 0.12)`): 菜单和对话框；深色主题使用更高不透明度的黑色阴影。
+- **玻璃阴影** (`--gshadow` / `--gshadow-lg`): 玻璃表面专用，含 inset 高光；主题切换不参与过渡。
+- **低层浮起** (`0 7px 22px rgb(31 48 59 / 0.08)`): 非玻璃轻量反馈和悬浮操作。
+- **覆盖层** (`0 16px 42px rgb(31 48 59 / 0.12)`): 非玻璃菜单和对话框。
 
 **The Flat By Default Rule.** 页面分区和重复条目保持平面；只有覆盖当前任务面的交互层可以使用阴影。
 
@@ -256,5 +265,6 @@ components:
 - **Don't** 把应用改成营销首页、Hero、无分组同权卡片墙或通用后台模板。
 - **Don't** 混用操作蓝、证据青、演示 warning 和状态色的语义。
 - **Don't** 使用 8–11px 可见文字、低于目标的触控区域或彩色粗侧条。
+- **Don't** 超出玻璃预算新增 backdrop-filter 表面，或对玻璃表面过渡 backdrop-filter/box-shadow。
 - **Don't** 在页面分区里嵌套卡片、使用大圆角胶囊、装饰渐变或泛化入场淡入。
 - **Don't** 使用官方校徽、虚构校园素材或未核验的真实性暗示。

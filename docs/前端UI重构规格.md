@@ -381,3 +381,16 @@
 - `pytest tests/web -q` 为 100 passed，前端组件测试 11/11，生产构建成功；匿名/demo/admin E2E 与 100 SSE / 30 并发负载验收通过。
 - 设计系统已固化到根目录 `DESIGN.md` 与 `.impeccable/design.json`；产品事实仍以 `PRODUCT.md` 为准。
 - 外部 LLM QA 未运行，避免向外部服务发送演示学号或画像；SearXNG/Crawl4AI sidecar 仍未在开发机启动。
+
+## 15. 液态玻璃视觉升级（2026-09-02，用户批准的 addendum）
+
+在保持本规格全部信息架构、契约与响应式验收不变的前提下，视觉层升级为用户选定的「晨雾 × 夜航」双主题液态玻璃（设计源：`.qoder/ui_drafts/draft_c_dual.html`）。本轮改动全部落在令牌与皮肤层：
+
+- **令牌**：`catalog.css` 令牌区对齐 draft（canvas `#eef2f8`/`#0a0f16`、primary `#034ea1`/`#5b9be0`、retrieval `#087680`/`#4fc8ce`），新增玻璃令牌块（`--glass/-strong/-weak/-solid`、`--gborder/-soft`、`--gblur`、`--gshadow/-lg`、`--user-bubble`、`--tt: 0.2s`）；meta theme-color 同步。
+- **彩斑**：`body::before/::after` 双层固定 radial-gradient（零 filter），主题切换仅过渡 opacity。
+- **玻璃预算**：手机常驻 backdrop-filter ≤2（顶栏+底栏）、桌面 ≤3（索引脊+输入区+临时浮层）；消息列表卡片 0 blur（`--glass-weak` 半透明填充）；`@supports not (backdrop-filter)` 与 `prefers-reduced-transparency` 回退 `--glass-solid`。
+- **祖先链禁改**（新增硬约束）：`.app-shell`/`.workspace-transition` 到 body 之间不得加 filter/transform/opacity<1/contain:paint，否则切断 backdrop 采样。
+- **浅色主题索引脊**由深色实底改为白玻璃（`--rail-*` 令牌随主题切换）；admin 壳（`.admin-sidebar`）不受影响。
+- **验证**：pytest tests/web 132 passed；前端 vitest 22/22；生产构建成功；`scripts/e2e_web_workbench.py` 全矩阵通过（已同步管理后台入口改名：账户菜单「管理后台」→ `/admin` → 「知识审核」导航，`assert_layout` 兼容 `.admin-main`）。验收截图：`docs/qa/glass-p2-*.png`。
+- **性能预算依据**：华为 Mate 70 Pro+（逻辑宽 424px）为主移动演示基线。vendor 分包已解决（2026-09-02 补）：`vite.config.ts` 用 `manualChunks` 函数形式将 react/react-dom/scheduler 拆为 `react-vendor` 独立块（185.2 kB），主入口从 318 kB 降至 136.8 kB，框架层获得长效缓存；vitest 22/22 与 e2e 全矩阵在新分包下复验通过。
+- **量化验收（2026-09-02 补）**：① 性能冒烟 `scripts/tmp_glass_perf.py`：CPU 6x 节流 + 424×956@2x 下 rAF 帧率 141–168fps（最坏为主题 crossfade 141fps），远超 50fps 门槛；真机实测仍建议演示前做一次。② WCAG 抽查 `scripts/tmp_glass_contrast.py`：玻璃+彩斑最坏组合 9/9 通过（浅色 `--faint` 为此从 `#788792` 加深至 `#5f6e7a`，同步 DESIGN.md）。③ 遗留：课程 chip 按课程多彩着色需要 JSX 数据钩子，与「阶段3 不改 JSX」约束冲突，本轮保持单一语义色，留待赛后随数据属性一起加。④ blur 真实性验证：headless 截图渲染器不绘制 backdrop-filter 模糊（仅透明度生效），已用有头浏览器探针验证真实渲染下玻璃下方内容正常虚化（`docs/qa/glass-p2-blur-verification.png`）；浮层专用档 `--glass-strong` 随之从 0.72 加实到 0.85（明暗同步），保证 blur 缺失场景（旧设备/降级）浮层仍可读；浮层验收截图 `docs/qa/glass-p2-overlay-*.png`（menu/dialog × 明暗四张）。
