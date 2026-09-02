@@ -3757,20 +3757,20 @@ body::after {
 
 body::before {
   background:
-    radial-gradient(42rem 42rem at -8% -14%, rgb(168 196 236 / 0.55), transparent 62%),
-    radial-gradient(38rem 38rem at 108% 6%, rgb(183 227 222 / 0.5), transparent 60%),
-    radial-gradient(36rem 36rem at 22% 114%, rgb(242 211 187 / 0.42), transparent 60%),
-    radial-gradient(34rem 34rem at 88% 110%, rgb(212 201 238 / 0.42), transparent 62%);
+    radial-gradient(46rem 46rem at -8% -14%, rgb(148 183 232 / 0.9), rgb(168 196 236 / 0.55) 45%, transparent 70%),
+    radial-gradient(42rem 42rem at 108% 6%, rgb(154 219 212 / 0.85), rgb(183 227 222 / 0.5) 45%, transparent 68%),
+    radial-gradient(40rem 40rem at 22% 114%, rgb(240 195 157 / 0.75), rgb(242 211 187 / 0.4) 45%, transparent 68%),
+    radial-gradient(38rem 38rem at 88% 110%, rgb(195 181 233 / 0.75), rgb(212 201 238 / 0.4) 45%, transparent 70%);
   opacity: 1;
   transition: opacity var(--tt);
 }
 
 body::after {
   background:
-    radial-gradient(44rem 44rem at -10% -16%, rgb(18 58 110 / 0.55), transparent 62%),
-    radial-gradient(40rem 40rem at 110% 4%, rgb(13 74 79 / 0.5), transparent 60%),
-    radial-gradient(36rem 36rem at 20% 116%, rgb(74 44 104 / 0.42), transparent 60%),
-    radial-gradient(34rem 34rem at 90% 112%, rgb(110 58 44 / 0.35), transparent 62%);
+    radial-gradient(48rem 48rem at -10% -16%, rgb(24 84 160 / 0.85), rgb(18 58 110 / 0.5) 45%, transparent 70%),
+    radial-gradient(44rem 44rem at 110% 4%, rgb(17 96 102 / 0.8), rgb(13 74 79 / 0.45) 45%, transparent 68%),
+    radial-gradient(40rem 40rem at 20% 116%, rgb(84 48 122 / 0.7), rgb(74 44 104 / 0.38) 45%, transparent 68%),
+    radial-gradient(38rem 38rem at 90% 112%, rgb(128 62 44 / 0.6), rgb(110 58 44 / 0.32) 45%, transparent 70%);
   opacity: 0;
   transition: opacity var(--tt);
 }
@@ -3918,7 +3918,103 @@ body::after {
 
   .message--assistant .message__body {
     box-shadow: var(--gshadow);
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
   }
+
+  .markdown-body {
+    font-size: 15px;
+  }
+
+  .conversation-header--greeting {
+    margin: 18px 22px 0;
+    border: 1px solid var(--gborder-soft);
+    border-radius: var(--r);
+    background: var(--glass);
+    box-shadow: var(--gshadow);
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
+    padding: 14px 22px;
+  }
+
+  .conversation-greeting strong {
+    font-size: 17px;
+    font-weight: 700;
+  }
+}
+
+/* ---- 呼吸感：向方向稿排版靠拢（疏朗字号与间距） ---- */
+.chat-workspace--solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.conversation-header--greeting {
+  border-bottom: 0;
+}
+
+.conversation-greeting {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.conversation-greeting strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.conversation-greeting span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.conversation-header__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- 呼吸感：向方向稿排版靠拢（疏朗字号与间距） ---- */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.message--assistant .markdown-body {
+  font-size: 14px;
+}
+
+.starter-prompt-grid,
+.launch-grid {
+  gap: 12px;
+}
+
+.launch-tile {
+  padding: 16px 18px;
+}
+
+.launch-tile__content strong {
+  font-size: 16px;
+}
+
+.launch-tile__content {
+  margin: 20px 0 16px;
+}
+
+.launch-tile small,
+.launch-tile__content small {
+  font-size: 13px;
+}
+
+.starter-prompts__heading,
+.campus-section-heading {
+  margin-bottom: 14px;
+  padding-bottom: 11px;
+}
+
+.message--assistant .message__body {
+  padding: 16px 20px;
 }
 
 /* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */

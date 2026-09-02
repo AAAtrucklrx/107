@@ -96,6 +96,13 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function greetingParts(now = new Date()): { greet: string; date: string } {
+  const hour = now.getHours();
+  const greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
+  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(now);
+  return { greet, date };
+}
+
 function randomId(prefix: string): string {
   // crypto.randomUUID 仅在 HTTPS/localhost 安全上下文可用(HTTP 部署如 8850 会抛错),
   // 用时间戳+随机数组合替代,不依赖安全上下文。
@@ -125,14 +132,12 @@ function HistoryPanel({
   conversations,
   activeId,
   onSelect,
-  onNew,
   onDelete,
   onClear,
 }: {
   conversations: ConversationSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  onNew: () => void;
   onDelete: (id: string) => void;
   onClear: () => void;
 }) {
@@ -140,14 +145,6 @@ function HistoryPanel({
     <div className="chat-history">
       <div className="chat-history__header">
         <strong>最近记录</strong>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
-            <button className="icon-button" type="button" onClick={onNew} aria-label="新建对话">
-              <MessageSquarePlus size={17} />
-            </button>
-          </Tooltip.Trigger>
-          <Tooltip.Portal><Tooltip.Content className="tooltip">新建对话</Tooltip.Content></Tooltip.Portal>
-        </Tooltip.Root>
       </div>
       <div className="chat-history__list">
         {conversations.length === 0 ? (
@@ -714,13 +711,28 @@ export function ChatWorkspace({ config, session, seededQuestion, onSeedConsumed 
   }), [activeId, clearHistory, conversations, deleteConversation, newConversation, selectConversation]);
 
   return (
-    <section className="chat-workspace">
-      <aside className="chat-history-pane"><HistoryPanel {...historyProps} /></aside>
+    <section className={"chat-workspace" + (conversations.length === 0 ? " chat-workspace--solo" : "")}>
+      {conversations.length > 0 && (
+        <aside className="chat-history-pane"><HistoryPanel {...historyProps} /></aside>
+      )}
       <div className="conversation-pane">
-        <header className="conversation-header">
+        <header className="conversation-header conversation-header--greeting">
           <button className="icon-button conversation-header__history" type="button" onClick={() => setHistoryOpen(true)} aria-label="打开会话历史"><Menu size={18} /></button>
-          <div><strong>{activeId ? "当前对话" : "新对话"}</strong><span>问小蜗</span></div>
-          <div className="privacy-note"><History size={13} />{authenticated ? "服务端保留 90 天" : "仅保存在此浏览器"}</div>
+          <div className="conversation-greeting">
+            <strong>{greetingParts().greet}，{session.principal.profile?.name || (session.principal.authenticated ? "同学" : "游客")}</strong>
+            <span>{greetingParts().date}{activeId ? " · 当前对话" : " · 问小蜗"}</span>
+          </div>
+          <div className="conversation-header__right">
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button className="icon-button" type="button" onClick={historyProps.onNew} aria-label="新建对话">
+                  <MessageSquarePlus size={17} />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal><Tooltip.Content className="tooltip">新建对话</Tooltip.Content></Tooltip.Portal>
+            </Tooltip.Root>
+            <div className="privacy-note"><History size={13} />{authenticated ? "服务端保留 90 天" : "仅保存在此浏览器"}</div>
+          </div>
         </header>
         {error && <div className="conversation-error" role="alert"><AlertTriangle size={15} />{error}</div>}
         <div className="message-scroll" ref={messageScroll} onScroll={handleMessageScroll} aria-label="对话内容">
