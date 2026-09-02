@@ -3904,6 +3904,23 @@ body::after {
   }
 }
 
+/* ---- 桌面端质感拉满（≥1024px；手机保持无 blur 预算） ---- */
+@media (min-width: 1024px) {
+  .launch-tile {
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
+    box-shadow: var(--gshadow-lg);
+  }
+
+  .composer {
+    border-radius: 100px;
+  }
+
+  .message--assistant .message__body {
+    box-shadow: var(--gshadow);
+  }
+}
+
 /* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .desktop-rail,
