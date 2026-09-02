@@ -1,26 +1,27 @@
 @import "./index.css";
 
 /*
- * Xiaowo catalog desk
- * Panels: 6px, controls: 5px, status labels: 3px, avatars: circular.
+ * Xiaowo liquid glass (晨雾 × 夜航)
+ * Dual-theme frosted glass: canvas glow blobs + translucent key surfaces.
  * Blue marks primary actions; teal is reserved for retrieval and evidence.
+ * Glass recipe lives in the tokens below; see --glass / --gblur / --gshadow.
  */
 
 :root {
-  --canvas: #f2f5f7;
-  --surface: #f9fbfc;
+  --canvas: #eef2f8;
+  --surface: #f7f9fc;
   --surface-raised: #ffffff;
-  --surface-muted: #e9eef2;
-  --ink: #14212a;
+  --surface-muted: #e9eef5;
+  --ink: #1c2430;
   --muted: #566672;
-  --faint: #788792;
-  --line: #d3dce2;
+  --faint: #5f6e7a;
+  --line: #d5dde6;
   --line-strong: #aebbc4;
-  --primary: #0757a6;
-  --primary-hover: #06498c;
-  --primary-soft: #e1edf8;
-  --retrieval: #008b94;
-  --retrieval-soft: #dff1f1;
+  --primary: #034ea1;
+  --primary-hover: #023a79;
+  --primary-soft: #e2ecf7;
+  --retrieval: #087680;
+  --retrieval-soft: #dceff0;
   --success: #267553;
   --success-soft: #e0f0e8;
   --warning: #9a650e;
@@ -37,25 +38,37 @@
   --rail-width: 216px;
   --font-sans: "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  /* liquid glass tokens (light / 晨雾) */
+  --glass: rgb(255 255 255 / 0.55);
+  --glass-strong: rgb(255 255 255 / 0.85);
+  --glass-weak: rgb(255 255 255 / 0.38);
+  --glass-solid: #f3f6fb;
+  --gborder: rgb(255 255 255 / 0.65);
+  --gborder-soft: rgb(255 255 255 / 0.45);
+  --gblur: blur(14px) saturate(170%);
+  --gshadow: 0 8px 32px rgb(31 45 80 / 0.12), inset 0 1px 1px rgb(255 255 255 / 0.7);
+  --gshadow-lg: 0 16px 48px rgb(31 45 80 / 0.16), inset 0 1px 1px rgb(255 255 255 / 0.75);
+  --user-bubble: linear-gradient(135deg, #034ea1, #2b74c8);
+  --tt: 0.2s ease;
   color-scheme: light;
   font-family: var(--font-sans);
 }
 
 :root[data-theme="dark"] {
-  --canvas: #0d141a;
-  --surface: #111b22;
-  --surface-raised: #17232c;
-  --surface-muted: #1d2a33;
-  --ink: #edf3f6;
+  --canvas: #0a0f16;
+  --surface: #10161f;
+  --surface-raised: #161e2a;
+  --surface-muted: #1c2532;
+  --ink: #e8eef6;
   --muted: #a8b6bf;
   --faint: #7f909b;
   --line: #2b3a44;
   --line-strong: #465863;
-  --primary: #78afea;
-  --primary-hover: #9bc7f2;
-  --primary-soft: #193651;
-  --retrieval: #5fc4c7;
-  --retrieval-soft: #16383c;
+  --primary: #5b9be0;
+  --primary-hover: #8fbef0;
+  --primary-soft: #16283c;
+  --retrieval: #4fc8ce;
+  --retrieval-soft: #123a3e;
   --success: #71c39a;
   --success-soft: #18382c;
   --warning: #e2af5d;
@@ -69,6 +82,17 @@
   --rail-muted: #9daeb9;
   --shadow: 0 18px 48px rgb(0 0 0 / 0.34);
   --shadow-low: 0 8px 26px rgb(0 0 0 / 0.24);
+  /* liquid glass tokens (dark / 夜航) */
+  --glass: rgb(24 33 46 / 0.55);
+  --glass-strong: rgb(30 41 56 / 0.85);
+  --glass-weak: rgb(24 33 46 / 0.38);
+  --glass-solid: #131b26;
+  --gborder: rgb(255 255 255 / 0.09);
+  --gborder-soft: rgb(255 255 255 / 0.07);
+  --gblur: blur(16px) saturate(150%);
+  --gshadow: 0 8px 32px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --gshadow-lg: 0 16px 48px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --user-bubble: linear-gradient(135deg, #1c5fa8, #2a86b8);
   color-scheme: dark;
 }
 
@@ -3709,4 +3733,240 @@ select:focus-visible,
   .review-chunk {
     transition: none;
   }
+}
+
+/* ============================================================
+ * Liquid glass pass（晨雾 × 夜航）— stage 2 overlay
+ * 玻璃预算：桌面 = desktop-rail + composer（+dialog 临时层）；
+ * 手机 = mobile-header + mobile-bottom-nav（composer 用半透明实底）。
+ * 消息卡/方块用无 blur 的半透明填充（--glass-weak）+ 高光边。
+ * ⚠ 禁改：.app-shell / .workspace-transition 到 body 的祖先链上
+ *   不得加 filter/transform/opacity<1/contain:paint，
+ *   否则会切断 backdrop-filter 的背景采样。
+ * ============================================================ */
+
+/* ---- 彩斑背景：零 filter 的多重 radial-gradient，双层 crossfade ---- */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::before {
+  background:
+    radial-gradient(42rem 42rem at -8% -14%, rgb(168 196 236 / 0.55), transparent 62%),
+    radial-gradient(38rem 38rem at 108% 6%, rgb(183 227 222 / 0.5), transparent 60%),
+    radial-gradient(36rem 36rem at 22% 114%, rgb(242 211 187 / 0.42), transparent 60%),
+    radial-gradient(34rem 34rem at 88% 110%, rgb(212 201 238 / 0.42), transparent 62%);
+  opacity: 1;
+  transition: opacity var(--tt);
+}
+
+body::after {
+  background:
+    radial-gradient(44rem 44rem at -10% -16%, rgb(18 58 110 / 0.55), transparent 62%),
+    radial-gradient(40rem 40rem at 110% 4%, rgb(13 74 79 / 0.5), transparent 60%),
+    radial-gradient(36rem 36rem at 20% 116%, rgb(74 44 104 / 0.42), transparent 60%),
+    radial-gradient(34rem 34rem at 90% 112%, rgb(110 58 44 / 0.35), transparent 62%);
+  opacity: 0;
+  transition: opacity var(--tt);
+}
+
+:root[data-theme="dark"] body::before {
+  opacity: 0;
+}
+
+:root[data-theme="dark"] body::after {
+  opacity: 1;
+}
+
+/* 让彩斑透出各层壳 */
+.app-shell,
+.workbench,
+.workspace-canvas,
+.chat-workspace,
+.conversation-pane {
+  background: transparent;
+}
+
+.chat-history-pane {
+  background: color-mix(in srgb, var(--surface-muted) 42%, transparent);
+}
+
+.workspace-header,
+.workspace-tabs,
+.tabs-list {
+  background: transparent;
+}
+
+/* ---- 浅色主题下 rail 由深色实底改为白玻璃（深色主题保持暗玻璃） ---- */
+:root {
+  --rail: transparent;
+  --rail-raised: rgb(28 36 48 / 0.07);
+  --rail-line: rgb(28 36 48 / 0.09);
+  --rail-ink: #1c2430;
+  --rail-muted: #5d6d7a;
+}
+
+.desktop-rail {
+  border-color: var(--gborder-soft);
+  background: var(--glass-weak);
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+}
+
+.workspace-nav__item[data-active="true"] {
+  border-left-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+
+.desktop-rail .account-trigger__avatar {
+  color: var(--primary);
+}
+
+/* ---- composer 玻璃（桌面预算内第 2 层；手机降为半透明实底） ---- */
+.composer {
+  border: 1px solid var(--gborder-soft);
+  border-radius: 16px;
+  background: var(--glass);
+  box-shadow: var(--gshadow-lg);
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+}
+
+/* ---- 浮层玻璃 ---- */
+.account-menu,
+.dialog-content {
+  border-color: var(--gborder-soft);
+  background: var(--glass-strong);
+  box-shadow: var(--gshadow-lg);
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+}
+
+/* ---- 半透明面板（无 blur：tile / 消息卡） ---- */
+.launch-tile {
+  border-color: var(--gborder-soft);
+  border-radius: 14px;
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+}
+
+.launch-tile:hover {
+  background: var(--glass);
+}
+
+.message--user .message__body {
+  border: 0;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--user-bubble);
+  color: rgb(255 255 255 / 0.96);
+  box-shadow: 0 6px 20px rgb(3 78 161 / 0.24);
+}
+
+.message--user .markdown-body {
+  color: inherit;
+}
+
+.message--assistant .message__body {
+  border: 1px solid var(--gborder-soft);
+  border-radius: 16px;
+  background: var(--glass-weak);
+  box-shadow: var(--gshadow);
+  padding: 14px 18px;
+}
+
+/* ---- 手机：顶栏 + 底部导航 = 预算内的 2 层玻璃 ---- */
+@media (max-width: 760px) {
+  .composer {
+    border-color: var(--gborder-soft);
+    background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .mobile-header {
+    border-bottom: 1px solid var(--gborder-soft);
+    background: var(--glass);
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
+  }
+
+  .mobile-bottom-nav {
+    border-top: 1px solid var(--gborder-soft);
+    background: var(--glass);
+    backdrop-filter: var(--gblur);
+    -webkit-backdrop-filter: var(--gblur);
+  }
+}
+
+/* ---- 降级：不支持 backdrop-filter / 用户偏好低透明度 → 实底 ---- */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .desktop-rail,
+  .composer,
+  .account-menu,
+  .dialog-content,
+  .mobile-header,
+  .mobile-bottom-nav {
+    background: var(--glass-solid) !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .desktop-rail,
+  .composer,
+  .account-menu,
+  .dialog-content,
+  .mobile-header,
+  .mobile-bottom-nav {
+    background: var(--glass-solid) !important;
+  }
+}
+
+/* ---- stage 3：工作区视觉精修（CSS only） ---- */
+
+/* SSE 阶段条：药丸化，进行中保持呼吸脉冲 */
+.stage-strip {
+  align-self: start;
+  border: 1px solid var(--gborder-soft);
+  border-radius: 100px;
+  background: var(--glass-weak);
+  padding: 4px 12px;
+}
+
+/* 来源项：玻璃 chip */
+.source-item {
+  border-color: var(--gborder-soft);
+  border-radius: 10px;
+  background: var(--glass-weak);
+}
+
+/* 主操作按钮：科大蓝渐变（亮暗主题各自取色） */
+.command-button {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 76%, #5aa7f0));
+}
+
+.command-button:hover {
+  background: linear-gradient(135deg, var(--primary-hover), color-mix(in srgb, var(--primary-hover) 76%, #5aa7f0));
+}
+
+.send-button:not(.send-button--stop) {
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, #7cc4ff));
+  color: #ffffff;
+}
+
+/* 课程表日程卡：轻玻璃化（冲突态保持 danger 语义） */
+.schedule-event-card {
+  border-color: var(--gborder-soft);
+  background: color-mix(in srgb, var(--primary-soft) 82%, transparent);
+}
+
+.schedule-event-card[data-conflict] {
+  background: color-mix(in srgb, var(--danger-soft) 82%, transparent);
 }

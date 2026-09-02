@@ -92,7 +92,7 @@ export function App() {
     localStorage.setItem("xiaowo-theme", theme);
     document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
       "content",
-      theme === "dark" ? "#0D141A" : "#F4F7FA",
+      theme === "dark" ? "#0a0f16" : "#eef2f8",
     );
   }, [theme]);
 
