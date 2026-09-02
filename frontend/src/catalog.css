@@ -4418,6 +4418,16 @@ body::after {
 }
 
 /* ---- composer 胶囊协调化：压缩空态高度 + 模式选择器玻璃化 ---- */
+/* 聚焦提示由 .composer:focus-within 的边框+光晕承担，去掉矩形 focus 轮廓 */
+.composer textarea:focus-visible,
+.composer textarea:focus {
+  outline: none;
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--gborder-soft));
+}
+
 .composer textarea {
   min-height: 30px;
   max-height: 132px;
