@@ -427,28 +427,46 @@ export function CampusWorkspace({ session }: { session: SessionPayload }) {
           <Dialog.Portal>
             <Dialog.Overlay className="dialog-overlay" />
             <Dialog.Content className="dialog-content activity-detail">
-              {selectedActivity && (
-                <>
-                  <div className="dialog-heading">
-                    <div>
-                      <Dialog.Title>{activityTitle(selectedActivity)}</Dialog.Title>
-                      <Dialog.Description>
-                        {readableTime(selectedActivity.start_time || selectedActivity.deadline)}
-                        {selectedActivity.location ? ` · ${String(selectedActivity.location)}` : ""}
-                      </Dialog.Description>
+              {selectedActivity && (() => {
+                const a = selectedActivity;
+                const startText = a.start_time ? readableTime(a.start_time) : "";
+                const endText = a.end_time ? readableTime(a.end_time) : "";
+                const timeText = startText && endText && startText !== endText ? `${startText} ~ ${endText}` : startText || (a.deadline ? `报名截止 ${readableTime(a.deadline)}` : "");
+                const meta: Array<[string, string]> = [
+                  ["活动时间", timeText],
+                  ["报名截止", a.deadline ? readableTime(a.deadline) : ""],
+                  ["活动地点", String(a.location || "待核验")],
+                  ["主办方", String(a.organizer || "")],
+                  ["联系方式", String(a.contact || "")],
+                ].filter(([, value]) => value.trim()) as Array<[string, string]>;
+                return (
+                  <>
+                    <div className="dialog-heading">
+                      <div>
+                        <Dialog.Title>{activityTitle(a)}</Dialog.Title>
+                        <Dialog.Description>{a.category || "校园活动"}{a.form ? ` · ${String(a.form)}` : ""}</Dialog.Description>
+                      </div>
+                      <Dialog.Close className="icon-button" aria-label="关闭"><X size={18} /></Dialog.Close>
                     </div>
-                    <Dialog.Close className="icon-button" aria-label="关闭"><X size={18} /></Dialog.Close>
-                  </div>
-                  {selectedActivity.description && (
-                    <p className="activity-detail__body">{decodeRichText(String(selectedActivity.description))}</p>
-                  )}
-                  {typeof selectedActivity.url === "string" && selectedActivity.url && (
-                    <a className="command-button activity-detail__link" href={selectedActivity.url} target="_blank" rel="noreferrer">
-                      <ExternalLink size={15} />查看活动来源
-                    </a>
-                  )}
-                </>
-              )}
+                    <dl className="activity-detail__meta">
+                      {meta.map(([label, value]) => (
+                        <div key={label} className="activity-detail__meta-row">
+                          <dt>{label}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {a.description && (
+                      <p className="activity-detail__body">{decodeRichText(String(a.description))}</p>
+                    )}
+                    {typeof a.url === "string" && a.url && (
+                      <a className="command-button activity-detail__link" href={a.url} target="_blank" rel="noreferrer">
+                        <ExternalLink size={15} />查看活动来源
+                      </a>
+                    )}
+                  </>
+                );
+              })()}
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>

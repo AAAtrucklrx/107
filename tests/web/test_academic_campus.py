@@ -60,7 +60,8 @@ def test_demo_academic_workspace_is_bound_and_labelled(tmp_path) -> None:
         assert any(meeting["periods"] == [3, 4, 5] and meeting["end_time"] == "12:10" for meeting in meetings)
         assert any(meeting["periods"] == [11, 12, 13] and meeting["end_time"] == "21:55" for meeting in meetings)
         evening = next(meeting for meeting in meetings if meeting["periods"] == [11, 12, 13])
-        assert evening["week_numbers"] == list(range(2, 17, 2))
+        # 真实课表（2026-09-03 起数据源为本人教务课表）：晚间课为“大学物理-综合实验B”3~18 周
+        assert evening["week_numbers"] == list(range(3, 19))
 
 
 def test_real_schedule_groups_preserve_multiple_meetings_and_week_parity() -> None:

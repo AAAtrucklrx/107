@@ -11,6 +11,55 @@
  "grades": [
   {
    "semester": "2025年秋季学期",
+   "course_name": "习近平新时代中国特色社会主义思想概论",
+   "credits": 3.0,
+   "score": 82,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "军事技能",
+   "credits": 2.0,
+   "score": 90,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "军事理论",
+   "credits": 2.0,
+   "score": 90,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "基础体育",
+   "credits": 1.0,
+   "score": 84,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "大学生国家安全教育",
+   "credits": 1.0,
+   "score": 90,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "大学生心理学",
+   "credits": 2.0,
+   "score": 88,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "思想道德与法治",
+   "credits": 2.5,
+   "score": 82,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2025年秋季学期",
    "course_name": "数学分析(B1)",
    "credits": 6.0,
    "score": 85,
@@ -25,6 +74,20 @@
   },
   {
    "semester": "2025年秋季学期",
+   "course_name": "英语交流进阶I",
+   "credits": 2.0,
+   "score": 78,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "英语读写进阶I",
+   "credits": 1.0,
+   "score": 82,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2025年秋季学期",
    "course_name": "计算机程序设计(L)",
    "credits": 3.0,
    "score": 79,
@@ -32,126 +95,213 @@
   },
   {
    "semester": "2026年春季学期",
-   "course_name": "数据结构A",
-   "credits": 4.0,
-   "score": 86,
-   "grade_point": 3.7
+   "course_name": "“科学与社会”研讨课",
+   "credits": 1.0,
+   "score": 93,
+   "grade_point": 4.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "中国近现代史纲要",
+   "credits": 2.5,
+   "score": 83,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "代数结构",
+   "credits": 3.0,
+   "score": 84,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "力学B",
+   "credits": 2.5,
+   "score": 80,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "大学物理-基础实验B",
+   "credits": 1.0,
+   "score": 80,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "散打I",
+   "credits": 1.0,
+   "score": 84,
+   "grade_point": 3.3
   },
   {
    "semester": "2026年春季学期",
    "course_name": "数学分析(B2)",
    "credits": 6.0,
-   "score": 82,
-   "grade_point": 3.3
+   "score": 72,
+   "grade_point": 2.3
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "数据结构A",
+   "credits": 4.0,
+   "score": 78,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "热学B",
+   "credits": 1.5,
+   "score": 79,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "社会主义发展史",
+   "credits": 1.0,
+   "score": 90,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "系统程序设计基础",
+   "credits": 2.5,
+   "score": 86,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "英语交流进阶II",
+   "credits": 2.0,
+   "score": 90,
+   "grade_point": 4.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "英语读写进阶II",
+   "credits": 1.0,
+   "score": 78,
+   "grade_point": 3.0
   },
   {
    "semester": "2026年春季学期",
    "course_name": "面向科学问题求解的编程实践",
    "credits": 2.0,
-   "score": 90,
-   "grade_point": 4.0
+   "score": 84,
+   "grade_point": 3.3
   }
  ],
  "courses": [
   {
-   "course_code": "MATH1008",
-   "course_name": "数学分析(B3)",
-   "teacher": "演示教师甲",
-   "credits": 6.0,
-   "time": "周一 1~16周 第1-2节 07:50-09:25；周三 1~16周 第1-2节 07:50-09:25",
-   "location": "3C201 / 3C202",
+   "course_code": "CS1519.01",
+   "course_name": "程序调试方法",
+   "teacher": "",
+   "credits": 1,
+   "time": "周五 2~11周 第6-9节 西区电三楼406",
+   "location": "西区电三楼406",
    "semester": "2026-2027-1",
-   "meetings": [
-    {
-     "day": "周一",
-     "weekday": 1,
-     "weeks": "1~16周",
-     "periods": [
-      1,
-      2
-     ],
-     "start_time": "07:50",
-     "end_time": "09:25",
-     "location": "3C201",
-     "raw": "周一 1~16周 第1-2节"
-    },
-    {
-     "day": "周三",
-     "weekday": 3,
-     "weeks": "1~16周",
-     "periods": [
-      1,
-      2
-     ],
-     "start_time": "07:50",
-     "end_time": "09:25",
-     "location": "3C202",
-     "raw": "周三 1~16周 第1-2节"
-    }
-   ]
+   "schedule_json": "[]"
   },
   {
-   "course_code": "CS2502A",
-   "course_name": "数据结构A",
-   "teacher": "演示教师乙",
-   "credits": 4.0,
-   "time": "周二 1~16周 第3-5节 09:45-12:10",
-   "location": "3A313",
-   "semester": "2026-2027-1"
+   "course_code": "011152.01",
+   "course_name": "模拟与数字电路实验",
+   "teacher": "",
+   "credits": 1,
+   "time": "周四 5~14周 第6-9节 电三楼406",
+   "location": "电三楼406",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
   },
   {
-   "course_code": "EE2506A",
-   "course_name": "模拟与数字电路A",
-   "teacher": "演示教师丙",
-   "credits": 4.0,
-   "time": "周四 1~16周 第6-7节 14:00-15:35",
-   "location": "3C301",
-   "semester": "2026-2027-1"
+   "course_code": "PHYS1009B.02",
+   "course_name": "大学物理-综合实验B",
+   "teacher": "",
+   "credits": 0.5,
+   "time": "周一 3~18周 第11-13节 东区教1楼物理实验室",
+   "location": "东区教1楼物理实验室",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
   },
   {
-   "course_code": "PHYS1002B",
-   "course_name": "电磁学B",
-   "teacher": "演示教师丁",
-   "credits": 4.0,
-   "time": "周五 1~16周 第8-10节 15:55-18:20",
-   "location": "3A112",
-   "semester": "2026-2027-1"
-  },
-  {
-   "course_code": "MARX1002",
-   "course_name": "马克思主义基本原理",
-   "teacher": "演示教师戊",
-   "credits": 3.0,
-   "time": "周一 1~16周 第8-10节 15:55-18:20",
-   "location": "2105",
-   "semester": "2026-2027-1"
-  },
-  {
-   "course_code": "CS2003",
-   "course_name": "系统程序设计基础",
-   "teacher": "演示教师己",
-   "credits": 2.5,
-   "time": "周三 2~16(双)周 第11-13节 19:30-21:55",
-   "location": "3C302",
-   "semester": "2026-2027-1"
-  },
-  {
-   "course_code": "FL1002",
-   "course_name": "英语文化与沟通",
-   "teacher": "演示教师庚",
-   "credits": 2.0,
-   "time": "周四 1~16周 第3-4节 09:45-11:20",
-   "location": "2206",
-   "semester": "2026-2027-1"
-  },
-  {
-   "course_code": "PE1003",
+   "course_code": "PE00127.10",
    "course_name": "游泳",
-   "teacher": "演示教师辛",
-   "credits": 1.0,
-   "time": "周二 1~16周 第6-7节 14:00-15:35",
-   "location": "中区游泳馆",
-   "semester": "2026-2027-1"
+   "teacher": "",
+   "credits": 1,
+   "time": "周一 1~18周 第3-4节 中区游泳馆（初级班）",
+   "location": "中区游泳馆（初级班）",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "011040.02",
+   "course_name": "图论",
+   "teacher": "",
+   "credits": 3,
+   "time": "周二 1~15周 第6-7节 3C301；周四 2~15周 第1-2节 3C301；周日 2周 第6-7节 3C301",
+   "location": "3C301",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "011144.04",
+   "course_name": "计算机网络",
+   "teacher": "",
+   "credits": 3.5,
+   "time": "周一 1~15周 第1-2节 5203；周三 1~15周 第1-2节 5203",
+   "location": "5203",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "CS1002A.02",
+   "course_name": "计算系统概论A",
+   "teacher": "",
+   "credits": 4,
+   "time": "周五 1~18周 第3-5节 3C302",
+   "location": "3C302",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "EE2506A.02",
+   "course_name": "模拟与数字电路A",
+   "teacher": "",
+   "credits": 4,
+   "time": "周二 1~18周 第3-4节 3C301；周四 1~18周 第3-4节 3C301",
+   "location": "3C301",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "MARX1011.06",
+   "course_name": "马克思主义基本原理",
+   "teacher": "",
+   "credits": 2.5,
+   "time": "周一 1~16周 第8-10节 2105",
+   "location": "2105",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "FL1110A.01",
+   "course_name": "英语文化与沟通",
+   "teacher": "",
+   "credits": 1,
+   "time": "周二 1~8周 第1-2节 2206",
+   "location": "2206",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
+  },
+  {
+   "course_code": "PHYS1004C.07",
+   "course_name": "电磁学C",
+   "teacher": "",
+   "credits": 3,
+   "time": "周三 1~15周 第3-4节 3A313；周五 1~15周 第1-2节 3A313",
+   "location": "3A313",
+   "semester": "2026-2027-1",
+   "schedule_json": "[]"
   }
  ],
  "program": {
@@ -1968,5 +2118,9 @@
     "category": "毕业论文"
    }
   ]
+ },
+ "academic_overview": {
+  "gpa": 3.27,
+  "passed_credits": 60.5
  }
 }
