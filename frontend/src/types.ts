@@ -246,12 +246,22 @@ export interface AcademicCourses {
   limitations: string[];
 }
 
+export interface TeachWeekInfo {
+  currentSemester: string;
+  weekIndex: number;
+  dayIndex: number;
+  isInSemester: boolean;
+  source: string;
+}
+
 export interface AcademicSchedule {
   semester: string;
   semester_code: string;
   semester_start: string;
   total_weeks: number;
   current_week: number | null;
+  /** 教务官方当前教学周（CAS 登录用户；官方值已校准 current_week） */
+  teach_week?: TeachWeekInfo | null;
   courses: AcademicCourse[];
   unparsed_courses: AcademicUnparsedCourse[];
   source: DataSource;

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import date as Date
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,10 @@ from xiaowo_web.settings import DEMO_STUDENT_ID, PROJECT_ROOT
 
 
 DEMO_FIXTURE = PROJECT_ROOT / "fixtures" / "demo" / f"{DEMO_STUDENT_ID}.json"
+
+# 教务官方教学周缓存：{student_id: (monotonic, data)}，TTL 30 分钟（教学周一天内不变）
+_TEACH_WEEK_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_TEACH_WEEK_TTL = 1800.0
 
 
 class AcademicService:
@@ -111,11 +116,44 @@ class AcademicService:
             result.get("courses") or [],
             semester=str(result.get("semester") or ""),
         )
+        teach_week = self._official_teach_week(principal)
+        structured["teach_week"] = teach_week
+        # 官方教学周校准：覆盖本地推算的 current_week（前端课表默认按教学周显示）
+        if teach_week and teach_week.get("isInSemester"):
+            try:
+                structured["current_week"] = int(teach_week["weekIndex"])
+            except (TypeError, ValueError):
+                pass
         return {
             **structured,
             "source": self._tool_source(result),
             "limitations": [result["message"]] if result.get("message") else [],
         }
+
+    def _official_teach_week(self, principal: Principal) -> dict[str, Any] | None:
+        """教务官方当前教学周（登录用户）；失败/未登录返回 None，不阻塞课表。"""
+        if principal.auth_mode != "cas":
+            return None
+        sid = principal.principal_id
+        now = time.monotonic()
+        cached = _TEACH_WEEK_CACHE.get(sid)
+        if cached and now - cached[0] < _TEACH_WEEK_TTL:
+            return cached[1]
+        try:
+            from services.service_container import ServiceContainer
+
+            with self._student_context(sid):
+                container = ServiceContainer()
+                if not container.has_cas():
+                    return None
+                data = container.cas_client.get_current_teach_week()
+            if isinstance(data, dict) and data.get("weekIndex") is not None and "error" not in data:
+                data["source"] = "jw"
+                _TEACH_WEEK_CACHE[sid] = (now, data)
+                return data
+        except Exception:
+            return None
+        return None
 
     @staticmethod
     def _structured_schedule(

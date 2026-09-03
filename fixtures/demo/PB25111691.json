@@ -1,870 +1,1972 @@
 {
-  "fixture_version": 1,
-  "synthetic": true,
-  "generated_for": "xiaowo-demo",
-  "user": {
-    "id": "PB25111691",
-    "name": "测试",
-    "major": "计算机科学与技术",
-    "grade": "2025级"
+ "fixture_version": 1,
+ "synthetic": true,
+ "generated_for": "xiaowo-demo",
+ "user": {
+  "id": "PB25111691",
+  "name": "测试",
+  "major": "计算机科学与技术",
+  "grade": "2025级"
+ },
+ "grades": [
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "数学分析(B1)",
+   "credits": 6.0,
+   "score": 85,
+   "grade_point": 3.7
   },
-  "grades": [
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "线性代数(B1)",
+   "credits": 4.0,
+   "score": 83,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2025年秋季学期",
+   "course_name": "计算机程序设计(L)",
+   "credits": 3.0,
+   "score": 79,
+   "grade_point": 3.0
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "数据结构A",
+   "credits": 4.0,
+   "score": 86,
+   "grade_point": 3.7
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "数学分析(B2)",
+   "credits": 6.0,
+   "score": 82,
+   "grade_point": 3.3
+  },
+  {
+   "semester": "2026年春季学期",
+   "course_name": "面向科学问题求解的编程实践",
+   "credits": 2.0,
+   "score": 90,
+   "grade_point": 4.0
+  }
+ ],
+ "courses": [
+  {
+   "course_code": "MATH1008",
+   "course_name": "数学分析(B3)",
+   "teacher": "演示教师甲",
+   "credits": 6.0,
+   "time": "周一 1~16周 第1-2节 07:50-09:25；周三 1~16周 第1-2节 07:50-09:25",
+   "location": "3C201 / 3C202",
+   "semester": "2026-2027-1",
+   "meetings": [
     {
-      "semester": "2025年秋季学期",
-      "course_name": "数学分析(B1)",
-      "credits": 6.0,
-      "score": 85,
-      "grade_point": 3.7
+     "day": "周一",
+     "weekday": 1,
+     "weeks": "1~16周",
+     "periods": [
+      1,
+      2
+     ],
+     "start_time": "07:50",
+     "end_time": "09:25",
+     "location": "3C201",
+     "raw": "周一 1~16周 第1-2节"
     },
     {
-      "semester": "2025年秋季学期",
-      "course_name": "线性代数(B1)",
-      "credits": 4.0,
-      "score": 83,
-      "grade_point": 3.3
-    },
-    {
-      "semester": "2025年秋季学期",
-      "course_name": "计算机程序设计(L)",
-      "credits": 3.0,
-      "score": 79,
-      "grade_point": 3.0
-    },
-    {
-      "semester": "2026年春季学期",
-      "course_name": "数据结构A",
-      "credits": 4.0,
-      "score": 86,
-      "grade_point": 3.7
-    },
-    {
-      "semester": "2026年春季学期",
-      "course_name": "数学分析(B2)",
-      "credits": 6.0,
-      "score": 82,
-      "grade_point": 3.3
-    },
-    {
-      "semester": "2026年春季学期",
-      "course_name": "面向科学问题求解的编程实践",
-      "credits": 2.0,
-      "score": 90,
-      "grade_point": 4.0
+     "day": "周三",
+     "weekday": 3,
+     "weeks": "1~16周",
+     "periods": [
+      1,
+      2
+     ],
+     "start_time": "07:50",
+     "end_time": "09:25",
+     "location": "3C202",
+     "raw": "周三 1~16周 第1-2节"
     }
+   ]
+  },
+  {
+   "course_code": "CS2502A",
+   "course_name": "数据结构A",
+   "teacher": "演示教师乙",
+   "credits": 4.0,
+   "time": "周二 1~16周 第3-5节 09:45-12:10",
+   "location": "3A313",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "EE2506A",
+   "course_name": "模拟与数字电路A",
+   "teacher": "演示教师丙",
+   "credits": 4.0,
+   "time": "周四 1~16周 第6-7节 14:00-15:35",
+   "location": "3C301",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "PHYS1002B",
+   "course_name": "电磁学B",
+   "teacher": "演示教师丁",
+   "credits": 4.0,
+   "time": "周五 1~16周 第8-10节 15:55-18:20",
+   "location": "3A112",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "MARX1002",
+   "course_name": "马克思主义基本原理",
+   "teacher": "演示教师戊",
+   "credits": 3.0,
+   "time": "周一 1~16周 第8-10节 15:55-18:20",
+   "location": "2105",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "CS2003",
+   "course_name": "系统程序设计基础",
+   "teacher": "演示教师己",
+   "credits": 2.5,
+   "time": "周三 2~16(双)周 第11-13节 19:30-21:55",
+   "location": "3C302",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "FL1002",
+   "course_name": "英语文化与沟通",
+   "teacher": "演示教师庚",
+   "credits": 2.0,
+   "time": "周四 1~16周 第3-4节 09:45-11:20",
+   "location": "2206",
+   "semester": "2026-2027-1"
+  },
+  {
+   "course_code": "PE1003",
+   "course_name": "游泳",
+   "teacher": "演示教师辛",
+   "credits": 1.0,
+   "time": "周二 1~16周 第6-7节 14:00-15:35",
+   "location": "中区游泳馆",
+   "semester": "2026-2027-1"
+  }
+ ],
+ "program": {
+  "program_id": 3011,
+  "name": "计算机科学与技术专业培养方案",
+  "college": "215计算机科学与技术学院",
+  "grade": "2025级",
+  "personal": false,
+  "source": "generic",
+  "fallback_from_personal": false,
+  "totalCredits": 167,
+  "modules": [
+   {
+    "category": "通修课程",
+    "required_credits": 69.5,
+    "course_count": 163
+   },
+   {
+    "category": "专业基础课程",
+    "required_credits": 18.5,
+    "course_count": 7
+   },
+   {
+    "category": "专业核心课程",
+    "required_credits": 30.0,
+    "course_count": 8
+   },
+   {
+    "category": "专业选修课程",
+    "required_credits": 0.0,
+    "course_count": 43
+   },
+   {
+    "category": "毕业论文",
+    "required_credits": 8.0,
+    "course_count": 1
+   }
   ],
   "courses": [
-    {
-      "course_code": "MATH1008",
-      "course_name": "数学分析(B3)",
-      "teacher": "演示教师甲",
-      "credits": 6.0,
-      "time": "周一 1~16周 第1-2节 07:50-09:25；周三 1~16周 第1-2节 07:50-09:25",
-      "location": "3C201 / 3C202",
-      "semester": "2026-2027-1",
-      "meetings": [
-        {
-          "day": "周一",
-          "weekday": 1,
-          "weeks": "1~16周",
-          "periods": [1, 2],
-          "start_time": "07:50",
-          "end_time": "09:25",
-          "location": "3C201",
-          "raw": "周一 1~16周 第1-2节"
-        },
-        {
-          "day": "周三",
-          "weekday": 3,
-          "weeks": "1~16周",
-          "periods": [1, 2],
-          "start_time": "07:50",
-          "end_time": "09:25",
-          "location": "3C202",
-          "raw": "周三 1~16周 第1-2节"
-        }
-      ]
-    },
-    {
-      "course_code": "CS2502A",
-      "course_name": "数据结构A",
-      "teacher": "演示教师乙",
-      "credits": 4.0,
-      "time": "周二 1~16周 第3-5节 09:45-12:10",
-      "location": "3A313",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "EE2506A",
-      "course_name": "模拟与数字电路A",
-      "teacher": "演示教师丙",
-      "credits": 4.0,
-      "time": "周四 1~16周 第6-7节 14:00-15:35",
-      "location": "3C301",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "PHYS1002B",
-      "course_name": "电磁学B",
-      "teacher": "演示教师丁",
-      "credits": 4.0,
-      "time": "周五 1~16周 第8-10节 15:55-18:20",
-      "location": "3A112",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "MARX1002",
-      "course_name": "马克思主义基本原理",
-      "teacher": "演示教师戊",
-      "credits": 3.0,
-      "time": "周一 1~16周 第8-10节 15:55-18:20",
-      "location": "2105",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "CS2003",
-      "course_name": "系统程序设计基础",
-      "teacher": "演示教师己",
-      "credits": 2.5,
-      "time": "周三 2~16(双)周 第11-13节 19:30-21:55",
-      "location": "3C302",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "FL1002",
-      "course_name": "英语文化与沟通",
-      "teacher": "演示教师庚",
-      "credits": 2.0,
-      "time": "周四 1~16周 第3-4节 09:45-11:20",
-      "location": "2206",
-      "semester": "2026-2027-1"
-    },
-    {
-      "course_code": "PE1003",
-      "course_name": "游泳",
-      "teacher": "演示教师辛",
-      "credits": 1.0,
-      "time": "周二 1~16周 第6-7节 14:00-15:35",
-      "location": "中区游泳馆",
-      "semester": "2026-2027-1"
-    }
-  ],
-  "program": {
-    "program_id": 3011,
-    "name": "计算机科学与技术专业培养方案",
-    "college": "215计算机科学与技术学院",
-    "grade": "2025级",
-    "personal": false,
-    "source": "generic",
-    "fallback_from_personal": false,
-    "totalCredits": 228.5,
-    "modules": [
-      {
-        "category": "专业基础课程",
-        "required_credits": 18.5,
-        "course_count": 7
-      },
-      {
-        "category": "专业核心课程",
-        "required_credits": 30.0,
-        "course_count": 8
-      },
-      {
-        "category": "专业选修课程",
-        "required_credits": 109.5,
-        "course_count": 43
-      },
-      {
-        "category": "毕业论文",
-        "required_credits": 8.0,
-        "course_count": 1
-      },
-      {
-        "category": "通修课程",
-        "required_credits": 62.5,
-        "course_count": 26
-      }
-    ],
-    "courses": [
-      {
-        "code": "011103",
-        "name": "代数结构",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "1春",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "CS2003",
-        "name": "系统程序设计基础",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "1春",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "CS2002",
-        "name": "数理逻辑基础",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "2春",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "STAT2002",
-        "name": "概率论与数理统计",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "2春",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "011040",
-        "name": "图论",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "2秋",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "011152",
-        "name": "模拟与数字电路实验",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "2秋",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "EE2506A",
-        "name": "模拟与数字电路A",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "2秋",
-        "category": "专业基础课程"
-      },
-      {
-        "code": "011145",
-        "name": "计算机组成原理",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "2春",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011174",
-        "name": "操作系统原理与设计",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "2春",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "CS2502A",
-        "name": "数据结构A",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "2秋",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011119",
-        "name": "人工智能基础",
-        "required": "必修",
-        "credit": 3.5,
-        "term": "3春",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011147",
-        "name": "数据库系统及应用",
-        "required": "必修",
-        "credit": 3.5,
-        "term": "3春",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011144",
-        "name": "计算机网络",
-        "required": "必修",
-        "credit": 3.5,
-        "term": "3秋",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011146",
-        "name": "算法基础",
-        "required": "必修",
-        "credit": 3.5,
-        "term": "3秋",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "011163",
-        "name": "编译原理和技术",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "3秋",
-        "category": "专业核心课程"
-      },
-      {
-        "code": "001549",
-        "name": "数理方程B",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "2春",
-        "category": "专业选修课程/选修"
-      },
-      {
-        "code": "001548",
-        "name": "复变函数B",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "2秋",
-        "category": "专业选修课程/选修"
-      },
-      {
-        "code": "MATH2001",
-        "name": "计算方法",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修"
-      },
-      {
-        "code": "017144",
-        "name": "随机过程B",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3秋",
-        "category": "专业选修课程/选修"
-      },
-      {
-        "code": "CS4009",
-        "name": "程序设计进阶与实践",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "1春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4024",
-        "name": "面向科学问题求解的编程实践",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "1春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4029",
-        "name": "国产算力平台创新实践",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "2夏",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4012",
-        "name": "运筹学基础",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "2春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4032",
-        "name": "面向对象程序设计",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "2春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4023",
-        "name": "数据科学导论",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "2秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011044",
-        "name": "计算机导论",
-        "required": "选修",
-        "credit": 1.0,
-        "term": "2秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "010009",
-        "name": "模式识别导论",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "210712",
-        "name": "自然语言处理",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4001",
-        "name": "数字图像处理与分析",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4028",
-        "name": "深度学习原理与实践",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "EE3502",
-        "name": "机器学习B",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "EE4005",
-        "name": "知识工程",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011186",
-        "name": "大数据算法",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "COMP5001P",
-        "name": "程序语言设计与程序分析",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS2001",
-        "name": "软件工程导论",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4005",
-        "name": "形式化方法导引",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4017",
-        "name": "最优化导论",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011184",
-        "name": "信息安全导论",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4004",
-        "name": "区块链技术与应用",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4026",
-        "name": "计算机安全原理与实践",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4027",
-        "name": "人工智能安全",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4014",
-        "name": "计算机体系结构",
-        "required": "选修",
-        "credit": 4.0,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4025",
-        "name": "并行计算A",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4033",
-        "name": "网络系统实验",
-        "required": "选修",
-        "credit": 1.5,
-        "term": "3春",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011179",
-        "name": "Web信息处理与应用",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "210706",
-        "name": "脑与认知科学导论",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4002",
-        "name": "计算机图形学理论和应用",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4010",
-        "name": "数理逻辑进阶与应用",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011187",
-        "name": "数据隐私的方法伦理和实践",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4030",
-        "name": "智能计算系统导论",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4031",
-        "name": "智能计算软件优化",
-        "required": "选修",
-        "credit": 3.0,
-        "term": "3秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "006196",
-        "name": "多媒体技术基础",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "EE3004",
-        "name": "人工智能实践",
-        "required": "选修",
-        "credit": 1.0,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4008",
-        "name": "软件工程实践",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4011",
-        "name": "算法博弈论",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4018",
-        "name": "量子计算与机器学习",
-        "required": "选修",
-        "credit": 3.5,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "011182",
-        "name": "嵌入式系统设计方法",
-        "required": "选修",
-        "credit": 2.5,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "CS4019",
-        "name": "计算系统综合实践",
-        "required": "选修",
-        "credit": 2.0,
-        "term": "4秋",
-        "category": "专业选修课程/选修/课程分组"
-      },
-      {
-        "code": "THESIS",
-        "name": "毕业论文",
-        "required": "必修",
-        "credit": 8.0,
-        "term": "空",
-        "category": "毕业论文"
-      },
-      {
-        "code": "PE00001",
-        "name": "基础体育",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "",
-        "category": "通修课程/体育通修/必修"
-      },
-      {
-        "code": "MIL1001",
-        "name": "军事理论",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "1秋",
-        "category": "通修课程/军事教育"
-      },
-      {
-        "code": "MIL1002",
-        "name": "军事技能",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "1秋",
-        "category": "通修课程/军事教育"
-      },
-      {
-        "code": "EDUS1001",
-        "name": "劳动教育",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "3秋",
-        "category": "通修课程/劳动教育"
-      },
-      {
-        "code": "MARX1010",
-        "name": "中国近现代史纲要",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "1春",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1012",
-        "name": "思想道德与法治",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "1秋",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1014",
-        "name": "习近平新时代中国特色社会主义思想概论",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "1秋",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1013",
-        "name": "毛泽东思想和中国特色社会主义理论体系概论",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "2春",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1011",
-        "name": "马克思主义基本原理",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "2秋",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1005",
-        "name": "思想政治理论课实践",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "3秋",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MARX1006",
-        "name": "形势与政策(讲座)",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "3秋",
-        "category": "通修课程/政治通修"
-      },
-      {
-        "code": "MATH1007",
-        "name": "数学分析(B2)",
-        "required": "必修",
-        "credit": 6.0,
-        "term": "1春",
-        "category": "通修课程/数学通修"
-      },
-      {
-        "code": "MATH1006",
-        "name": "数学分析(B1)",
-        "required": "必修",
-        "credit": 6.0,
-        "term": "1秋",
-        "category": "通修课程/数学通修"
-      },
-      {
-        "code": "MATH1009",
-        "name": "线性代数(B1)",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "1秋",
-        "category": "通修课程/数学通修"
-      },
-      {
-        "code": "HS1580M",
-        "name": "大学生国家安全教育",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "1秋",
-        "category": "通修课程/核心通识课程/核心通识必修课/安全教育"
-      },
-      {
-        "code": "HS1531",
-        "name": "大学生心理学",
-        "required": "必修",
-        "credit": 2.0,
-        "term": "1秋,1春",
-        "category": "通修课程/核心通识课程/核心通识必修课/心理健康"
-      },
-      {
-        "code": "FS1001",
-        "name": "“科学与社会”研讨课",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "1秋",
-        "category": "通修课程/核心通识课程/核心通识必修课/研讨课程"
-      },
-      {
-        "code": "HS1003",
-        "name": "艺术实践",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "3秋",
-        "category": "通修课程/核心通识课程/核心通识必修课/艺术实践"
-      },
-      {
-        "code": "PHYS1001B",
-        "name": "力学B",
-        "required": "必修",
-        "credit": 2.5,
-        "term": "1春",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "PHYS1002B",
-        "name": "热学B",
-        "required": "必修",
-        "credit": 1.5,
-        "term": "1春",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "PHYS1008B",
-        "name": "大学物理-基础实验B",
-        "required": "必修",
-        "credit": 1.0,
-        "term": "1春",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "PHYS1010",
-        "name": "量子物理",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "2春",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "PHYS1004C",
-        "name": "电磁学C",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "2秋",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "PHYS1009B",
-        "name": "大学物理-综合实验B",
-        "required": "必修",
-        "credit": 0.5,
-        "term": "2秋",
-        "category": "通修课程/物理通修"
-      },
-      {
-        "code": "CS1003",
-        "name": "计算机程序设计",
-        "required": "必修",
-        "credit": 3.0,
-        "term": "1秋",
-        "category": "通修课程/计算机通修"
-      },
-      {
-        "code": "CS1002A",
-        "name": "计算系统概论A",
-        "required": "必修",
-        "credit": 4.0,
-        "term": "2秋",
-        "category": "通修课程/计算机通修"
-      }
-    ]
-  }
+   {
+    "code": "CS1002A",
+    "name": "计算系统概论A",
+    "required": "必修",
+    "credit": "4",
+    "term": "2秋",
+    "category": "通修课程/计算机通修"
+   },
+   {
+    "code": "CS1003",
+    "name": "计算机程序设计",
+    "required": "必修",
+    "credit": "3",
+    "term": "1秋",
+    "category": "通修课程/计算机通修"
+   },
+   {
+    "code": "EDUS1001",
+    "name": "劳动教育",
+    "required": "必修",
+    "credit": "1",
+    "term": "3秋",
+    "category": "通修课程/劳动教育"
+   },
+   {
+    "code": "FL1007",
+    "name": "英语交流进阶I",
+    "required": "必修",
+    "credit": "2",
+    "term": "1秋",
+    "category": "通修课程/英语通修/英语通修L3/必修"
+   },
+   {
+    "code": "FL1008",
+    "name": "英语交流进阶II",
+    "required": "必修",
+    "credit": "2",
+    "term": "1春",
+    "category": "通修课程/英语通修/英语通修L3/必修"
+   },
+   {
+    "code": "FL1009",
+    "name": "英语交流进阶III",
+    "required": "必修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/必修"
+   },
+   {
+    "code": "FL1010",
+    "name": "英语读写进阶I",
+    "required": "必修",
+    "credit": "1",
+    "term": "1秋",
+    "category": "通修课程/英语通修/英语通修L3/必修"
+   },
+   {
+    "code": "FL1011",
+    "name": "英语读写进阶II",
+    "required": "必修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/英语通修/英语通修L3/必修"
+   },
+   {
+    "code": "FL1101A",
+    "name": "高级英语阅读A",
+    "required": "选修",
+    "credit": "2",
+    "term": "",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1102A",
+    "name": "科普英语交流A",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1103A",
+    "name": "跨文化交流",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1104A",
+    "name": "新闻英语",
+    "required": "选修",
+    "credit": "2",
+    "term": "",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1105A",
+    "name": "学术英语读写",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1106A",
+    "name": "批判性思维与英语沟通",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1107A",
+    "name": "英语读写高阶",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1108A",
+    "name": "英语科技文献阅读",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1109A",
+    "name": "商务英语沟通",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1110A",
+    "name": "英语文化与沟通",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1114A",
+    "name": "英语高级写作",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1115A",
+    "name": "高级英语口语",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "FL1116A",
+    "name": "英语交流高阶",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋,2春",
+    "category": "通修课程/英语通修/英语通修L3/英语通修拓展A"
+   },
+   {
+    "code": "MIL1001",
+    "name": "军事理论",
+    "required": "必修",
+    "credit": "2",
+    "term": "1秋",
+    "category": "通修课程/军事教育"
+   },
+   {
+    "code": "MIL1002",
+    "name": "军事技能",
+    "required": "必修",
+    "credit": "2",
+    "term": "1秋",
+    "category": "通修课程/军事教育"
+   },
+   {
+    "code": "MATH1006",
+    "name": "数学分析(B1)",
+    "required": "必修",
+    "credit": "6",
+    "term": "1秋",
+    "category": "通修课程/数学通修"
+   },
+   {
+    "code": "MATH1007",
+    "name": "数学分析(B2)",
+    "required": "必修",
+    "credit": "6",
+    "term": "1春",
+    "category": "通修课程/数学通修"
+   },
+   {
+    "code": "MATH1009",
+    "name": "线性代数(B1)",
+    "required": "必修",
+    "credit": "4",
+    "term": "1秋",
+    "category": "通修课程/数学通修"
+   },
+   {
+    "code": "PE00001",
+    "name": "基础体育",
+    "required": "必修",
+    "credit": "1",
+    "term": "1秋",
+    "category": "通修课程/体育通修/必修"
+   },
+   {
+    "code": "103T01",
+    "name": "篮球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T02",
+    "name": "排球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T03",
+    "name": "足球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T04",
+    "name": "乒乓球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T05",
+    "name": "羽毛球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T07",
+    "name": "武术",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T08",
+    "name": "健美",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T09",
+    "name": "健美操",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T12",
+    "name": "形体与健康",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T14",
+    "name": "网球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T28",
+    "name": "体适能",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T29",
+    "name": "手球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T30",
+    "name": "野外生存",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T33",
+    "name": "艺术体操",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T34",
+    "name": "空手道",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T35",
+    "name": "防身自卫术",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T36",
+    "name": "跆拳道",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T38",
+    "name": "拳击",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T39",
+    "name": "散打",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T40",
+    "name": "瑜伽",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T41",
+    "name": "国际体育舞蹈(男步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T42",
+    "name": "国际体育舞蹈(女步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T43",
+    "name": "拓展训练",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "103T44",
+    "name": "独轮车教学",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00002*",
+    "name": "基础体育选项",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00003*",
+    "name": "体育选项(1)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00004*",
+    "name": "体育选项(2)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00101",
+    "name": "篮球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00102",
+    "name": "篮球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00103",
+    "name": "排球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00104",
+    "name": "排球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00105",
+    "name": "足球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00106",
+    "name": "足球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00107",
+    "name": "乒乓球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00108",
+    "name": "乒乓球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00109",
+    "name": "羽毛球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00110",
+    "name": "羽毛球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00111",
+    "name": "健美I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00112",
+    "name": "健美II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00113",
+    "name": "健美操I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00114",
+    "name": "健美操II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00115",
+    "name": "网球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00116",
+    "name": "网球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00117",
+    "name": "养生(1)",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00118",
+    "name": "养生(2)",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00119",
+    "name": "体适能I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00120",
+    "name": "体适能II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00121",
+    "name": "手球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00122",
+    "name": "手球II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00123",
+    "name": "野外生存I",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00124",
+    "name": "野外生存II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00125w",
+    "name": "跆拳道I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00126w",
+    "name": "跆拳道II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00127",
+    "name": "游泳",
+    "required": "选修",
+    "credit": "1",
+    "term": "1秋,1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00128w",
+    "name": "拳击I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00129w",
+    "name": "拳击II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00130w",
+    "name": "散打I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00131w",
+    "name": "散打II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00132",
+    "name": "瑜伽I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00133",
+    "name": "瑜伽II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00134",
+    "name": "国际体育舞蹈I(男步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00135",
+    "name": "国际体育舞蹈I(女步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00136",
+    "name": "国际体育舞蹈II(男步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00137",
+    "name": "国际体育舞蹈II(女步)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00138",
+    "name": "拓展训练I",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00139",
+    "name": "拓展训练II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00140",
+    "name": "武术I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00141",
+    "name": "武术II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00142",
+    "name": "形体与健康I",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00143",
+    "name": "形体与健康II",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00144w",
+    "name": "独轮车",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00145",
+    "name": "自卫防身术I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00146",
+    "name": "自卫防身术II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00147",
+    "name": "户外羽毛球",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00148",
+    "name": "龙狮运动I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00149",
+    "name": "龙狮运动II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00150",
+    "name": "排舞Ⅰ",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00151",
+    "name": "排舞Ⅱ",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00152",
+    "name": "健身龙舞Ⅰ",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00153",
+    "name": "健身龙舞Ⅱ",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00154",
+    "name": "花样滑冰I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00155",
+    "name": "花样滑冰II",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00156",
+    "name": "手球I",
+    "required": "选修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00157",
+    "name": "匹克球ll",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00500*",
+    "name": "体育选项与俱乐部课程",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00501",
+    "name": "篮球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00502",
+    "name": "排球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00503",
+    "name": "乒乓球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00504",
+    "name": "羽毛球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00505",
+    "name": "健美I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00506",
+    "name": "网球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00507w",
+    "name": "搏击I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00508",
+    "name": "有氧健身I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00509w",
+    "name": "民族传统体育I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00510",
+    "name": "龙舟I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00511",
+    "name": "手球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00512",
+    "name": "足球I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00513",
+    "name": "自行车I(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00514",
+    "name": "篮球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00515",
+    "name": "排球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00516",
+    "name": "乒乓球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00517",
+    "name": "羽毛球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00518",
+    "name": "健美II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00519",
+    "name": "网球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00520w",
+    "name": "搏击II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00521",
+    "name": "有氧健身II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00522w",
+    "name": "民族传统体育II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00523",
+    "name": "龙舟II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00524",
+    "name": "手球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00525",
+    "name": "足球II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00526",
+    "name": "自行车II(俱乐部)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00527",
+    "name": "极限飞盘(专训)",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00527L",
+    "name": "极限飞盘(俱乐部)",
+    "required": "选修",
+    "credit": "0",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00528",
+    "name": "野战运动(专训)",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00528L",
+    "name": "野战运动(俱乐部)",
+    "required": "选修",
+    "credit": "0",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00529",
+    "name": "龙舟(专训)",
+    "required": "选修",
+    "credit": "1",
+    "term": "",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00530",
+    "name": "自行车(专训)",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00531",
+    "name": "台球(专训)",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PE00532",
+    "name": "越野滑雪（专训）",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋,2春",
+    "category": "通修课程/体育通修/选修"
+   },
+   {
+    "code": "PHYS1001B",
+    "name": "力学B",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "1春",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "PHYS1002B",
+    "name": "热学B",
+    "required": "必修",
+    "credit": "1.5",
+    "term": "1春",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "PHYS1004C",
+    "name": "电磁学C",
+    "required": "必修",
+    "credit": "3",
+    "term": "2秋",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "PHYS1008B",
+    "name": "大学物理-基础实验B",
+    "required": "必修",
+    "credit": "1",
+    "term": "1春",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "PHYS1009B",
+    "name": "大学物理-综合实验B",
+    "required": "必修",
+    "credit": "0.5",
+    "term": "2秋",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "PHYS1010",
+    "name": "量子物理",
+    "required": "必修",
+    "credit": "3",
+    "term": "2春",
+    "category": "通修课程/物理通修"
+   },
+   {
+    "code": "HS1531",
+    "name": "大学生心理学",
+    "required": "必修",
+    "credit": "2",
+    "term": "1秋,1春",
+    "category": "通修课程/核心通识课程/核心通识必修课/心理健康"
+   },
+   {
+    "code": "HS1580M",
+    "name": "大学生国家安全教育",
+    "required": "必修",
+    "credit": "1",
+    "term": "1秋",
+    "category": "通修课程/核心通识课程/核心通识必修课/安全教育"
+   },
+   {
+    "code": "FS1001",
+    "name": "“科学与社会”研讨课",
+    "required": "必修",
+    "credit": "1",
+    "term": "1秋",
+    "category": "通修课程/核心通识课程/核心通识必修课/研讨课程"
+   },
+   {
+    "code": "HS1003",
+    "name": "艺术实践",
+    "required": "必修",
+    "credit": "1",
+    "term": "3秋",
+    "category": "通修课程/核心通识课程/核心通识必修课/艺术实践"
+   },
+   {
+    "code": "MARX1005",
+    "name": "思想政治理论课实践",
+    "required": "必修",
+    "credit": "2",
+    "term": "3秋",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1006",
+    "name": "形势与政策(讲座)",
+    "required": "必修",
+    "credit": "2",
+    "term": "3秋",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1010",
+    "name": "中国近现代史纲要",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "1春",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1011",
+    "name": "马克思主义基本原理",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "2秋",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1012",
+    "name": "思想道德与法治",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "1秋",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1013",
+    "name": "毛泽东思想和中国特色社会主义理论体系概论",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "2春",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "MARX1014",
+    "name": "习近平新时代中国特色社会主义思想概论",
+    "required": "必修",
+    "credit": "3",
+    "term": "1秋",
+    "category": "通修课程/政治通修"
+   },
+   {
+    "code": "011040",
+    "name": "图论",
+    "required": "必修",
+    "credit": "3",
+    "term": "2秋",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "011103",
+    "name": "代数结构",
+    "required": "必修",
+    "credit": "3",
+    "term": "1春",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "011152",
+    "name": "模拟与数字电路实验",
+    "required": "必修",
+    "credit": "1",
+    "term": "2秋",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "CS2002",
+    "name": "数理逻辑基础",
+    "required": "必修",
+    "credit": "2",
+    "term": "2春",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "CS2003",
+    "name": "系统程序设计基础",
+    "required": "必修",
+    "credit": "2.5",
+    "term": "1春",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "EE2506A",
+    "name": "模拟与数字电路A",
+    "required": "必修",
+    "credit": "4",
+    "term": "2秋",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "STAT2002",
+    "name": "概率论与数理统计",
+    "required": "必修",
+    "credit": "3",
+    "term": "2春",
+    "category": "专业基础课程"
+   },
+   {
+    "code": "011119",
+    "name": "人工智能基础",
+    "required": "必修",
+    "credit": "3.5",
+    "term": "3春",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011144",
+    "name": "计算机网络",
+    "required": "必修",
+    "credit": "3.5",
+    "term": "3秋",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011145",
+    "name": "计算机组成原理",
+    "required": "必修",
+    "credit": "4",
+    "term": "2春",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011146",
+    "name": "算法基础",
+    "required": "必修",
+    "credit": "3.5",
+    "term": "3秋",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011147",
+    "name": "数据库系统及应用",
+    "required": "必修",
+    "credit": "3.5",
+    "term": "3春",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011163",
+    "name": "编译原理和技术",
+    "required": "必修",
+    "credit": "4",
+    "term": "3秋",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "011174",
+    "name": "操作系统原理与设计",
+    "required": "必修",
+    "credit": "4",
+    "term": "2春",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "CS2502A",
+    "name": "数据结构A",
+    "required": "必修",
+    "credit": "4",
+    "term": "2秋",
+    "category": "专业核心课程"
+   },
+   {
+    "code": "006196",
+    "name": "多媒体技术基础",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "010009",
+    "name": "模式识别导论",
+    "required": "选修",
+    "credit": "2",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011179",
+    "name": "Web信息处理与应用",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "210706",
+    "name": "脑与认知科学导论",
+    "required": "选修",
+    "credit": "2",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "210712",
+    "name": "自然语言处理",
+    "required": "选修",
+    "credit": "2",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4001",
+    "name": "数字图像处理与分析",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4002",
+    "name": "计算机图形学理论和应用",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4023",
+    "name": "数据科学导论",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4028",
+    "name": "深度学习原理与实践",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "EE3004",
+    "name": "人工智能实践",
+    "required": "选修",
+    "credit": "1",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "EE3502",
+    "name": "机器学习B",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "EE4005",
+    "name": "知识工程",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011186",
+    "name": "大数据算法",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "COMP5001P",
+    "name": "程序语言设计与程序分析",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS2001",
+    "name": "软件工程导论",
+    "required": "选修",
+    "credit": "2",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4005",
+    "name": "形式化方法导引",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4008",
+    "name": "软件工程实践",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4010",
+    "name": "数理逻辑进阶与应用",
+    "required": "选修",
+    "credit": "2",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4011",
+    "name": "算法博弈论",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4012",
+    "name": "运筹学基础",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "2春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4017",
+    "name": "最优化导论",
+    "required": "选修",
+    "credit": "2",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011044",
+    "name": "计算机导论",
+    "required": "选修",
+    "credit": "1",
+    "term": "2秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4009",
+    "name": "程序设计进阶与实践",
+    "required": "选修",
+    "credit": "3",
+    "term": "1春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4024",
+    "name": "面向科学问题求解的编程实践",
+    "required": "选修",
+    "credit": "2",
+    "term": "1春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4032",
+    "name": "面向对象程序设计",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "2春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011184",
+    "name": "信息安全导论",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011187",
+    "name": "数据隐私的方法伦理和实践",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4004",
+    "name": "区块链技术与应用",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4018",
+    "name": "量子计算与机器学习",
+    "required": "选修",
+    "credit": "3.5",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4026",
+    "name": "计算机安全原理与实践",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4027",
+    "name": "人工智能安全",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "011182",
+    "name": "嵌入式系统设计方法",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4014",
+    "name": "计算机体系结构",
+    "required": "选修",
+    "credit": "4",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4019",
+    "name": "计算系统综合实践",
+    "required": "选修",
+    "credit": "2",
+    "term": "4秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4025",
+    "name": "并行计算A",
+    "required": "选修",
+    "credit": "2.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4029",
+    "name": "国产算力平台创新实践",
+    "required": "选修",
+    "credit": "2",
+    "term": "2夏",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4030",
+    "name": "智能计算系统导论",
+    "required": "选修",
+    "credit": "3",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4031",
+    "name": "智能计算软件优化",
+    "required": "选修",
+    "credit": "3",
+    "term": "3秋",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "CS4033",
+    "name": "网络系统实验",
+    "required": "选修",
+    "credit": "1.5",
+    "term": "3春",
+    "category": "专业选修课程/选修/课程分组"
+   },
+   {
+    "code": "001548",
+    "name": "复变函数B",
+    "required": "选修",
+    "credit": "2",
+    "term": "2秋",
+    "category": "专业选修课程/选修"
+   },
+   {
+    "code": "001549",
+    "name": "数理方程B",
+    "required": "选修",
+    "credit": "2",
+    "term": "2春",
+    "category": "专业选修课程/选修"
+   },
+   {
+    "code": "017144",
+    "name": "随机过程B",
+    "required": "选修",
+    "credit": "2",
+    "term": "3秋",
+    "category": "专业选修课程/选修"
+   },
+   {
+    "code": "MATH2001",
+    "name": "计算方法",
+    "required": "选修",
+    "credit": "3",
+    "term": "3春",
+    "category": "专业选修课程/选修"
+   },
+   {
+    "code": "THESIS",
+    "name": "毕业论文",
+    "required": "必修",
+    "credit": "8",
+    "term": "空",
+    "category": "毕业论文"
+   }
+  ]
+ }
 }

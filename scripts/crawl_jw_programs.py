@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 
 CDP = "http://127.0.0.1:9223"
 SEARCH_URL = "https://jw.ustc.edu.cn/for-std/program-search/search"
+# 详情树：2026-09-03 实测 2763/3011 均含“英语通修”分组，树完整
 DETAIL_URL = "https://jw.ustc.edu.cn/for-std/program-search/root-module-json"
 PAGE_SIZE = 50
 
