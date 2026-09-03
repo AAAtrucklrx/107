@@ -196,7 +196,7 @@
   {
    "course_code": "CS1519.01",
    "course_name": "程序调试方法",
-   "teacher": "",
+   "teacher": "徐伟",
    "credits": 1,
    "time": "周五 2~11周 第6-9节 西区电三楼406",
    "location": "西区电三楼406",
@@ -206,7 +206,7 @@
   {
    "course_code": "011152.01",
    "course_name": "模拟与数字电路实验",
-   "teacher": "",
+   "teacher": "卢建良、樊彦恩、赵雅楠",
    "credits": 1,
    "time": "周四 5~14周 第6-9节 电三楼406",
    "location": "电三楼406",
@@ -216,7 +216,7 @@
   {
    "course_code": "PHYS1009B.02",
    "course_name": "大学物理-综合实验B",
-   "teacher": "",
+   "teacher": "张杨、蔡俊、陶小平、浦其荣、吴玉椿、王中平、梁燕、张权、韦先涛、赵伟、赵霞、郭玉刚、祝巍、刘应玲、张增明、曾华凌、王晓方、代如成、曲广媛、李恒一、李海欧、沈镇、胡晓敏、蒋景华、张乔枫、孙晓宇、宋国锋、岳盈、王鹤、张华洋",
    "credits": 0.5,
    "time": "周一 3~18周 第11-13节 东区教1楼物理实验室",
    "location": "东区教1楼物理实验室",
@@ -226,7 +226,7 @@
   {
    "course_code": "PE00127.10",
    "course_name": "游泳",
-   "teacher": "",
+   "teacher": "孙璐璐",
    "credits": 1,
    "time": "周一 1~18周 第3-4节 中区游泳馆（初级班）",
    "location": "中区游泳馆（初级班）",
@@ -236,7 +236,7 @@
   {
    "course_code": "011040.02",
    "course_name": "图论",
-   "teacher": "",
+   "teacher": "徐宏力、赵功名",
    "credits": 3,
    "time": "周二 1~15周 第6-7节 3C301；周四 2~15周 第1-2节 3C301；周日 2周 第6-7节 3C301",
    "location": "3C301",
@@ -246,7 +246,7 @@
   {
    "course_code": "011144.04",
    "course_name": "计算机网络",
-   "teacher": "",
+   "teacher": "周颢",
    "credits": 3.5,
    "time": "周一 1~15周 第1-2节 5203；周三 1~15周 第1-2节 5203",
    "location": "5203",
@@ -256,7 +256,7 @@
   {
    "course_code": "CS1002A.02",
    "course_name": "计算系统概论A",
-   "teacher": "",
+   "teacher": "苗付友",
    "credits": 4,
    "time": "周五 1~18周 第3-5节 3C302",
    "location": "3C302",
@@ -266,7 +266,7 @@
   {
    "course_code": "EE2506A.02",
    "course_name": "模拟与数字电路A",
-   "teacher": "",
+   "teacher": "孙达",
    "credits": 4,
    "time": "周二 1~18周 第3-4节 3C301；周四 1~18周 第3-4节 3C301",
    "location": "3C301",
@@ -276,7 +276,7 @@
   {
    "course_code": "MARX1011.06",
    "course_name": "马克思主义基本原理",
-   "teacher": "",
+   "teacher": "洪孟良",
    "credits": 2.5,
    "time": "周一 1~16周 第8-10节 2105",
    "location": "2105",
@@ -286,7 +286,7 @@
   {
    "course_code": "FL1110A.01",
    "course_name": "英语文化与沟通",
-   "teacher": "",
+   "teacher": "李献伟",
    "credits": 1,
    "time": "周二 1~8周 第1-2节 2206",
    "location": "2206",
@@ -296,7 +296,7 @@
   {
    "course_code": "PHYS1004C.07",
    "course_name": "电磁学C",
-   "teacher": "",
+   "teacher": "张一飞",
    "credits": 3,
    "time": "周三 1~15周 第3-4节 3A313；周五 1~15周 第1-2节 3A313",
    "location": "3A313",
