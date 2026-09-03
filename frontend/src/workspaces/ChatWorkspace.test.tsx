@@ -99,7 +99,8 @@ test("personal academic capability selects valid personal starter prompts", () =
   render(<Tooltip.Provider><ChatWorkspace config={config} session={personalSession} /></Tooltip.Provider>);
 
   expect(screen.getByRole("button", { name: /今日课表/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /独立冲突检查/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /本周日程/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /独立冲突检查/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /本学期校历/ })).not.toBeInTheDocument();
 });
 

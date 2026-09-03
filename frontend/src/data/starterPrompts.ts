@@ -95,13 +95,6 @@ export const personalStarterPrompts: StarterPromptDefinition[] = [
     icon: "recommend",
   },
   {
-    id: "course-conflict",
-    title: "独立冲突检查",
-    description: "核对计划课程与现有课表",
-    question: "请帮我检查一门计划课程与现有课表是否冲突。",
-    icon: "conflict",
-  },
-  {
     id: "weekly-agenda",
     title: "本周日程",
     description: "汇总课程与个人安排",
