@@ -123,6 +123,9 @@ class WebSettings:
     web_search_max_rounds: int = 2
     # 微信公众号通道（科大相关问题优先，受熔断保护；由 XIAOWO_WECHAT_ENABLED 控制）
     wechat_enabled: bool = True
+    # 演示重置保护（2026-09-03 事故加固）：默认关闭端点；开启需额外密钥头
+    demo_reset_enabled: bool = False
+    demo_reset_key: str = ""
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -217,6 +220,8 @@ class WebSettings:
                 web_query_rewrite=_env_bool(source, "XIAOWO_WEB_QUERY_REWRITE", default=True),
                 web_search_max_rounds=max(1, min(3, int(source.get("XIAOWO_WEB_SEARCH_ROUNDS", "2")))),
                 wechat_enabled=_env_bool(source, "XIAOWO_WECHAT_ENABLED", default=True),
+                demo_reset_enabled=_env_bool(source, "XIAOWO_DEMO_RESET_ENABLED", default=False),
+                demo_reset_key=source.get("XIAOWO_DEMO_RESET_KEY", "").strip(),
                 max_question_chars=int(source.get("XIAOWO_MAX_QUESTION_CHARS", "8000")),
                 max_concurrent_runs=int(source.get("XIAOWO_MAX_CONCURRENT_RUNS", "30")),
                 max_queued_runs=int(source.get("XIAOWO_MAX_QUEUED_RUNS", "30")),
@@ -282,6 +287,8 @@ class WebSettings:
                 raise SettingsError(f"XIAOWO_TRUSTED_PROXY_CIDRS 包含无效网段: {value}") from exc
         if not 0 < self.local_relevance_min <= 1:
             raise SettingsError("XIAOWO_LOCAL_RELEVANCE_MIN 必须在 (0, 1] 范围内")
+        if self.demo_reset_enabled and len(self.demo_reset_key) < 16:
+            raise SettingsError("启用演示重置必须配置至少 16 字符的 XIAOWO_DEMO_RESET_KEY")
         if self.max_question_chars < 1 or self.max_question_chars > 50_000:
             raise SettingsError("XIAOWO_MAX_QUESTION_CHARS 必须在 1 到 50000 之间")
         if self.max_concurrent_runs < 1 or self.max_concurrent_runs > 500:

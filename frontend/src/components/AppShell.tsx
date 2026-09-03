@@ -346,11 +346,15 @@ function AccountMenu({
             {theme === "light" ? "深色主题" : "浅色主题"}
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="account-menu__separator" />
-          {authenticated && session.principal.auth_mode === "demo" && (
+          {authenticated && session.principal.auth_mode === "demo" && config.features.demo_reset_enabled === true && (
             <DropdownMenu.Item
               className="account-menu__item"
               disabled={busy}
-              onSelect={() => void onDemoReset()}
+              onSelect={() => {
+                if (window.prompt("恢复演示初始状态将清空演示数据。请输入「重置」以确认：") === "重置") {
+                  void onDemoReset();
+                }
+              }}
             >
               <RotateCcw size={17} />
               恢复演示初始状态

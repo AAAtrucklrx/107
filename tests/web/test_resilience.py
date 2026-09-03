@@ -104,7 +104,8 @@ def test_terminal_sse_event_is_drained_when_run_finishes_between_reads() -> None
     assert "event: answer.completed" in chunks[0]
 
 
-def test_unhealthy_sidecars_fail_readiness_without_disabling_liveness(tmp_path) -> None:
+def test_unhealthy_sidecars_fail_readiness_without_disabling_liveness(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XIAOWO_SENTINEL_STATE_PATH", str(tmp_path / "no-sentinel.json"))
     settings = make_settings(tmp_path, extra={"XIAOWO_WEB_SEARCH_ENABLED": "true"})
     app = create_app(
         settings,
@@ -123,6 +124,8 @@ def test_unhealthy_sidecars_fail_readiness_without_disabling_liveness(tmp_path) 
         "checks": {
             "database": True,
             "review_database": True,
+            "approved_index": False,
+            "search_quality": True,
             "web_evidence": False,
             "evidence_extractor": False,
         },

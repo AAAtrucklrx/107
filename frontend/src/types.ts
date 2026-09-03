@@ -12,6 +12,7 @@ export interface PublicConfig {
     personal_workspace: boolean;
     review_workspace: boolean;
     ingestion_worker: boolean;
+    demo_reset_enabled?: boolean;
   };
   time_budget_seconds: {
     search: number;

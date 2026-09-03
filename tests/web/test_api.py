@@ -186,7 +186,10 @@ def test_cas_endpoints_are_disabled_outside_cas_mode(tmp_path) -> None:
 
 
 def test_demo_reset_only_clears_current_demo_session(tmp_path) -> None:
-    settings = make_settings(tmp_path, mode="demo")
+    settings = make_settings(
+        tmp_path, mode="demo",
+        extra={"XIAOWO_DEMO_RESET_ENABLED": "true", "XIAOWO_DEMO_RESET_KEY": "test-reset-key-1234567890"},
+    )
     app = create_app(settings, runner=ImmediateRunner())
     with TestClient(app) as first, TestClient(app) as second:
         first_csrf, _ = bootstrap(first)
@@ -204,7 +207,7 @@ def test_demo_reset_only_clears_current_demo_session(tmp_path) -> None:
 
         reset = first.post(
             "/api/v1/auth/demo/reset",
-            headers=mutation_headers(first_session["csrf_token"]),
+            headers={**mutation_headers(first_session["csrf_token"]), "X-Demo-Reset-Key": "test-reset-key-1234567890"},
         )
         assert reset.status_code == 200
         assert reset.json()["profile_id"] == "PB25111691"

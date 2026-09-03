@@ -239,7 +239,10 @@ def test_item_requires_every_chunk_to_be_approved_or_rejected(tmp_path) -> None:
 
 
 def test_demo_admin_starts_with_a_synthetic_review_item_and_reset_restores_it(tmp_path) -> None:
-    settings = make_settings(tmp_path, mode="demo", admin_ids="PB25111691")
+    settings = make_settings(
+        tmp_path, mode="demo", admin_ids="PB25111691",
+        extra={"XIAOWO_DEMO_RESET_ENABLED": "true", "XIAOWO_DEMO_RESET_KEY": "test-reset-key-1234567890"},
+    )
     app = create_app(settings, runner=ImmediateRunner())
     with TestClient(app) as client:
         csrf, _ = bootstrap(client)
@@ -250,7 +253,7 @@ def test_demo_admin_starts_with_a_synthetic_review_item_and_reset_restores_it(tm
 
         reset = client.post(
             "/api/v1/auth/demo/reset",
-            headers=mutation_headers(login["csrf_token"]),
+            headers={**mutation_headers(login["csrf_token"]), "X-Demo-Reset-Key": "test-reset-key-1234567890"},
         )
         assert reset.status_code == 200
         assert reset.json()["review_reset"] is True
