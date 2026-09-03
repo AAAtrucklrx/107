@@ -34,19 +34,33 @@ class _RewritePayload(BaseModel):
 _SYSTEM_PROMPT = (
     "你是搜索关键词改写器。把用户问题改写成 1 到 2 个适合中文搜索引擎的简短关键词查询，"
     "每条不超过 32 个字，不含问句语气词。若问题已经是简短关键词（≤30 字），只返回原词。"
+    "如果问题包含院校/机构名称，查询词必须保留该名称（如\"中国科学技术大学\"），"
+    "不能只留下通用主题词——否则会命中国家范围的无关内容。"
     "只返回 JSON：{\"queries\": [\"关键词1\", \"关键词2\"]}。"
 )
 
+# 微信通道触发词（科大相关问题优先检索公众号；pipeline 引用）
+WECHAT_TRIGGER_RE = re.compile(r"科大|中科大|USTC|中国科学技术大学", re.IGNORECASE)
+
+# 微信通道查询用官方名称词（统一全称；搜狗微信索引账号+正文全文匹配）
+_WECHAT_OFFICIAL_NAME = "中国科学技术大学"
+
 # 校内事务 → 官方站点限定查询（证据面扩展：site 查询提高官方一手命中率）
 _OFFICIAL_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "教务处": ("教务处", "选课", "成绩", "课表", "校历", "考试", "评教", "补办", "转专业", "缓考"),
-    "研究生院": ("研究生", "招生", "复试", "学位", "导师"),
-    "图书馆": ("图书馆", "借阅", "馆藏", "研讨室"),
-    "学生工作部": ("学工", "奖助", "勤工", "宿舍", "离校"),
+    "教务处": (
+        "教务处", "选课", "成绩", "课表", "校历", "考试", "评教", "补办", "转专业", "缓考",
+        "开学", "新生", "报到", "军训", "入学", "学籍", "休学", "复学", "辅修", "毕业", "四六级", "补考",
+    ),
+    "研究生院": ("研究生", "招生", "复试", "学位", "导师", "保研", "推免", "硕博"),
+    "图书馆": ("图书馆", "借阅", "馆藏", "研讨室", "自习", "座位", "开馆", "闭馆", "开放时间"),
+    "学生工作部": (
+        "学工", "奖助", "勤工", "宿舍", "离校", "奖学金", "助学金", "社团", "活动", "讲座",
+        "心理健康", "资助", "辅导员",
+    ),
     "校医院": ("校医院", "医保", "体检"),
-    "财务处": ("学费", "缴费", "报销", "发票"),
-    "就业指导中心": ("就业", "招聘", "实习"),
-    "本科招生": ("招生办", "本科招生"),
+    "财务处": ("学费", "缴费", "报销", "发票", "校园卡", "一卡通"),
+    "就业指导中心": ("就业", "招聘", "实习", "春招", "秋招", "宣讲会"),
+    "本科招生": ("招生办", "本科招生", "高考", "分数线", "录取", "综合评价"),
 }
 # 问题里显式年份/相对年份
 _YEAR_RE = re.compile(r"(20\d{2})\s*年|今年|明年|本学期|下学年", re.IGNORECASE)
@@ -68,13 +82,45 @@ def temporal_anchor(question: str) -> str | None:
     return None
 
 
+def _business_words(question: str) -> list[str]:
+    """从问题中提取命中的事务业务词（长词优先、保持词表顺序去重）。"""
+    for _org, hints in _OFFICIAL_KEYWORDS.items():
+        matched = [hint for hint in hints if hint in question]
+        if matched:
+            return sorted(set(matched), key=lambda item: (-len(item), hints.index(item)))
+    return []
+
+
 def official_site_query(question: str) -> str | None:
-    """若问题涉及校内事务，返回 site 限定的官方站点查询（如 site:ustc.edu.cn 教务处）。"""
+    """若问题涉及校内事务，返回 site 限定的官方站点查询。
+
+    查询词保留问题中的业务词（+ 年份锚），而非固定的部门名——
+    实测固定部门词（site:ustc.edu.cn 教务处）会稳定命中栏目列表页，
+    而业务词（如 site:ustc.edu.cn 新生 报到）可命中具体公告页。
+    """
     text = question.strip()
-    for org, hints in _OFFICIAL_KEYWORDS.items():
-        if any(hint in text for hint in hints):
-            return f"site:ustc.edu.cn {org}"
-    return None
+    if not text:
+        return None
+    matched = _business_words(text)
+    if not matched:
+        return None
+    year = temporal_anchor(text)
+    parts = [part for part in (year, " ".join(matched)) if part]
+    return "site:ustc.edu.cn " + " ".join(parts)
+
+
+def wechat_query(question: str) -> str:
+    """微信通道专用搜索查询：官方名称词 + 事务业务词（短关键词）。
+
+    搜狗微信索引对原文长句匹配差（命中异地学校/泛化噪音），
+    改成语义锚定的短查询后，官方号命中率与相关性显著提升。
+    问题不含科大触发词时原样返回（调用侧只在触发时使用）。
+    """
+    text = " ".join(question.split())
+    if not text or not WECHAT_TRIGGER_RE.search(text):
+        return text
+    words = _business_words(text)
+    return " ".join([_WECHAT_OFFICIAL_NAME, *words])
 
 
 class QueryRewriter:

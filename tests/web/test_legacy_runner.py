@@ -127,3 +127,60 @@ def test_tool_result_uses_its_official_link_and_hashed_relation() -> None:
     assert answer.sources[0]["level"] == "tool_result"
     assert answer.claims[0]["evidence"][0]["evidence_type"] == "tool"
     assert len(answer.claims[0]["evidence"][0]["excerpt_hash"]) == 64
+
+
+def test_chitchat_question_skips_qa_pipeline() -> None:
+    """短问候句走入口快路径：不调用 QA 图（无 LLM、无检索），模板秒回。"""
+    calls = {"count": 0}
+
+    def fake_run_qa(_question: str, **_kwargs) -> dict:
+        calls["count"] += 1
+        return {"answer": "不应走到这里", "intent": "知识问答", "candidates": [],
+                "candidates_found": False, "tool_results": [], "error": ""}
+
+    runner = LegacyQaRunner(fake_run_qa)
+    try:
+        request = QaRunRequest(
+            run_id="run-chatty",
+            question="你好",
+            requested_mode="auto",
+            effective_mode="auto",
+            principal=Principal("", "anonymous", {}, False, "session-chatty"),
+            conversation_id=None,
+        )
+        answer = asyncio.run(runner.run(request))
+    finally:
+        runner.close()
+
+    assert calls["count"] == 0
+    assert "小蜗" in answer.markdown
+    assert answer.claims[0]["kind"] == "chitchat"
+    assert answer.claims[0]["status"] == "confirmed"
+    assert answer.sources == []
+
+
+def test_long_question_does_not_take_chitchat_path() -> None:
+    """超 12 字的问候式句子不走快路径（避免误伤真实问题）。"""
+    calls = {"count": 0}
+
+    def fake_run_qa(question: str, **_kwargs) -> dict:
+        calls["count"] += 1
+        return {"answer": f"处理：{question}", "intent": "知识问答", "candidates": [],
+                "candidates_found": False, "tool_results": [], "error": ""}
+
+    runner = LegacyQaRunner(fake_run_qa)
+    try:
+        request = QaRunRequest(
+            run_id="run-long",
+            question="你好，请问2026年秋季学期的选课通知在哪里看？",
+            requested_mode="local",
+            effective_mode="local",
+            principal=Principal("", "anonymous", {}, False, "session-long"),
+            conversation_id=None,
+        )
+        answer = asyncio.run(runner.run(request))
+    finally:
+        runner.close()
+
+    assert calls["count"] == 1
+    assert answer.markdown.startswith("处理：")

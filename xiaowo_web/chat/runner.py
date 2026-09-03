@@ -18,6 +18,44 @@ from xiaowo_web.evidence.trust import SourceTrustStore
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]】)）]+", re.IGNORECASE)
 _INLINE_CITATION = re.compile(r"\[\d+\]")
+
+# ── 闲聊入口快路径（2026-09-03：短问候句走模板，跳过知识库检索与整个 QA 图） ──
+_CHITCHAT_WORDS_CACHE: tuple[str, ...] | None = None
+_CHITCHAT_REPLY = "你好呀！我是小蜗，科大校园智能助手，有什么可以帮你？"
+
+
+def _chitchat_words() -> tuple[str, ...]:
+    global _CHITCHAT_WORDS_CACHE
+    if _CHITCHAT_WORDS_CACHE is None:
+        try:
+            from agents.qa.nodes import _CHITCHAT_WORDS as words
+            _CHITCHAT_WORDS_CACHE = tuple(words)
+        except Exception:
+            _CHITCHAT_WORDS_CACHE = (
+                "你好", "您好", "嗨", "哈喽", "hello", "hi", "在吗",
+                "谢谢", "感谢", "辛苦", "你是谁", "拜拜", "再见",
+            )
+    return _CHITCHAT_WORDS_CACHE
+
+
+def is_chitchat_query(question: str) -> bool:
+    """闲聊判定：仅当问题短（≤12 字）且含问候特征词（避免误判真实问题）。"""
+    q = (question or "").strip().lower()
+    if not q or len(q) > 12:
+        return False
+    return any(word in q for word in _chitchat_words())
+
+
+def chitchat_reply() -> AnswerBundle:
+    """闲聊模板回答（不依赖 LLM/检索，毫秒级）。"""
+    return AnswerBundle(
+        markdown=_CHITCHAT_REPLY,
+        claims=[{
+            "claim_id": "c1", "text": _CHITCHAT_REPLY, "kind": "chitchat",
+            "status": "confirmed", "evidence": [],
+        }],
+        sources=[], limitations=[], terminal_reason="local_answer",
+    )
 _TOOL_TITLES = {
     "query_schedule": "个人课表",
     "query_daily_schedule": "个人日课表",
@@ -250,6 +288,9 @@ class LegacyQaRunner:
         return self._run_qa_func
 
     async def run(self, request: QaRunRequest) -> AnswerBundle:
+        # 闲聊入口快路径：问候/道谢等短句直接模板回应，跳过批准索引检索与 QA 图
+        if is_chitchat_query(request.question):
+            return chitchat_reply()
         runner = self._resolve_runner()
         profile = dict(request.principal.profile) if request.principal.is_authenticated else {}
         student_id = request.principal.principal_id if request.principal.is_authenticated else None

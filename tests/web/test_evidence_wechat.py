@@ -211,9 +211,11 @@ class FakeWechat:
         self.articles = articles
         self.blocked = blocked
         self.calls = 0
+        self.queries: list[str] = []
 
-    async def collect(self, _query):
+    async def collect(self, query):
         self.calls += 1
+        self.queries.append(query)
         from xiaowo_web.evidence.wechat import WechatBundle
         return WechatBundle(self.articles, blocked=self.blocked)
 
@@ -320,3 +322,19 @@ def test_collect_account_filters_by_sourcename() -> None:
     _run(client.close())
     assert articles and all(a.author == "中国科学技术大学" for a in articles)
     assert articles[0].url.startswith("https://mp.weixin.qq.com/")
+
+
+def test_wechat_channel_uses_rewritten_query(tmp_path) -> None:
+    """微信通道查询应使用改写后的短关键词（官方名称词+业务词），而非原文长句。"""
+    article = WechatArticle(
+        title="选课通知", author="中国科学技术大学",
+        url="https://mp.weixin.qq.com/s?src=11&signature=TQ",
+        markdown="教务处公告说明，秋季学期选课通知发布于教学子栏目。",
+    )
+    wechat = FakeWechat([article])
+    pipeline = _wechat_pipeline(
+        tmp_path, wechat, "科大选课通知在哪里发布？",
+        extractor=FixedExtractor([]),
+    )
+    asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
+    assert wechat.queries == ["中国科学技术大学 选课"]

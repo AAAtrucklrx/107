@@ -278,6 +278,17 @@ def embedding_parse(state: QaState) -> dict:
     top3 = result.get("top3") or []
     intent = result.get("intent", "知识问答")
 
+    # 闲聊/问候快路径：不检索知识库（检索会给"你好"这类句返回 12 条 0 分候选，
+    # 导致 compose 的闲聊条件落空而调用 LLM），直接标记由 compose 模板回应
+    if intent == "闲聊" and _is_chitchat(query):
+        return {
+            "intent": intent, "intent_top3": top3,
+            "candidates": list(state.get("candidates") or []),
+            "candidates_found": bool(state.get("candidates_found")),
+            "retrieval_log": list(state.get("retrieval_log") or []),
+            "chitchat": True,
+        }
+
     # 模块信号仅在分类置信度低时参考（弱信号，不强制）
     hint = MODULE_TO_INTENT.get(module_signal)
     if hint and result.get("method") == "embedding" and top3 and top3[0].get("score", 0) < _MODULE_HINT_MIN_SCORE:
@@ -676,7 +687,7 @@ def think(state: QaState) -> dict:
         return {"decision": "compose", "tool_calls": [],
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": "敏感请求，直接礼貌拒绝"}]}
     if intent == "闲聊" and _is_chitchat(query):
-        return {"decision": "compose", "tool_calls": [],
+        return {"decision": "compose", "tool_calls": [], "chitchat": True,
                 "thought_log": [{"round": rounds, "decision": "compose", "reason": "闲聊问候，直接回应"}]}
     # 个人信息问答快速通道（稳定模板，避免 LLM 顺着误分类意图编造数据）
     personal_field = _is_personal_qa(query)
@@ -1350,6 +1361,7 @@ def compose(state: QaState) -> dict:
     intent = state.get("intent", "知识问答")
     results = state.get("tool_results") or []
     candidates = state.get("candidates") or []
+    candidates_found = bool(state.get("candidates_found"))
     error = state.get("error") or ""
 
     # 第二道防线：compose 是用户最终可见输出，问题含敏感词一律固定拒绝，
@@ -1361,7 +1373,7 @@ def compose(state: QaState) -> dict:
     personal_field = state.get("personal_qa")
     if personal_field:
         return {"answer": _personal_qa_answer(personal_field, state), "error": error, "truncated": False}
-    if intent == "闲聊" and not results and not candidates:
+    if state.get("chitchat") or (intent == "闲聊" and not results and not candidates_found):
         return {"answer": _chitchat(query), "error": error, "truncated": False}
 
     tool_summary = _build_tool_summary(results)

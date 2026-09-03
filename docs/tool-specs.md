@@ -1107,7 +1107,7 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 联网门控在本地 `found=false`、权威证据低于阈值、问题明确要求最新信息或用户本轮选择“联网”时触发；用户选择“本地”时永久禁止该轮联网。
 
 1. `SearchPrivacyGuard` 先确定性清除或拒绝外发学号、姓名、成绩、课表、培养方案、画像、CAS 信息和私密上下文。
-2. `SearxngClient` 在 4 秒预算内搜索；科大问题同时走审核白名单通道和全网通道。
+2. `SearxngClient` 在 4 秒预算内搜索；科大问题同时走审核白名单通道和全网通道。（2026-09-03 起搜索源按 `XIAOWO_SEARCH_PROVIDER` 用博查（bocha）或 SearXNG；校内事务问题自动注入 `site:ustc.edu.cn` 业务词查询，命中后经本地 bge-reranker 语义精排取 Top 3——详见部署记录 §7/§9。）
 3. `Crawl4AiClient` 只调用私有 adapter，Top 3 并行抓取；URL、DNS 和每跳重定向均执行 SSRF 防护与 robots/限速约束。
 4. `SourceTrustStore` 按精确 host/path 白名单分级。未知 `*.ustc.edu.cn` 只能获得 `ustc_domain` 标签，不能自动成为 `official_primary`。
 5. 一个有效官方一手来源，或两个相互独立且一致的可靠来源，才能支撑确定结论。证据冲突时单列“信息存在分歧”；不足时固定说明“暂未找到足够可靠的联网证据”并展示不足来源。

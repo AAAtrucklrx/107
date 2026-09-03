@@ -22,7 +22,13 @@ from xiaowo_web.evidence.models import (
     ValidatedUrl,
 )
 from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
-from xiaowo_web.evidence.rewrite import QueryRewriter, official_site_query, temporal_anchor
+from xiaowo_web.evidence.rewrite import (
+    WECHAT_TRIGGER_RE,
+    QueryRewriter,
+    official_site_query,
+    temporal_anchor,
+    wechat_query,
+)
 from xiaowo_web.evidence.wechat import WechatClient
 from xiaowo_web.evidence.trust import SourceTrustStore, registered_domain
 from xiaowo_web.evidence.url_security import UrlGuard, UrlSafetyError
@@ -31,8 +37,6 @@ from xiaowo_web.settings import WebSettings
 
 StageCallback = Callable[[str, str], None]
 
-# 公众号优先触发词（2026-09-01 用户确定）
-_WECHAT_TRIGGER_RE = re.compile(r"科大|中科大|USTC|中国科学技术大学")
 
 # 引用匹配归一化：去除空白与常见中英文标点，全角转半角，降低大小写。
 # LLM 抽取的 quote 常有标点/空格层面的改写，逐字匹配会导致大量可用证据被丢弃。
@@ -105,12 +109,13 @@ class EvidencePipeline:
         if (
             self.wechat is not None
             and self.settings.wechat_enabled
-            and _WECHAT_TRIGGER_RE.search(sanitized.text)
+            and WECHAT_TRIGGER_RE.search(sanitized.text)
         ):
             self._stage(on_stage, "web_search", "正在检索微信公众号")
             try:
                 bundle = await asyncio.wait_for(
-                    self.wechat.collect(sanitized.text),
+                    # 微信查询改写：官方名称词+业务词（原文长句在搜狗微信索引匹配差 → 噪音/漏命中）
+                    self.wechat.collect(wechat_query(sanitized.text)),
                     timeout=max(15.0, min(25.0, self.settings.run_timeout_seconds * 0.4)),
                 )
             except asyncio.TimeoutError:
@@ -159,6 +164,7 @@ class EvidencePipeline:
                 continue
 
             ranked = sorted(batch.hits, key=self._rank_hit)
+            ranked = await self._rerank_hits(query, ranked)
             validated_hits: list[tuple[SearchHit, ValidatedUrl, TrustDecision]] = []
             for hit in ranked:
                 try:
@@ -494,6 +500,28 @@ class EvidencePipeline:
         decision = self.trust_store.classify_url_without_dns(hit.url)
         rank = {"official_primary": 0, "reliable_independent": 1, "general": 2, "unverified": 3}
         return rank.get(decision.level, 3), hit.url
+
+    async def _rerank_hits(self, query: str, ranked: list[SearchHit]) -> list[SearchHit]:
+        """搜索命中语义精排：信任级为主序、bge-reranker 相关分为副序（本地 ONNX）。
+
+        搜索引擎 top-N 在信任级内常按任意顺序返回；抓取预算只有 3 条，
+        语义精排让"与问题最相关"的页面优先被抓取。模型缺失/失败时回退原序。
+        """
+        if len(ranked) < 3:
+            return ranked
+        try:
+            from knowledge.reranker import rerank
+
+            docs = [f"{hit.title}\n{hit.snippet}" for hit in ranked]
+            order = await asyncio.to_thread(rerank, query, docs, len(docs))
+        except Exception:
+            return ranked
+        if not order or len(order) != len(ranked):
+            return ranked
+        pos_of = {index: position for position, index in enumerate(order)}
+        trust_keys = [self._rank_hit(hit)[0] for hit in ranked]
+        ordered = sorted(range(len(ranked)), key=lambda i: (trust_keys[i], pos_of[i]))
+        return [ranked[i] for i in ordered]
 
     @staticmethod
     def _public_source(record: _PageRecord, citation: int) -> dict:

@@ -54,11 +54,13 @@ class FakeCrawler:
     def __init__(self, pages: dict[str, CrawledPage], healthy: bool = True) -> None:
         self.pages = pages
         self.healthy = healthy
+        self.crawled: list[str] = []
 
     async def health(self) -> bool:
         return self.healthy
 
     async def crawl(self, url: str) -> CrawledPage:
+        self.crawled.append(url)
         return self.pages[url]
 
     async def close(self) -> None:
@@ -164,7 +166,7 @@ def test_second_round_searches_different_query_after_empty_first(tmp_path) -> No
         rewriter=rewriter,
     )
 
-    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期开学典礼在哪一天举行？"))
+    answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季庆典安排在什么时候？"))
     # 第一轮：关键词A（空）+ 退避重试一次；加轮提示改写得到 换词C 后再搜一次并确认。
     assert search.queries == ["关键词A", "关键词A", "换词C"]
     assert rewriter.hints == [False, True]
@@ -175,7 +177,7 @@ def test_official_site_query_is_used_on_second_round(tmp_path) -> None:
     url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
     markdown = "教务处公告说明，选课通知已发布于教务处教学子栏目。"
     source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-    site_query = "site:ustc.edu.cn 教务处"
+    site_query = "site:ustc.edu.cn 2026 选课"
     search = QueryAwareSearch({site_query: [SearchHit("公告", url)]})
     pipeline = EvidencePipeline(
         make_settings(tmp_path),
@@ -383,3 +385,50 @@ def test_matching_year_keeps_claim_confirmed(tmp_path) -> None:
     answer = asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
     assert answer.terminal_reason == "web_evidence_confirmed"
     assert answer.claims[0]["status"] == "confirmed"
+
+
+def test_hits_are_reranked_semantically_before_crawl(tmp_path, monkeypatch) -> None:
+    """搜索命中按语义精排后再抓取（trust 级内按 rerank 相关分取前 3）。"""
+    urls = [f"https://example.com/news/{name}.html" for name in ("a", "b", "c", "d")]
+    hits = [SearchHit(f"标题{i}-{name}", url) for i, (name, url) in enumerate(zip(("a", "b", "c", "d"), urls))]
+    pages = {url: _page(url, f"第 {name} 篇文章正文，与前文无关。") for name, url in zip(("a", "b", "c", "d"), urls)}
+    calls: dict = {}
+
+    def fake_rerank(query: str, docs: list[str], top_k: int) -> list[int]:
+        calls["query"] = query
+        calls["docs"] = list(docs)
+        assert len(docs) == 4
+        return list(range(top_k - 1, -1, -1))  # 倒序：原第 4 条最相关
+
+    monkeypatch.setattr("knowledge.reranker.rerank", fake_rerank)
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch(hits),
+        FakeCrawler(pages),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
+        rewriter=ScriptedRewriter([["关键词A"]]),
+    )
+
+    asyncio.run(pipeline.answer("2026年秋季学期开学时间是几月几号？"))
+    # 倒序重排后 top3 = 原 [d, c, b]（原 a 被语义精排挤出抓取预算）
+    assert calls["docs"] == [f"标题{i}-{name}\n{hit.snippet}" for i, (name, hit) in enumerate(zip(("a", "b", "c", "d"), hits))]
+    assert pipeline.crawler.crawled[:3] == [urls[3], urls[2], urls[1]]
+
+
+def test_hits_retain_original_order_when_rerank_unavailable(tmp_path) -> None:
+    """语义精排不可用时回退原序（trust 级内按 URL 顺序），不影响现有行为。"""
+    urls = [f"https://example.com/news/{name}.html" for name in ("a", "b", "c", "d")]
+    hits = [SearchHit(f"标题{i}", url) for i, url in enumerate(urls)]
+    pages = {url: _page(url, f"第 {name} 篇文章正文。") for name, url in zip(("a", "b", "c", "d"), urls)}
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        FakeSearch(hits),
+        FakeCrawler(pages),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
+        rewriter=ScriptedRewriter([["关键词A"]]),
+    )
+
+    asyncio.run(pipeline.answer("2026年秋季学期开学时间是几月几号？"))
+    assert pipeline.crawler.crawled[:3] == urls[:3]

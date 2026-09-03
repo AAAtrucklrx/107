@@ -234,6 +234,8 @@ class StructuredClaimExtractor:
 
 仅依据下方 source 内容回答当前公共问题，最多拆出 12 条原子事实声明。每条证据 quote 必须是对应 source content 中连续、逐字可找到的原文，至少 12 个字符；不得改写 quote，不得使用外部知识。来源支持声明用 supports，明确否定声明用 contradicts。没有足够原文就不要输出该声明。
 
+只提取与当前公共问题直接相关的原子事实；来源属于其他学校/机构、与问题无关（如异地学校通知、无关招聘、历史旧闻）时，不要输出该声明——宁可少，不可错。若所有来源都与问题无关，输出空 claims 数组。
+
 只输出一个 JSON 对象，严格符合：
 {{"claims":[{{"text":"原子事实", "evidence":[{{"source_id":"s-id", "relation":"supports|contradicts", "quote":"连续原文"}}]}}]}}
 

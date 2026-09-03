@@ -6,7 +6,7 @@ import inspect
 import re
 
 from xiaowo_web.chat.models import AnswerBundle, QaRunRequest
-from xiaowo_web.chat.runner import QaRunner
+from xiaowo_web.chat.runner import QaRunner, chitchat_reply, is_chitchat_query
 from xiaowo_web.evidence.pipeline import EvidencePipeline
 
 
@@ -19,6 +19,9 @@ class EvidenceAwareRunner:
         self.pipeline = pipeline
 
     async def run(self, request: QaRunRequest) -> AnswerBundle:
+        # 闲聊入口快路径：短问候句不进入联网证据链（模板回应，毫秒级）
+        if is_chitchat_query(request.question):
+            return chitchat_reply()
         if request.effective_mode == "local":
             return await self.local_runner.run(request)
         if request.effective_mode == "web":
