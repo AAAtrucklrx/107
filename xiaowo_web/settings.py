@@ -123,6 +123,10 @@ class WebSettings:
     web_search_max_rounds: int = 2
     # 微信公众号通道（科大相关问题优先，受熔断保护；由 XIAOWO_WECHAT_ENABLED 控制）
     wechat_enabled: bool = True
+    # 联网搜索源："searxng"（自托管 sidecar）或 "bocha"（博查 Web Search API，国内直连免 sidecar）
+    search_provider: str = "searxng"
+    bocha_api_key: str = ""
+    bocha_base_url: str = "https://api.bochaai.com"
     # 演示重置保护（2026-09-03 事故加固）：默认关闭端点；开启需额外密钥头
     demo_reset_enabled: bool = False
     demo_reset_key: str = ""
@@ -204,6 +208,9 @@ class WebSettings:
                 ),
                 cas_service_url=source.get("CAS_SERVICE_URL", "").strip(),
                 web_search_enabled=_env_bool(source, "XIAOWO_WEB_SEARCH_ENABLED"),
+                search_provider=source.get("XIAOWO_SEARCH_PROVIDER", "searxng").strip().casefold(),
+                bocha_api_key=source.get("XIAOWO_BOCHA_API_KEY", "").strip(),
+                bocha_base_url=source.get("XIAOWO_BOCHA_BASE_URL", "https://api.bochaai.com").rstrip("/"),
                 searxng_url=source.get("XIAOWO_SEARXNG_URL", "http://127.0.0.1:8080").rstrip("/"),
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),
@@ -310,7 +317,13 @@ class WebSettings:
         if self.review_cleanup_interval_seconds < 30:
             raise SettingsError("XIAOWO_REVIEW_CLEANUP_INTERVAL_SECONDS 不能少于 30 秒")
         if self.web_search_enabled:
-            self._validate_sidecar_url(self.searxng_url, "XIAOWO_SEARXNG_URL")
+            if self.search_provider == "bocha":
+                if not self.bocha_api_key:
+                    raise SettingsError(
+                        "XIAOWO_SEARCH_PROVIDER=bocha 时必须配置 XIAOWO_BOCHA_API_KEY"
+                    )
+            else:
+                self._validate_sidecar_url(self.searxng_url, "XIAOWO_SEARXNG_URL")
             self._validate_sidecar_url(self.crawl4ai_url, "XIAOWO_CRAWL4AI_URL")
         elif self.ingestion_worker_enabled:
             self._validate_sidecar_url(self.crawl4ai_url, "XIAOWO_CRAWL4AI_URL")

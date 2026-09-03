@@ -19,7 +19,7 @@ from xiaowo_web.chat import ChatManager, LegacyQaRunner, QaRunner
 from xiaowo_web.campus import CampusService, CampusToolStore
 from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
 from xiaowo_web.errors import ApiError, api_error_handler
-from xiaowo_web.evidence.clients import Crawl4AiClient, SearxngClient, SidecarHealthProvider
+from xiaowo_web.evidence.clients import BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarHealthProvider
 from xiaowo_web.evidence.extractor import StructuredClaimExtractor
 from xiaowo_web.evidence.pipeline import EvidencePipeline
 from xiaowo_web.evidence.rewrite import QueryRewriter
@@ -65,10 +65,17 @@ def create_app(
             max_workers=min(resolved_settings.max_concurrent_runs, 16),
         )
         if resolved_settings.web_search_enabled:
-            search_client = SearxngClient(
-                resolved_settings.searxng_url,
-                timeout=resolved_settings.search_timeout_seconds,
-            )
+            if resolved_settings.search_provider == "bocha":
+                search_client = BochaWebSearchClient(
+                    resolved_settings.bocha_api_key,
+                    base_url=resolved_settings.bocha_base_url,
+                    timeout=resolved_settings.search_timeout_seconds,
+                )
+            else:
+                search_client = SearxngClient(
+                    resolved_settings.searxng_url,
+                    timeout=resolved_settings.search_timeout_seconds,
+                )
             crawl_client = Crawl4AiClient(
                 resolved_settings.crawl4ai_url,
                 timeout=max(

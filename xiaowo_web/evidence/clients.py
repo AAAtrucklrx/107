@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -62,6 +63,85 @@ class SearxngClient:
             return response.status_code == 200
         except httpx.HTTPError:
             return False
+
+    async def close(self) -> None:
+        if self._owned_client:
+            await self._client.aclose()
+
+
+class BochaWebSearchClient:
+    """博查 Web Search API 适配器（国内直连，无需 SearXNG sidecar）。
+
+    POST {base}/v1/web-search，Bearer 认证；响应:
+    {code:200, data.webPages.value[]: {name, url, snippet, summary, siteName, datePublished}}
+
+    与 SearxngClient 同契约：search(query, limit) → SearchBatch。
+    """
+
+    _HEALTH_TTL = 600.0  # 探测结果缓存 10 分钟（探测会消耗一次计费搜索）
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        base_url: str = "https://api.bochaai.com",
+        timeout: float = 8.0,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("Bocha api_key is required")
+        self._api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self._owned_client = client is None
+        # Authorization 放在请求级（下方 search/health）而非 client 默认头：
+        # 外部注入 client 时默认头不会应用，请求级才能保证认证必达
+        self._client = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout),
+            trust_env=False,
+            headers={"User-Agent": "xiaowo-evidence/1"},
+        )
+        self._health_ok: bool | None = None
+        self._health_at: float = 0.0
+
+    async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
+        response = await self._client.post(
+            f"{self.base_url}/v1/web-search",
+            json={"query": query, "count": max(1, min(limit, 50)), "summary": True, "freshness": "noLimit"},
+            headers={"Authorization": f"Bearer {self._api_key}"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("code") != 200:
+            raise SidecarContractError(f"Bocha search failed: {payload.get('msg') or payload.get('code')}")
+        web_pages = ((payload.get("data") or {}).get("webPages") or {}).get("value") or []
+        if not isinstance(web_pages, list):
+            raise SidecarContractError("Bocha webPages contract is invalid")
+        hits = [
+            SearchHit(
+                title=str(item.get("name") or "").strip(),
+                url=str(item.get("url") or "").strip(),
+                # summary（正文摘要）优先于 snippet（搜索摘要，可能被截断）
+                snippet=str(item.get("summary") or item.get("snippet") or "").strip(),
+                engine="bocha",
+                published_at=str(item.get("datePublished") or "").strip() or None,
+            )
+            for item in web_pages
+            if isinstance(item, dict) and item.get("url")
+        ]
+        return SearchBatch(hits=hits[: max(1, min(limit, 50))], partial=False, unavailable_engines=())
+
+    async def health(self) -> bool:
+        # 博查无免费探针端点——探测即计费，故缓存 10 分钟
+        now = time.monotonic()
+        if self._health_ok is not None and now - self._health_at < self._HEALTH_TTL:
+            return self._health_ok
+        try:
+            batch = await self.search("健康检查", limit=1)
+            self._health_ok = bool(batch.hits)
+        except Exception:
+            self._health_ok = False
+        self._health_at = now
+        return self._health_ok
 
     async def close(self) -> None:
         if self._owned_client:
