@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/xiaowo_blue</item>
+        <item name="colorPrimaryDark">@color/xiaowo_blue_pressed</item>
+        <item name="colorAccent">@color/xiaowo_cyan</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:windowBackground">@color/xiaowo_surface</item>
+        <item name="android:statusBarColor">@color/xiaowo_surface</item>
+        <item name="android:navigationBarColor">@color/xiaowo_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="AppTheme.Launch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+    </style>
+</resources>

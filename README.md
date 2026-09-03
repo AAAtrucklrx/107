@@ -59,6 +59,21 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 
 **服务器实操部署**（Linux，2026-09-01 已上线）：`deploy/server/{start_all,stop_all,status}.sh` 管理三服务（Web:8000 / worker / Streamlit:8502），公网 `http://114.214.241.119:8850`（competition + demo）；完整契约与调优记录见 [部署规格与记录](docs/部署规格与记录_2026-09-01.md)，服务器环境事实见 [VM 接手文档](docs/VM接手文档.md) §6。
 
+### Android Demo
+
+受控原生 WebView 客户端位于 [`apps/android`](apps/android/README.md)，固定连接比赛 Demo，并在明文 HTTP 期间显示不可隐藏的安全警示。客户端不再向远程页面暴露 Capacitor/Cordova Bridge，支持主框架同源导航、SSE、Cookie、Custom Tabs 外链、用户确认下载、返回历史和页面进程恢复。
+
+```powershell
+Set-Location apps/android
+npm install
+& .\scripts\verify-project.ps1
+& .\scripts\build-debug.ps1
+& .\scripts\start-emulator.ps1 -Headless
+& .\scripts\run-device-tests.ps1
+```
+
+Debug 与专用 Demo 签名 Release 的构建、APK 校验、Production HTTPS flavor 和 10 套图标候选见 Android 子项目文档。
+
 ## 📁 项目结构
 
 ```
@@ -69,6 +84,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 ├── database/        # 应用/审核 SQLite Schema 与种子数据
 ├── frontend/        # React/Vite/TypeScript 用户工作区与独立管理后台
 ├── xiaowo_web/      # FastAPI、认证、SSE、证据、审核发布与 worker
+├── apps/android/    # Android 8+ 受控 WebView 客户端、测试、构建与品牌资源
 ├── deploy/          # SearXNG/Crawl4AI 安全 sidecar 模板
 ├── tests/web/       # Web API、权限、安全、发布与集成测试
 ├── ui/              # 迁移期保留的 Streamlit 回退界面

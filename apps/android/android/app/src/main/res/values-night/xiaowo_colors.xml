@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="xiaowo_ink">#EDF4F7</color>
+    <color name="xiaowo_muted">#A7B5BF</color>
+    <color name="xiaowo_surface">#10171D</color>
+    <color name="xiaowo_blue">#6EA8FF</color>
+    <color name="xiaowo_blue_pressed">#4C8DEB</color>
+    <color name="xiaowo_cyan">#54C7D0</color>
+    <color name="xiaowo_white">#FFFFFF</color>
+    <color name="xiaowo_demo_banner">#3A2E08</color>
+    <color name="xiaowo_demo_banner_text">#FFE28A</color>
+</resources>

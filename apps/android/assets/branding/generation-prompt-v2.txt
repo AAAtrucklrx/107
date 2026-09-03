@@ -1,0 +1,10 @@
+Asset type: Android launcher mascot and splash artwork.
+Primary request: Create one original anime-inspired science-and-engineering snail mascot for Xiaowo, a university campus assistant.
+Subject: A friendly, intelligent compact snail wearing round glasses. Give it a clean spiral shell with one subtle orbital ring integrated into the shell itself. The face and glasses must remain immediately recognizable at very small icon size.
+Style/medium: polished 2D cel-shaded illustration with a clean vector-friendly silhouette, crisp edges, controlled detail, expressive but not childish, premium mobile-app icon quality.
+Composition/framing: centered square composition, slight front three-quarter view, complete character fully visible, compact silhouette, no detached decorative objects, generous transparent safe area of at least 18 percent on every side. Keep antennae, shell, feet and orbital ring fully inside the central safe area.
+Lighting/mood: clean soft highlights, calm, curious, capable and welcoming.
+Color palette: deep navy blue, bright cyan, cool white and restrained dark outlines. Use broad color regions that remain clear at 48 pixels.
+Text (verbatim): ""
+Constraints: exactly one character; truly transparent background; no floating planets; no floating stars; no external orbit lines; no wordmark; no letters; no numbers; no readable equations; no university emblem or school badge; no existing character likeness; no watermark or signature; no phone or app mockup.
+Avoid: photorealism, 3D render, busy background, checkerboard background, colored square background, excessive gradients, excessive glow, tiny fragile details, cropped body, multiple characters, props, scarf or clothing, text-like symbols.

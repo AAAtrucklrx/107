@@ -1,0 +1,97 @@
+{
+  "source": "assets/branding/xiaowo-mascot-v1.png",
+  "sourceSha256": "5b0f57267b69b7b2bc76c74ad10779edfaf7dc4094eb5bd5ed77049c1fe07b5b",
+  "sourceDimensions": "1024x1024",
+  "generator": "sharp 0.34.4",
+  "background": "#083C4A",
+  "outputs": [
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi/ic_launcher.xml",
+      "sha256": "5bef67e3eba5c56f6ca0f96173c76e654977bce5ea91f0161fce94c5f52bbef7"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi/ic_launcher_round.xml",
+      "sha256": "5bef67e3eba5c56f6ca0f96173c76e654977bce5ea91f0161fce94c5f52bbef7"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "sha256": "1437e3c8c0f846fa3459ab91854ebde2c1c8b9d8cb3ad21e7d7a22b7dba9a012"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+      "sha256": "552c4cb3598bf581a554788088f67058eb052d99f113b0ce894fc074ca66722d"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-hdpi/ic_launcher_monochrome.png",
+      "sha256": "23ac63bcd8f98985622005f76e7074139a6a61018fbaa63a65fed25356d0f427"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+      "sha256": "8ca8ddd7d0150e8fe50c988523e56e9041dfd370e1986d5e22cb29ba32d23cec"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "sha256": "56295b6b6bcdcbd5b7b2a05522d45d8af5a1234d4fcffaac49e95b8ac8c22603"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+      "sha256": "22492b467bfbfa161314500945ba3573254a91201230a329fbb888464b767c07"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-mdpi/ic_launcher_monochrome.png",
+      "sha256": "f5875d521f627329963f0b4190fc776fc217f6a0f9d7080ce8d8c5b2a8dae9b7"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+      "sha256": "3135cc6247885a58deae85d75c4aeb4e2f66e87e648f71d591a66bea3bdf26b3"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "sha256": "5d8f2cf1ce555f1c4c6911c0cb821a9c1d84e472016aee1cf7904a232063ad19"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+      "sha256": "96c2e2a9c51e691c2f0c3fec1f1d6bb3be2b12e685d4983eeeb26787ed69bf8e"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_monochrome.png",
+      "sha256": "d14b991fdc51d8bbf62fe8ec0a126d99b72e6baf75239f1c9033336d6a1e2aed"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+      "sha256": "4e8a70de8f57f2da04e75764b1089d65bd26c0d1567775c242e58c7b9b4c7ecd"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "sha256": "c84583cce1117094a69c60c09082f6d9655e2bccffaf3f7df4e490cbc5a6afff"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "sha256": "2a0090d46326ce7b906d9b32668735ad78891fc02332c9c54ea7a4ca2b5982f3"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_monochrome.png",
+      "sha256": "a974c4176f0683dd98bd8323903ee895431e62056ce8803cc5fbc70ed4645a2b"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+      "sha256": "d10a9130c715cbbee76727462f53598908411a8ad1b26a1a9324b87a6abe8f06"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "sha256": "58387baf362d36e184a949d00984bf41064b46964bdd056a05a87c37f5c2f002"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "sha256": "80defd9271e217734184bb29948364e8283821b41b618e977efbe5f9c6eba772"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_monochrome.png",
+      "sha256": "dcc480c384b27c65b696c65737ccbffec194348c003b99e7f91f6ce35eed6953"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+      "sha256": "fa93ef5376f7f875ca6670c52d7c8f8fb06f4f03ef219fa702f07b6f71d5e055"
+    }
+  ]
+}

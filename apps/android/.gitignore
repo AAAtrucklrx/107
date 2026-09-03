@@ -1,0 +1,17 @@
+node_modules/
+.gradle/
+.idea/
+local.properties
+*.iml
+android/.gradle/
+android/build/
+android/local.properties
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/signing/
+artifacts/
+107-integration/
+toolchain.local.ps1
+*.jks
+*.keystore
+*.log

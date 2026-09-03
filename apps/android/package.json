@@ -1,0 +1,16 @@
+{
+  "name": "xiaowo-android",
+  "version": "0.2.0",
+  "private": true,
+  "description": "小蜗 Android WebView client and branding pipeline",
+  "scripts": {
+    "branding": "node scripts/generate-branding.mjs",
+    "icons:candidates": "node scripts/generate-icon-candidates.mjs"
+  },
+  "devDependencies": {
+    "sharp": "0.34.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -1,0 +1,132 @@
+apply plugin: 'com.android.application'
+
+import java.net.URI
+import java.util.Locale
+import java.util.Properties
+
+def demoOrigin = 'http://114.214.241.119:8850'
+def configuredProductionOrigin = providers.gradleProperty('xiaowoProductionOrigin')
+    .orElse(providers.environmentVariable('XIAOWO_PRODUCTION_ORIGIN'))
+    .orElse('https://xiaowo.invalid')
+    .get()
+
+def validateOrigin = { String value, boolean requireHttps ->
+    URI uri
+    try {
+        uri = new URI(value)
+    } catch (Exception error) {
+        throw new GradleException("Invalid Xiaowo server origin: ${value}", error)
+    }
+    if (!uri.host || uri.userInfo || uri.query || uri.fragment || (uri.path && uri.path != '/')) {
+        throw new GradleException("Xiaowo server origin must contain only scheme, host and optional port: ${value}")
+    }
+    if (!['http', 'https'].contains(uri.scheme?.toLowerCase(Locale.ROOT))) {
+        throw new GradleException("Unsupported Xiaowo server scheme: ${value}")
+    }
+    if (requireHttps && uri.scheme.toLowerCase(Locale.ROOT) != 'https') {
+        throw new GradleException('Production builds require an HTTPS Xiaowo server origin.')
+    }
+    value.endsWith('/') ? value[0..-2] : value
+}
+
+demoOrigin = validateOrigin(demoOrigin, false)
+configuredProductionOrigin = validateOrigin(configuredProductionOrigin, true)
+
+def quoteBuildConfig = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def demoSigningPropertiesFile = rootProject.file('signing/demo-signing.properties')
+def demoSigningProperties = new Properties()
+if (demoSigningPropertiesFile.exists()) {
+    demoSigningPropertiesFile.withInputStream { demoSigningProperties.load(it) }
+}
+
+android {
+    namespace = "cn.edu.ustc.xiaowo"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    signingConfigs {
+        demoRelease {
+            if (demoSigningPropertiesFile.exists()) {
+                storeFile rootProject.file(demoSigningProperties.getProperty('storeFile'))
+                storePassword demoSigningProperties.getProperty('storePassword')
+                keyAlias demoSigningProperties.getProperty('keyAlias')
+                keyPassword demoSigningProperties.getProperty('keyPassword')
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "cn.edu.ustc.xiaowo"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 2
+        versionName "0.2.0"
+        buildConfigField "String", "XIAOWO_UPDATE_PATH", '"/mobile/android/update.json"'
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments clearPackageData: 'true'
+        aaptOptions {
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+
+    flavorDimensions += 'environment'
+    productFlavors {
+        demo {
+            dimension 'environment'
+            versionNameSuffix '-demo'
+            manifestPlaceholders = [usesCleartextTraffic: 'true']
+            buildConfigField 'String', 'XIAOWO_SERVER_ORIGIN', quoteBuildConfig(demoOrigin)
+            buildConfigField 'String', 'XIAOWO_CHANNEL', '"demo"'
+            buildConfigField 'boolean', 'XIAOWO_DEMO_BUILD', 'true'
+            buildConfigField 'boolean', 'XIAOWO_REQUIRE_HTTPS', 'false'
+            resValue 'string', 'app_name', '小蜗 Demo'
+            if (demoSigningPropertiesFile.exists()) {
+                signingConfig signingConfigs.demoRelease
+            }
+        }
+        production {
+            dimension 'environment'
+            manifestPlaceholders = [usesCleartextTraffic: 'false']
+            buildConfigField 'String', 'XIAOWO_SERVER_ORIGIN', quoteBuildConfig(configuredProductionOrigin)
+            buildConfigField 'String', 'XIAOWO_CHANNEL', '"production"'
+            buildConfigField 'boolean', 'XIAOWO_DEMO_BUILD', 'false'
+            buildConfigField 'boolean', 'XIAOWO_REQUIRE_HTTPS', 'true'
+            resValue 'string', 'app_name', '小蜗'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+    buildTypes {
+        debug {
+            debuggable true
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        animationsDisabled true
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.browser:browser:$androidxBrowserVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test:runner:$androidxTestRunnerVersion"
+    androidTestImplementation "androidx.test:rules:$androidxTestRulesVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+}

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/demo_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:background="@color/xiaowo_demo_banner"
+            android:gravity="center"
+            android:minHeight="32dp"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="6dp"
+            android:textColor="@color/xiaowo_demo_banner_text"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <WebView
+                android:id="@+id/main_webview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAutofill="noExcludeDescendants" />
+
+            <ProgressBar
+                android:id="@+id/main_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="3dp"
+                android:layout_gravity="top"
+                android:indeterminate="false"
+                android:max="100"
+                android:progressTint="@color/xiaowo_cyan"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/main_error"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:accessibilityLiveRegion="assertive"
+                android:background="@color/xiaowo_surface"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/error_mark_background"
+                    android:gravity="center"
+                    android:text="@string/error_mark"
+                    android:textColor="@color/xiaowo_white"
+                    android:textSize="30sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:text="@string/main_connection_title"
+                    android:textColor="@color/xiaowo_ink"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/main_error_text"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4dp"
+                    android:text="@string/main_connection_error"
+                    android:textColor="@color/xiaowo_muted"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/main_retry"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:background="@drawable/primary_button_background"
+                    android:minHeight="48dp"
+                    android:minWidth="128dp"
+                    android:paddingHorizontal="24dp"
+                    android:text="@string/main_retry"
+                    android:textAllCaps="false"
+                    android:textColor="@color/xiaowo_white"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </FrameLayout>
+</LinearLayout>

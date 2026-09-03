@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="title_activity_main">小蜗</string>
+    <string name="demo_security_banner">演示环境 · %1$s · 请勿输入真实账号或敏感信息</string>
+    <string name="back_again_to_exit">再按一次退出小蜗</string>
+    <string name="main_connection_title">暂时无法连接小蜗</string>
+    <string name="main_connection_error">请检查网络后重试。恢复连接后会继续加载最新页面。</string>
+    <string name="main_retry">重新连接</string>
+    <string name="invalid_configuration">当前安装包的服务器配置无效。Demo 允许固定测试地址，正式版本必须使用可信 HTTPS。</string>
+    <string name="unsafe_page_blocked">Android 安全浏览已阻止这个页面。</string>
+    <string name="web_renderer_crashed">页面进程意外退出，正在重新载入。</string>
+    <string name="web_renderer_restarted">系统已回收页面进程，正在恢复。</string>
+    <string name="error_mark">蜗</string>
+    <string name="external_navigation_blocked">此链接类型已被小蜗阻止。</string>
+    <string name="external_app_unavailable">设备上没有可处理此链接的应用。</string>
+    <string name="clipboard_label">小蜗内容</string>
+    <string name="clipboard_confirm_title">复制到剪贴板？</string>
+    <string name="copy_label">复制</string>
+    <string name="save_label">保存</string>
+    <string name="download_confirm_title">保存文件？</string>
+    <string name="download_confirm_message">文件：%1$s\n大小：%2$s</string>
+    <string name="download_started">下载已开始，可在系统通知中查看进度。</string>
+    <string name="download_notification_description">来自小蜗的文件</string>
+    <string name="download_saved">文件已保存：%1$s</string>
+    <string name="download_failed">文件保存失败</string>
+    <string name="unknown_size">未知</string>
+    <string name="cancel_label">取消</string>
+    <string name="update_available_title">发现小蜗新版本</string>
+    <string name="update_available_message">版本 %1$s 已可用。\n\n%2$s</string>
+    <string name="update_open_page">查看更新</string>
+    <string name="update_later">稍后</string>
+</resources>

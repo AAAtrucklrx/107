@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "manifestUrl": "http://114.214.241.119:8850/mobile/android/update.json",
+  "checkIntervalHours": 24,
+  "requireHttps": true
+}
