@@ -679,6 +679,39 @@ class CASClient:
         )
         return self.get_json(path)
 
+    def get_course_table_datum(self, semester_id: int, lesson_ids: list[int], data_id: int = None) -> dict:
+        """按周课表全量数据(POST /for-std/course-table/datum)。
+        body: {"lessonIds": [...]}；返回 result.lessonList（每门教学班的完整信息：
+        courseName/teachers/schedule/周次等）。注意响应较大（500KB+），慎频繁调用。"""
+        if not self._logged_in:
+            return {"error": "未登录"}
+        did = data_id or self._student_data_id
+        if not did or not lesson_ids:
+            return {"error": "缺少 student_data_id 或 lesson_ids"}
+        try:
+            resp = self._session.post(
+                f"{self.JW_BASE}/for-std/course-table/datum",
+                json={"lessonIds": lesson_ids},
+                params={"bizTypeId": 2, "semesterId": semester_id, "dataId": did},
+                timeout=self.TIMEOUT,
+            )
+            if resp.status_code != 200:
+                return {"error": f"datum 返回 {resp.status_code}"}
+            return resp.json()
+        except Exception as exc:
+            return {"error": str(exc)[:120]}
+
+    def search_all_lessons(self, semester_id: int, data_id: int = None) -> list | dict:
+        """全校开课查询(GET /for-std/lesson-search/semester/{semId}/search/{dataId})。
+        返回全学期教学班列表（~240KB）：code(带班号)/nameZh/courseName/teachers/
+        schedule/开课院系等；关键词过滤建议在调用侧做（接口参数名未公开）。"""
+        if not self._logged_in:
+            return {"error": "未登录"}
+        did = data_id or self._student_data_id
+        if not did:
+            return {"error": "缺少 student_data_id，请先登录或手动指定"}
+        return self.get_json(f"/for-std/lesson-search/semester/{semester_id}/search/{did}")
+
     # ── 2026-08-27 实测新接口(旧 student/home/student-info 已 404) ──
 
     def get_student_info_page(self, data_id: int = None) -> dict:
@@ -709,6 +742,14 @@ class CASClient:
         if not self._logged_in:
             return {"error": "未登录"}
         return self.get_json("/for-std/sport-grade/list")
+
+    def get_current_teach_week(self) -> dict:
+        """官方当前教学周(GET /home/get-current-teach-week)。
+        返回 {currentSemester, weekIndex, dayIndex, isInSemester}；
+        weekIndex 为教务权威教学周序号（学期未开始时 dayIndex 可能为负）。"""
+        if not self._logged_in:
+            return {"error": "未登录"}
+        return self.get_json("/home/get-current-teach-week")
 
     def get_exam_arrange(self, data_id: int = None) -> dict:
         """

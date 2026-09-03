@@ -828,6 +828,39 @@ def query_exam(student_id: str = None, course_name: str = None) -> dict:
         return {"student_id": sid, "exams": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
 
+    # 优先：教务个人考试安排（精确到本人 + 考场/校区/说明；学期初可能无数据）
+    try:
+        cas = _cas()
+        if cas and cas.is_logged_in():
+            personal = cas.get_exam_arrange()
+            rows = personal.get("exams") if isinstance(personal, dict) else None
+            if rows:
+                exams = []
+                for r in rows:
+                    datetime_text = str(r.get("datetime") or "")
+                    date_part, _, time_part = datetime_text.partition(" ")
+                    location = " ".join(x for x in (r.get("room"), r.get("building")) if x) or "待定"
+                    exams.append({
+                        "course": r.get("course_name") or "未知",
+                        "course_code": r.get("lesson_code") or "",
+                        "date": date_part,
+                        "time": time_part,
+                        "location": location,
+                        "type": r.get("exam_type") or "考试",
+                        "campus": r.get("campus") or "",
+                        "note": r.get("note") or "",
+                        "source": "教务个人",
+                    })
+                if course_name:
+                    exams = [e for e in exams if course_name in e.get("course", "")]
+                exams.sort(key=lambda x: (x.get("date", ""), x.get("time", "")))
+                return {
+                    "student_id": sid, "exams": exams, "count": len(exams),
+                    "source": "jw_personal",
+                }
+    except Exception as e:
+        log.warning(f"教务个人考试安排不可用 (student_id={sid})，回退 catalog: {e}")
+
     # 尝试真实 API
     try:
         api = _catalog()
@@ -1189,3 +1222,79 @@ def query_program(student_id: str = None, module_id: int = None) -> dict:
         "source": "fallback",
         "message": "⚠️ 教务接口暂时不可用，以下为本地培养方案数据，仅供参考",
     }
+
+
+@tool
+def search_all_lessons(student_id: str = None, keyword: str = None) -> dict:
+    """
+    全校开课查询：检索本学期全部教学班（开课院系/教师/上课安排）。
+
+    Args:
+        student_id: 学号（登录用户；未登录时此查询锁定）
+        keyword: 关键词（可选），过滤课程名/课程编号/教师/开课院系
+
+    Returns:
+        {"lessons": [{"code", "course_name", "teachers", "schedule",
+                      "open_department", "credits", "course_type"}, ...],
+         "count", "total", "source": "jw_lesson_search"}
+    """
+    sid = student_id
+
+    if _is_locked(sid):
+        return {"student_id": sid, "lessons": [], "count": 0,
+                "source": "locked", "message": _LOGIN_MSG}
+
+    try:
+        cas = _cas()
+        if not (cas and cas.is_logged_in()):
+            return {"student_id": sid, "lessons": [], "count": 0,
+                    "source": "fallback", "message": "全校开课查询需要教务登录会话，当前不可用"}
+        api = _catalog()
+        current_sem = api.get_current_semester() if api else None
+        sem_id = current_sem.get("id") if current_sem and "error" not in current_sem else None
+        if not sem_id:
+            return {"student_id": sid, "lessons": [], "count": 0,
+                    "source": "fallback", "message": "无法确认当前学期，未查询开课数据"}
+
+        lessons = cas.search_all_lessons(sem_id)
+        if not isinstance(lessons, list):
+            return {"student_id": sid, "lessons": [], "count": 0,
+                    "source": "fallback", "message": "教务开课查询返回异常，未获取教学班数据"}
+
+        kw = (keyword or "").strip().lower()
+        if kw:
+            lessons = [
+                l for l in lessons
+                if kw in json.dumps(l, ensure_ascii=False).lower()
+            ]
+
+        lessons_out = []
+        for l in lessons[:30]:
+            course_obj = l.get("course") or {}
+            teachers = [
+                t.get("name", "")
+                for t in (l.get("teacherAssignmentList") or [])
+                if isinstance(t, dict)
+            ]
+            open_dept = l.get("openDepartment")
+            lessons_out.append({
+                "code": l.get("code") or course_obj.get("code", ""),
+                "course_name": l.get("courseName") or course_obj.get("nameZh", ""),
+                "credits": course_obj.get("credits", ""),
+                "course_type": l.get("courseTypeName") or "",
+                "teachers": [t for t in teachers if t],
+                "schedule": l.get("scheduleText") or "",
+                "open_department": open_dept.get("nameZh") if isinstance(open_dept, dict) else (open_dept or ""),
+            })
+        return {
+            "student_id": sid,
+            "keyword": keyword or "",
+            "lessons": lessons_out,
+            "count": len(lessons_out),
+            "total": len(lessons),
+            "source": "jw_lesson_search",
+        }
+    except Exception as e:
+        log.warning(f"全校开课查询失败 (student_id={sid}, keyword={keyword}): {e}")
+        return {"student_id": sid, "lessons": [], "count": 0,
+                "source": "fallback", "message": "全校开课查询暂不可用，请稍后重试"}

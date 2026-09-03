@@ -11,7 +11,7 @@ def _build_tool_registry() -> dict:
     from tools.course_tools import (
         query_schedule, query_daily_schedule, find_empty_room, query_grade, calc_gpa, query_exam,
         search_courses, get_semester_list,
-        query_course_selection, query_program,
+        query_course_selection, query_program, search_all_lessons,
     )
     from tools.advisor_tools import (
         collect_preferences, recommend_courses, compare_courses, analyze_teacher,
@@ -37,6 +37,7 @@ def _build_tool_registry() -> dict:
         "query_grade": query_grade,
         "calc_gpa": calc_gpa,
         "query_exam": query_exam,
+        "search_all_lessons": search_all_lessons,
         "search_courses": search_courses,
         "get_semester_list": get_semester_list,
         "query_course_selection": query_course_selection,
