@@ -4,12 +4,13 @@
 
 ## 项目一句话
 
-小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 → compose 合成），SQLite 双库 + ChromaDB 混合检索 + 28 内置工具（+ `eco:` 生态工具）+ 校内服务（教务/CAS/青春科大 young/科大 LLM 平台）。Streamlit（`app_test.py`）仅作回退入口。
+小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 → compose 合成），SQLite 双库 + ChromaDB 混合检索 + 29 内置工具（2026-09-03 实测，另侧提交新增 search_all_lessons，_TOOL_LIST 待同步；+ `eco:` 生态工具）+ 校内服务（教务/CAS/青春科大 young/科大 LLM 平台）。Streamlit（`app_test.py`）仅作回退入口。
 
 ## ⚠️ 当前状态（2026-09-01 实测）——动手前必看
 
-- HEAD：`22a07ec`（feat(evidence): wechat official-account channel…），main 分支，远端 `github.com/AAAtrucklrx/107`。
-- **工作区干净**：无未提交改动；未跟踪项均为数据/环境产物（`.env`、`data/`、`database/*.db-wal/shm`、`scripts/data/`、`.models/`、`.npm-cache/`、`deploy/server/logs/` 等，均不入 git）。
+- HEAD：`5cd635c`（fix(data): demo program fixture… 2026-09-03），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
+- **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
 - **已确认的身份边界**：登录后的专业/年级只取当前用户 CAS/成绩档案，取不到不猜且不继承匿名选择；个人方案失败时可按已验证身份显示通用方案，但必须标注“专业通用参考，不是个人培养方案”。
 - 规则：动手前 `git status` + `git diff`，只改任务声明的文件；改完跑全量验证并报告；**不自提交**（经批准后按铁律 3 提交）。
@@ -51,13 +52,13 @@ PY=/root/Desktop/小蜗/.venv/bin/python
 # 全量验证（改后必跑；LLM 依赖项需校内 LLM 可达）
 $PY scripts/verify_tools.py    # 44/44（2026-09-01 基线）
 $PY scripts/test_fixes.py      # 49/49
-$PY scripts/verify_nodes.py    # 57/57
+$PY scripts/verify_nodes.py    # 66/66
 $PY scripts/check_course_db.py # 9/9
 $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 132/132（2026-09-01）
+$PY -m pytest tests/web -q          # 158 passed（2026-09-03 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build

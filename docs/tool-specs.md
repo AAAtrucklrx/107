@@ -1140,3 +1140,9 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 回滚 API `POST /api/v1/admin/generations/rollback` 只切换到上一完整 generation。切换前同时验证 manifest、BM25 文件、Chroma collection 名称、generation 元数据、文档数以及 `(document_id, content_hash)` 指纹；任何失败返回 `GENERATION_INTEGRITY_INVALID` 并保持 active 指针不变。
 
 运行与迁移步骤见 `docs/Web部署与数据迁移.md`。
+
+### 2026-09-03 增补（另侧提交 + 本机实测同步）
+
+- **新工具（另侧 7aa21ca 已注册）**：`search_all_lessons`（全校开课检索，客户端关键词过滤；tool count 口径 30，registry 实测 29 键——`_TOOL_LIST` 未同步项另侧待修）；`query_exam` 主源已切换为**教务个人考试安排**（jw `/for-std/exam-arrange/info/{dataId}`，含考场/校区；catalog 公共考试列表降为兜底）；`get_current_teach_week` 教学周校准（CAS 用户，30min TTL）。
+- **官方站点直采（本机 2026-09-03）**：`scripts/collect_official_pages.py`（SOURCES 配置驱动，teach 教务 RSS `/category/notice/feed` 起步）+ `deploy/server/official_collect_loop.sh`（每日 05:45）→ 经"采集→审核→发布"管线进发布库（级别 official_primary）；闭环验证：2 条"一〇七杯"通知 active、检索命中。
+- **发布知识检索说明**：`ApprovedKnowledgeRetriever` 为 BM25 词法（`_BuiltinBM25` + CJK 分词），发布 chroma 向量仅作产物备存（当前 gen-3CpW 60 条已对齐）——未启用语义混合检索。

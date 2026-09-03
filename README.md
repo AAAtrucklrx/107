@@ -30,7 +30,7 @@
 - **智能体**: LangGraph · 统一 QA 流程（embedding_parse → think 自主决策 ≤4 轮（规则 1-22）→ act → compose；确定性路由兜底）
 - **知识库**: ChromaDB 混合检索（向量 + BM25，维度不匹配自动降级 BM25-only）
 - **数据**: SQLite 应用库 + 审核库 + 评课库，Chroma/BM25 generation，公开网页快照与批准数据全部位于 gitignore 数据目录
-- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、青春科大 young、科大 LLM 平台；联网 sidecar 为 SearXNG 与 Crawl4AI adapter
+- **外部服务**: 科大统一身份认证（CAS）、教务系统（jw API）、青春科大 young、科大 LLM 平台；联网 sidecar 为 SearXNG 与 Crawl4AI adapter；**官方站点直采**（`scripts/collect_official_pages.py`，teach 教务 RSS 每日进"采集→审核→发布"管线，官方一手来源）
 
 ## 🚀 快速开始
 
