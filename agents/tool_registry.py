@@ -14,7 +14,7 @@ def _build_tool_registry() -> dict:
         query_course_selection, query_program, search_all_lessons,
     )
     from tools.advisor_tools import (
-        collect_preferences, recommend_courses, compare_courses, analyze_teacher,
+        collect_preferences, recommend_courses, compare_courses, analyze_teacher, get_course_reviews,
     )
     from tools.program_tools import (
         get_my_program, get_program_progress, plan_semester,
@@ -46,6 +46,7 @@ def _build_tool_registry() -> dict:
         "recommend_courses": recommend_courses,
         "compare_courses": compare_courses,
         "analyze_teacher": analyze_teacher,
+        "get_course_reviews": get_course_reviews,
         "get_my_program": get_my_program,
         "get_program_progress": get_program_progress,
         "plan_semester": plan_semester,

@@ -788,21 +788,37 @@ def _candidate_pool(conn: sqlite3.Connection, profile: dict,
     return _merge_candidate_rows(focused, broad), bool(interests and not focused)
 
 
+def _rating_label(score: float | None) -> str:
+    """评分口径（用户定稿 2026-09-03）：≥8 好评，6~8 中评，5~6 中下，<5 差评（10 分制）。"""
+    try:
+        s = float(score or 0)
+    except (TypeError, ValueError):
+        return ""
+    if s >= 8:
+        return "好评"
+    if s >= 6:
+        return "中评"
+    if s >= 5:
+        return "中下"
+    return "差评"
+
+
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     """由课程行构建完整推荐条目（字段与旧实现一致）。
-    row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。"""
+    row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。
+    评论数：每课 3 条（多师时每师 1 条、跨师封顶 3）；追问详情用 get_course_reviews。"""
     row = _row_dict(row)
     cid = row["id"]
     dims = _dims_info(conn, cid)
     teachers = _teacher_cells(conn, cid)
     multi = len(teachers) > 1
-    if multi:  # 同课多师: 每师最多 3 条, 总量封顶 6
+    if multi:  # 同课多师: 每师 1 条, 跨师封顶 3（评课详情追问走 get_course_reviews）
         reviews = []
         for t in teachers:
-            reviews.extend(_top_reviews(conn, cid, t["name"], limit=3))
-        reviews = reviews[:6]
+            reviews.extend(_top_reviews(conn, cid, t["name"], limit=1))
+        reviews = reviews[:3]
     else:
-        reviews = _top_reviews(conn, cid, limit=6)
+        reviews = _top_reviews(conn, cid, limit=3)
     if row.get("program_name"):
         program_hint = {
             "required": row.get("program_required") or "",
@@ -823,6 +839,7 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         "dept": row["dept"],
         "course_type": row["course_type"],
         "rating_avg": round(row["rating_avg"], 1),
+        "rating_label": _rating_label(row["rating_avg"]),
         "rate_count": row["rating_count"],
         "dims": dims,
         "teachers": teachers,
@@ -1226,6 +1243,9 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     根据培养方案和用户本轮需求推荐课程。先排除已修课并按方案分为必修、方案内选修，
     再综合兴趣、负担、给分、挑战、教师、目标学期与小样本收缩评分排序；方案外课程
     只作为透明标注的方向补充。无方案或个人数据时明确降级。
+
+    评分口径（rating_label 随每门课返回）：≥8 好评，6~8 中评，5~6 中下，<5 差评；
+    每门课附 3 条代表性评论；用户追问更多评论时调用 get_course_reviews（可取 6~20 条）。
 
     Args:
         profile: 用户画像, 格式: {"major": "计算机科学", "grade": "大二",
@@ -1707,3 +1727,41 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         "review_count": n_reviews,
         "reviews_sample": sample[:6],
     }
+
+
+@tool
+def get_course_reviews(course_name: str, teacher: str | None = None, limit: int = 6) -> dict:
+    """
+    获取某门课程的更多学生评课（用户追问"多一点评论/更多评论"时调用本工具）。
+    返回按点赞代表性排序的评论列表（默认 6 条，最多 20 条），含作者/教师/星级/
+    学期/难度/作业/给分/收获维度与正文；同课多师时可用 teacher 过滤指定教师。
+
+    Args:
+        course_name: 课程名（如 "数学分析(B1)"、"英语交流进阶I"）
+        teacher: 教师名（可选，模糊匹配合教名）
+        limit: 返回条数（默认 6，最大 20）
+
+    Returns:
+        {"course_name", "teacher", "rating_avg", "rating_label", "rate_count",
+         "reviews": [{author, teacher, stars, term, dims, content}, ...], "count"}
+    """
+    conn = _cdb()
+    try:
+        matches = _match_courses(conn, course_name)
+        if not matches:
+            return {"course_name": course_name, "reviews": [], "count": 0,
+                    "message": f"未在评课库中找到课程「{course_name}」"}
+        row = matches[0]
+        safe_limit = max(1, min(int(limit or 6), 20))
+        reviews = _top_reviews(conn, row["id"], teacher, limit=safe_limit)
+        return {
+            "course_name": row["name"],
+            "teacher": teacher or "",
+            "rating_avg": round(row.get("rating_avg") or 0, 1),
+            "rating_label": _rating_label(row.get("rating_avg")),
+            "rate_count": row.get("rating_count") or 0,
+            "reviews": reviews,
+            "count": len(reviews),
+        }
+    finally:
+        conn.close()

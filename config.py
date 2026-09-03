@@ -51,6 +51,9 @@ KNOWLEDGE_DATA_DIR = PROJECT_ROOT / "knowledge" / "data"
 FAQ_TOP_K = 5
 FAQ_SIMILARITY_THRESHOLD = 0.6  # 低于此分数认为无匹配
 
+# 演示学生学号（Web 端 demo 身份与个人工具放行共用；数据源见 fixtures/demo/ 与 xiaowo.db）
+DEMO_STUDENT_ID = os.getenv("XIAOWO_DEMO_STUDENT_ID", "PB25111691")
+
 # ── CAS 统一认证配置 ──────────────────────────
 # CAS 回调地址：CAS 认证完成后重定向回此地址
 # 本地开发默认 localhost:8501，部署后改为实际域名

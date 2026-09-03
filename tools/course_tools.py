@@ -52,10 +52,31 @@ def _cas():
 # ── 未登录锁定提示 ──
 _LOGIN_MSG = "🔒 此功能需要登录教务系统。请在左侧通过科大统一身份认证登录。"
 
+# 演示学生学号（与 config.py 共享；demo 身份放行走本地同步数据）
+try:
+    from config import DEMO_STUDENT_ID as _DEMO_STUDENT_ID
+except ImportError:  # 独立脚本场景
+    _DEMO_STUDENT_ID = "PB25111691"
+
 
 def _is_locked(student_id: str) -> bool:
-    """仅允许当前认证会话读取其自身的个人数据。"""
+    """仅允许当前认证会话读取其自身的个人数据。
+
+    演示学生例外：demo 身份不走 CAS，但其在 xiaowo.db 有真实同步数据
+    （2026-09-03 起为本人真实课表/成绩），放行后各工具走 db 数据源。
+    """
     cas = _cas()
+    if student_id and student_id == _DEMO_STUDENT_ID:
+        try:
+            rows = _db().query(
+                "SELECT 1 FROM student_courses WHERE student_id = ? "
+                "UNION ALL SELECT 1 FROM student_grades WHERE student_id = ?",
+                (student_id, student_id),
+            )
+            if rows:
+                return False
+        except sqlite3.Error:
+            pass
     return cas is None or not student_id or cas.student_id != student_id
 
 

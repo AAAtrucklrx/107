@@ -5141,6 +5141,27 @@ body::after {
   }
 }
 
+/* ---- 首页今日课程条：玻璃化对齐整体风格 ---- */
+.today-strip {
+  border-radius: 14px;
+  backdrop-filter: var(--gblur);
+  -webkit-backdrop-filter: var(--gblur);
+}
+
+/* ---- 消息链路长文本断行兑底（无空格长串不撑破玻璃卡） ---- */
+.message,
+.message__body,
+.message .markdown-body,
+.message--user .message__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message--user .message__body {
+  max-width: min(620px, 100%);
+}
+
 /* ---- 侧栏收起/抽屉态（Web 默认展开，移动端默认收起；localStorage 记忆） ---- */
 .app-shell--rail-collapsed {
   grid-template-columns: minmax(0, 1fr);
