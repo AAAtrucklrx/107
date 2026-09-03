@@ -125,6 +125,28 @@ docs/            会话交接摘要（人用）/接手日志/总纲方案/tool-s
 
 知识库文档（80 篇 md）与 `config/links.yaml` 在 git 内。`config.py` 全部路径由 `PROJECT_ROOT` 派生；`SEMESTER = 2026-2027-1 / 2026-08-31`（校历核实，env `XIAOWO_SEMESTER_START` 可覆盖）。
 
+### 5.1 云盘迁移通道（2026-09-02 定案：数据走云盘，不走 git）
+
+**原则**：数据资产全部在 `.gitignore` 内（`data/`、`database/*.db` 及 WAL/shm、`scripts/data/`、`.models/`），git push/pull 永远带不上数据；**代码走 git，数据走云盘/文件直传**，两条通道不要混用。
+
+**操作步骤（Windows 本机 → Linux 服务器）**：
+
+1. 本机重新打包最新数据（注意：上表 `xiaowo_deploy_data.zip` 是旧快照，**不含** 2026-09-02 后的新数据）：
+   ```powershell
+   Compress-Archive -Path data/course_data.db, database/xiaowo.db, knowledge/chroma_db, scripts/data/young_personal -DestinationPath xiaowo_data_yyyyMMdd.zip
+   ```
+2. 上传云盘（百度网盘/OneDrive 等），服务器端用 `wget`/`curl` 或云盘客户端取回；取回后核对**文件大小/MD5** 与本机一致再继续。
+3. **服务器先停服备份再覆盖**（服务器数据可能比本机新，方向性红线）：
+   ```bash
+   ./deploy/server/stop_all.sh
+   cp -a data/course_data.db data/course_data.db.bak-$(date +%Y%m%d)   # 其余同理
+   # 解压覆盖目标位置（保持属主与路径不变）
+   ./deploy/server/start_all.sh
+   ```
+4. 迁移后必做：`.venv/bin/python init_check.py` + readiness 四项全绿 + 一条问答冒烟。
+
+**方向性警告（2026-09-02 现状）**：服务器数据目前**领先于本机**——39 篇公众号知识已 active（review_db + 新 generation Chroma/BM25）、审核记录、`XIAOWO_EMBEDDING_MODE=local`（text2vec 768 维索引族）。**不要**用本机数据覆盖服务器的 `review.db` / `knowledge/chroma_db`，否则丢失已发布知识与审核历史；本机 → 服务器的迁移只补服务器**确实缺**的项（如服务器尚未建立的大体积评课库）。SQLite 的 `-wal`/`-shm` 文件必须随停服窗口一并处理（停服后拷贝或删除，运行中直拷会得到不一致快照）。
+
 ## 6. 环境事实
 
 > **2026-09-01 起以本节「Linux 服务器」为准**；下方 Windows 开发机/云主机历史事实仅回溯用。
