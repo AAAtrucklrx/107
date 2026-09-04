@@ -2,6 +2,7 @@
 # 约束：条目只收录已核实来源——知识库 80 篇权威文档中的 URL 与代码内实际对接的域名；
 # 禁止在回答中生成此清单之外的 URL（防幻觉）。
 # 字段：name/url/description/category/scene（场景关键词，render_link 匹配用）；高频入口另带 featured/priority
+# 第三方学生工具条目（非校方官方）必须带 contributor（贡献者署名）与 third_party: true，description 注明非官方
 # 分类：教务学习 / 个人事务 / 生活服务 / 就业发展 / 交流升学 / 社区工具
 
 links:
@@ -134,3 +135,53 @@ links:
     description: 学生自办课程评价社区（小蜗评课数据快照来源）
     category: 社区工具
     scene: [评课社区, icourse, 课程评价网站]
+
+  # ── 以下为 2026-09-04 新增：官方补充入口与学生第三方工具 ──
+
+  - name: 科大邮件系统（PEMS）
+    url: https://pems.ustc.edu.cn
+    description: 校园个人电子邮件系统（@mail.ustc.edu.cn）
+    category: 个人事务
+    scene: [邮箱, 邮件, pems, 电子邮箱, 校园邮箱]
+
+  - name: 科大云盘
+    url: https://pan.ustc.edu.cn
+    description: 校园网盘，课程资料与个人文件存储（统一身份认证登录）
+    category: 生活服务
+    scene: [云盘, 网盘, 文件存储, 资料存储, pan]
+
+  - name: 校园一卡通服务平台
+    url: https://xgyth.ustc.edu.cn/usp/home/main.aspx
+    description: 一卡通充值、挂失、消费记录与校园卡业务
+    category: 个人事务
+    scene: [一卡通, 校园卡, 卡片充值, 挂失, 消费记录]
+
+  - name: 科大迎新网
+    url: https://welcome.ustc.edu.cn
+    description: 新生入学指南、报到流程与入学服务
+    category: 交流升学
+    scene: [迎新, 新生, 入学, 报到]
+
+  - name: 我的科大网页版
+    url: https://wdkd.feixu.site
+    description: 学生自制的智慧校园导航聚合，聚合教务/生活/学习等常用入口（非官方，由 飞旭 feixukeji 开发）
+    category: 社区工具
+    third_party: true
+    contributor: 飞旭（feixukeji）
+    scene: [我的科大, 智慧校园, 导航, 入口聚合, wdkd]
+
+  - name: 蜗壳大雾实验工具
+    url: https://dawu.feixu.site
+    description: 大学物理实验助手：数据绘图、不确定度计算、公式生成（非官方，由 飞旭 feixukeji 开发，开源 github.com/feixukeji/PhyX）
+    category: 社区工具
+    third_party: true
+    contributor: 飞旭（feixukeji）
+    scene: [大物实验, 物理实验, 不确定度, 实验数据, 绘图, 大雾]
+
+  - name: 科大选课助手
+    url: https://class-arrange.raymondzylei.me
+    description: 学生自制的选课排课辅助工具，可视化课表对比（非官方，由 raymondzylei 开发）
+    category: 社区工具
+    third_party: true
+    contributor: raymondzylei
+    scene: [选课助手, 排课, 课表模拟, class-arrange]

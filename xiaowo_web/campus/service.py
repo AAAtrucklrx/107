@@ -40,6 +40,8 @@ class CampusService:
                 "category": item.get("category") or "",
                 "featured": item.get("featured") is True,
                 "priority": priority if isinstance(priority, int) and priority > 0 else None,
+                "third_party": item.get("third_party") is True,
+                "contributor": str(item.get("contributor") or ""),
             })
         categories = list(dict.fromkeys(
             str(item.get("category") or "") for item in links if item.get("category")
