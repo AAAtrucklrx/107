@@ -332,6 +332,9 @@ def embedding_parse(state: QaState) -> dict:
 
 THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信息，决定下一步动作。只输出 JSON，不要输出其他内容。
 
+## 当前时间
+今天是 {current_date}（{current_weekday}）。涉及"今天/本周/这周/下周/最近"的问题必须以此时间与工具返回的周次/日期为准，不得自行推测。
+
 ## 可用工具
 {tools}
 
@@ -726,6 +729,8 @@ def think(state: QaState) -> dict:
         response = (prompt | llm).invoke({
             "tools": _TOOL_LIST,
             "query": query,
+            "current_date": _current_date_text(),
+            "current_weekday": _current_weekday_text(),
             "student_info": _build_student_info(state),
             "chat_history": _build_chat_history(state.get("chat_history") or []),
             "module_signal": state.get("module_signal") or "自动判断",
@@ -1320,6 +1325,8 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 
 用户问题: {query}
 
+当前时间: {current_date}（{current_weekday}）——回答中涉及今天/本周/年份/日期时必须以此为准，禁止自行推测年份或星期
+
 意图: {intent}
 
 知识库命中判定: {candidates_found}
@@ -1351,11 +1358,25 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 当官方信息含"因专业/因年份/因人群而有差异的多个数值"时（如不同专业学费不同、不同年份缴费标准不同），必须区分适用对象作答，**不得用其中某一个特例数值代表整体**（例如学费应区分"普通本科4800/传播学4500"，不得笼统答"4500"），并在必要时提示不同对象数值以官方为准
 - 数据不足时如实说明并引导用户补充信息，不编造
 - 知识库命中判定为"未达匹配阈值"且工具也无有效结果时：如实告知该问题超出了小蜗的校园知识范围；通用常识（如历史、科学常识）可正常回答但须注明"非校园知识库内容，仅供参考"；禁止引用低相关候选片段拼凑回答
+- 评课相关回答（推荐课程/课程对比/教师评价/评论展示）在末尾附一行「评课社区（学生社区，非官方）：」+ Markdown 链接。有课程级评课页链接（community_url/评课页字段）时优先列对应课程页链接（一门课一条，不重复）；否则用评课社区首页 https://icourse.club/
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
 用户问"推荐几门给分好的课" → 回答第一句可以是：小蜗来啦！结合你的需求，帮你筛选了几门口碑不错的课～
 用户问"学生证丢了怎么补办" → 回答第一句可以是：同学别着急，学生证补办的流程如下：
 """
+
+
+def _current_date_text() -> str:
+    """当前日期（LLM 时间感知注入）：回答涉及今天/本周/年份时以此为唯一依据。"""
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y年%m月%d日")
+
+
+def _current_weekday_text() -> str:
+    from datetime import datetime
+
+    return "星期" + "一二三四五六日"[datetime.now().weekday()]
 
 
 def compose(state: QaState) -> dict:
@@ -1396,6 +1417,8 @@ def compose(state: QaState) -> dict:
         ])
         response = (prompt | llm).invoke({
             "query": query,
+            "current_date": _current_date_text(),
+            "current_weekday": _current_weekday_text(),
             "intent": intent,
             "chat_history": _build_chat_history(state.get("chat_history") or []),
             "student_info": _build_student_info(state),
@@ -1575,12 +1598,14 @@ def _build_tool_summary(results: list[dict]) -> str:
                     terms_txt = "/".join(item.get("terms") or []) or "未知"
                     credit = item.get("credit")
                     credit_txt = f"{credit}学分" if credit else ""
+                    curl = item.get("community_url") or ""
+                    curl_txt = f" | 评课页: {curl}" if curl else ""
                     lines.append(f"- {item.get('name', '?')}（{credit_txt}） | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
-                                 f" | 近3次开课 {terms_txt}{hint_txt} | 评论{len(item.get('top_reviews') or [])}条")
+                                 f" | 近3次开课 {terms_txt}{hint_txt} | 评论{len(item.get('top_reviews') or [])}条{curl_txt}")
                     if item.get("reasons"):
                         lines.append(f"  推荐依据: {'；'.join(item['reasons'])}")
                     for rv in (item.get("top_reviews") or [])[:6]:
-                        lines.append(f"  > “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+                        lines.append(f"  > “{rv.get('content', '')[:240]}”——{rv.get('author', '')}({rv.get('term', '')})")
 
             exact = res.get("source") == "exact_course"
             if exact:
@@ -1632,7 +1657,7 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"  评论样本（每条已标注老师, 引用时必须与老师对应, 不得编造）:")
             for rv in (res.get("reviews_sample") or [])[:6]:
                 tname = rv.get("teacher") or "未知老师"
-                lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+                lines.append(f"  > [{tname}] “{rv.get('content', '')[:240]}”——{rv.get('author', '')}({rv.get('term', '')})")
         elif tool == "analyze_teacher" and res.get("teacher"):
             # 教师模式（teacher_name 或 teacher_name+course）：完整呈现各课程评分，防止
             # 通用兜底 json.dumps[:800] 截断导致 B1/B2 等课程数据丢失（2026-08 修复）
@@ -1646,7 +1671,7 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"  评论样本（{len(sample)} 条, 每条已标注课程与老师, 引用时必须对应）:")
                 for rv in sample[:6]:
                     tname = rv.get("teacher") or res.get("teacher") or "未知老师"
-                    lines.append(f"  > [{tname}] “{rv.get('content', '')[:100]}”——{rv.get('author', '')}({rv.get('term', '')})")
+                    lines.append(f"  > [{tname}] “{rv.get('content', '')[:240]}”——{rv.get('author', '')}({rv.get('term', '')})")
         elif tool == "query_grade" and isinstance(res.get("grades"), list):
             grades = res["grades"]
             lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{_src(res)}）:")

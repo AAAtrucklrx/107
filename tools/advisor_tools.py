@@ -245,18 +245,20 @@ def _teacher_cells(conn: sqlite3.Connection, course_id: int) -> list[dict]:
 
 
 def _top_reviews(conn: sqlite3.Connection, course_id: int, teacher: str | None = None,
-                 limit: int = 6) -> list[dict]:
+                 limit: int = 6, content_limit: int = 400) -> list[dict]:
     """代表性评论: icourse 服务端按点赞最多排序（DOM 顺序即点赞序）, 作者去重（匿名不去重）。
-    teacher 为单人姓名时模糊匹配合教名（如 '计永胜' 也匹配 '计永胜, 石攀, 周永刚'）。"""
+    teacher 为单人姓名时模糊匹配合教名（如 '计永胜' 也匹配 '计永胜, 石攀, 周永刚'）。
+    content_limit 控制单条评论正文截断（评课库为全文入库，长评常见 400~1000 字）；
+    追问详情场景（get_course_reviews）应传更大值。"""
     if teacher:
         rows = conn.execute(
-            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content "
+            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content, icourse_id "
             "FROM reviews WHERE course_id=? AND teacher LIKE ? ORDER BY id LIMIT 200",
             (course_id, f"%{teacher}%"),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content "
+            "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content, icourse_id "
             "FROM reviews WHERE course_id=? ORDER BY id LIMIT 200",
             (course_id,),
         ).fetchall()
@@ -282,7 +284,8 @@ def _top_reviews(conn: sqlite3.Connection, course_id: int, teacher: str | None =
             "stars": r["stars"],
             "term": r["term"],
             "dims": dims,
-            "content": content[:400],
+            "content": content[:content_limit],
+            "url": _icourse_url(r["icourse_id"]),
         })
         if len(out) >= limit:
             break
@@ -803,6 +806,33 @@ def _rating_label(score: float | None) -> str:
     return "差评"
 
 
+_ICOURSE_BASE = "https://icourse.club/course/"
+_ICOURSE_HOME = "https://icourse.club/"
+
+
+def _icourse_url(icourse_id) -> str:
+    """评课社区课程页链接（非官方学生社区）；无效 id 返回空。"""
+    try:
+        return f"{_ICOURSE_BASE}{int(icourse_id)}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _parse_first_icourse_id(icourse_ids) -> int | None:
+    """courses.icourse_ids 存储形如 '[1001]' 的 JSON 数组文本，取第一个。"""
+    if not icourse_ids:
+        return None
+    try:
+        value = icourse_ids
+        if isinstance(value, str):
+            value = json.loads(value)
+        if isinstance(value, (list, tuple)) and value:
+            return int(value[0])
+    except (ValueError, TypeError):
+        return None
+    return None
+
+
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     """由课程行构建完整推荐条目（字段与旧实现一致）。
     row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。
@@ -815,10 +845,10 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     if multi:  # 同课多师: 每师 1 条, 跨师封顶 3（评课详情追问走 get_course_reviews）
         reviews = []
         for t in teachers:
-            reviews.extend(_top_reviews(conn, cid, t["name"], limit=1))
+            reviews.extend(_top_reviews(conn, cid, t["name"], limit=1, content_limit=700))
         reviews = reviews[:3]
     else:
-        reviews = _top_reviews(conn, cid, limit=3)
+        reviews = _top_reviews(conn, cid, limit=3, content_limit=700)
     if row.get("program_name"):
         program_hint = {
             "required": row.get("program_required") or "",
@@ -831,6 +861,13 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     else:
         program_hint = _program_hint(conn, profile.get("major"), cid, profile.get("grade"))
     rank = dict(row.get("_rank") or {})
+    community_url = _icourse_url(_parse_first_icourse_id(row.get("icourse_ids")))
+    if not community_url:
+        # program 聚合查询不带 icourse_ids 时从评论行回填（reviews 必带 icourse_id）
+        for rv in reviews:
+            if rv.get("url"):
+                community_url = rv["url"]
+                break
     item = {
         "id": cid,
         "name": row["name"],
@@ -840,6 +877,7 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         "course_type": row["course_type"],
         "rating_avg": round(row["rating_avg"], 1),
         "rating_label": _rating_label(row["rating_avg"]),
+        "community_url": community_url,
         "rate_count": row["rating_count"],
         "dims": dims,
         "teachers": teachers,
@@ -1033,14 +1071,21 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
         items = []
         for row in rows:  # 指定课程直查必须列全所有班级, 不受 max_results 截断
             # 班级多时每班仅带 1 条评论, 保证 LLM 输出预算内能列全所有班级
-            reviews = _top_reviews(conn, row["id"], limit=1)
+            reviews = _top_reviews(conn, row["id"], limit=1, content_limit=700)
             teachers = row["teacher_names"] or ""
+            community_url = ""
+            for rv in reviews:
+                if rv.get("url"):
+                    community_url = rv["url"]
+                    break
             items.append({
                 "name": row["name"],
                 "code": row["code"] or "",
                 "credit": row["credit"],
                 "dept": row["dept"] or "",
                 "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
+                "rating_label": _rating_label(row["rating_avg"]),
+                "community_url": community_url,
                 "rate_count": row["rate_count"] or 0,
                 "teachers": [{"name": t.strip()} for t in teachers.split(",") if t.strip()],
                 "top_reviews": reviews,
@@ -1753,13 +1798,19 @@ def get_course_reviews(course_name: str, teacher: str | None = None, limit: int 
                     "message": f"未在评课库中找到课程「{course_name}」"}
         row = matches[0]
         safe_limit = max(1, min(int(limit or 6), 20))
-        reviews = _top_reviews(conn, row["id"], teacher, limit=safe_limit)
+        reviews = _top_reviews(conn, row["id"], teacher, limit=safe_limit, content_limit=1200)
+        community_url = ""
+        for rv in reviews:
+            if rv.get("url"):
+                community_url = rv["url"]
+                break
         return {
             "course_name": row["name"],
             "teacher": teacher or "",
             "rating_avg": round(row.get("rating_avg") or 0, 1),
             "rating_label": _rating_label(row.get("rating_avg")),
             "rate_count": row.get("rating_count") or 0,
+            "community_url": community_url,
             "reviews": reviews,
             "count": len(reviews),
         }
