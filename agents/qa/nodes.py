@@ -377,14 +377,14 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 15. 用户已对上一轮 clarify 追问给出明确选择后，允许使用更精确的参数重新调用之前调用过的工具（规则 9 的例外情形）
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略；调用 query_daily_schedule/get_day_view 时，问句中的"周X/明天/后天"等日期词必须解析后作为 date/date_str 传参，不得缺省为今天
 17. 选课冲突/退补选：没有推荐诉求、单独问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
-18. 复合问题（如"先查我的成绩再推荐课程"）每轮只调用一个工具，后续轮次继续调用其他工具完成，最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
+18. 复合问题可并行调用多个**相互独立**的工具：单轮 tools 数组 1-3 个（如"查一下我的成绩和课表"→[query_grade, query_schedule] 并行执行，一轮完成）；同一工具只允许出现一次；工具间有先后依赖时必须分开轮次（如"先查我的成绩再推荐课程"→ 先 call_tool 成绩，下一轮再把成绩一并传给 recommend_courses）；最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
 19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
 20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
 21. 强操作类诉求（改变官方系统状态的操作：选课/退课/换班/评教提交/缴费/活动报名等，小蜗无权代办）→ 调 render_link(scene=场景) 给出官方入口 URL，并主动提供小蜗能做的辅助（如退课前 evaluate_selection_pressure 模拟、选课前 check_course_conflict 冲突检测）；**URL 只能来自 render_link 返回或知识库来源，禁止自行生成/拼造任何 URL**；render_link 返回 found=false 时如实说不知道入口
 22. 活动/第二课堂问句（"有什么活动/讲座/志愿可以报名"、"最近有什么活动"、"周末有什么活动"、"XX月X日有什么活动"）→ 调 query_activities（可带 keyword/category/time_window 过滤），如实转述返回的活动（名称/主办方/时间/报名截止），不得编造活动或修改时间；活动报名本身是强操作，追问报名入口时按规则 21 给 render_link
 
 ## 输出格式（严格 JSON）
-{{"decision": "clarify|retrieve|call_tool|compose", "tool": "工具名，call_tool 时必填", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "sub_queries": ["并列子检索词，可空数组"], "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
+{{"decision": "clarify|retrieve|call_tool|compose", "tools": [{{"tool": "工具名", "args": {{工具参数}}}}]（call_tool 时必填，1-3 个互相独立的工具并行执行），"tool": "工具名（兼容旧单工具写法）", "args": {{工具参数}}，"query": "retrieve 时的改写检索词", "sub_queries": ["并列子检索词，可空数组"], "reason": "简短理由", "clarify_text": "clarify 时的追问内容"}}"""
 
 
 _TIME_WORDS = ["今天", "明天", "后天", "昨天", "这周", "下周", "周一", "周二", "周三",
@@ -787,24 +787,22 @@ def think(state: QaState) -> dict:
         }
 
         if decision == "call_tool":
-            tool = data.get("tool", "")
-            verdict = _check_tool_choice(tool, done_tools)
-            if verdict == "empty":
-                update["decision"] = "compose"
-            elif verdict == "done":
-                # 防重复：该工具已有成功结果，不得再调，转合成（防死循环）
-                log.info(f"think: 工具 {tool} 已有结果，禁止重复调用，转合成")
+            # 并行工具计划（2026-09-04）：tools 数组（1-3 个互相独立）；
+            # 兼容旧单值 tool 字段。逐工具校验（未知/重复/已完成剔除，不整轮降级）
+            plan, verdict_note = _build_tool_plan(data, done_tools)
+            if plan:
+                update["tool_calls"] = plan
+                if verdict_note:
+                    update["thought_log"] = (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "call_tool", "reason": verdict_note,
+                    }]
+            elif verdict_note:
+                log.info(f"think: {verdict_note}")
                 update["decision"] = "compose"
                 update["tool_calls"] = []
                 update["thought_log"] = (state.get("thought_log") or []) + [{
-                    "round": rounds + 1, "decision": "compose", "reason": f"已有{tool}结果，禁止重复调用",
+                    "round": rounds + 1, "decision": "compose", "reason": verdict_note,
                 }]
-            elif verdict == "unknown":
-                # LLM 选择了不存在的工具：降级到确定性计划，不让 act 报错
-                log.warning(f"think: LLM 选择了未知工具 {tool}，降级为确定性规则")
-                return _think_fallback(state)
-            else:
-                update["tool_calls"] = [{"tool": tool, "args": data.get("args") or {}}]
 
         log.info(f"think[{rounds + 1}] → {update.get('decision')} ({data.get('reason', '')[:50]})")
         return update
@@ -815,6 +813,45 @@ def think(state: QaState) -> dict:
         fb = _think_fallback(state)
         fb["llm_down"] = True  # 熔断标记：本轮后续轮次不再尝试 LLM
         return fb
+
+
+def _build_tool_plan(data: dict, done_tools: set[str]) -> tuple[list[dict], str]:
+    """think 的 call_tool 决策 → 并行工具计划（可测，不依赖 LLM）。
+
+    data.tools 优先（1-3 个互相独立的工具）；兼容旧 data.tool 单值。
+    剔除：未知工具、本轮重复名、已有 done 结果；全部剔除时返回 ([]，说明)。
+    """
+    raw = data.get("tools")
+    plan: list[dict] = []
+    if isinstance(raw, list) and raw:
+        for item in raw:
+            if isinstance(item, dict):
+                tool = str(item.get("tool") or "").strip()
+                if tool:
+                    plan.append({"tool": tool, "args": item.get("args") or {}})
+    else:
+        tool = str(data.get("tool") or "").strip()
+        if tool:
+            plan.append({"tool": tool, "args": data.get("args") or {}})
+
+    safe: list[dict] = []
+    seen: set[str] = set()
+    notes: list[str] = []
+    for call in plan:
+        tool = call["tool"]
+        if tool in seen:
+            notes.append(f"本轮并行计划重复工具 {tool}，已保留首个")
+            continue
+        seen.add(tool)
+        verdict = _check_tool_choice(tool, done_tools)
+        if verdict == "done":
+            notes.append(f"{tool} 已有结果，禁止重复调用")
+            continue
+        if verdict == "unknown":
+            notes.append(f"未知工具 {tool}，已从并行计划剔除")
+            continue
+        safe.append(call)
+    return safe[:3], "；".join(notes)
 
 
 def _parse_json_loose(text: str) -> dict | None:
@@ -1290,44 +1327,65 @@ def act(state: QaState) -> dict:
     if decision == "call_tool":
         registry = _build_tool_registry()
         plan = state.get("tool_calls") or []
-        results: list[dict] = []
         sid = state.get("student_id") or ""
+        if not plan:
+            update["tool_results"] = state.get("tool_results") or []
+            update["tool_calls"] = []
+            return update
 
-        for call in plan:
-            tool_name = call.get("tool", "")
-            # 畸形 args 防御：推理模型偶发输出字符串/列表，dict() 会中断整个图执行
-            raw_args = call.get("args")
-            args = dict(raw_args) if isinstance(raw_args, dict) else {}
-            # 认证身份是唯一可信来源。未登录时也覆盖为空，拒绝模型伪造学号。
-            if tool_name in _PERSONAL_TOOLS:
-                args["student_id"] = sid
-            # 选课推荐兜底：补齐专业/年级/已修课程/学年号，避免漏传导致纯评分乱推
-            if tool_name == "recommend_courses":
-                _enrich_recommend_args(args, state, sid)
-            # 添加日程兜底：LLM 常只传标题漏传时间，从问题用 time_parser 解析补齐
-            # （轮1 实测 2026-08-15：首调缺 start_time/end_time 报 validation error）
-            if tool_name == "add_event" and sid:
-                _enrich_add_event_args(args, state)
-            # 培养方案工具兜底：补齐已修课程/个人方案树，避免缺口误判与方案退化
-            if tool_name == "get_program_progress":
-                _enrich_program_args(args, state, sid, include_taken=True)
-            elif tool_name in ("get_my_program", "plan_semester"):
-                _enrich_program_args(args, state, sid)
-            func = registry.get(tool_name)
-            if func is None:
-                log.error(f"未知工具: {tool_name}")
-                results.append({"tool": tool_name, "status": "error",
-                                "result": {"error": f"未知工具: {tool_name}，可用工具: {_TOOL_LIST}"}})
-                continue
+        def _run_one(call: dict) -> dict:
+            """单工具执行（并行 worker）。ContextVar 不跨线程传播，
+            每个 worker 内显式设置学生上下文，工具才能读到当前学号。"""
+            token = None
             try:
-                result = func.invoke(args) if hasattr(func, "invoke") else func(**args)
-                results.append({"tool": tool_name, "status": "done",
-                                "result": result if isinstance(result, dict) else {"output": str(result)}})
-                log.info(f"工具 {tool_name} 执行成功")
-            except Exception as e:
-                log.error(f"工具 {tool_name} 执行失败: {e}")
-                results.append({"tool": tool_name, "status": "error",
-                                "result": {"error": f"工具 {tool_name} 执行失败: {str(e)}"}})
+                from services.session_ctx import set_student, reset_student
+                if sid:
+                    token = set_student(sid)
+                tool_name = call.get("tool", "")
+                # 畸形 args 防御：推理模型偶发输出字符串/列表，dict() 会中断整个图执行
+                raw_args = call.get("args")
+                args = dict(raw_args) if isinstance(raw_args, dict) else {}
+                # 认证身份是唯一可信来源。未登录时也覆盖为空，拒绝模型伪造学号。
+                if tool_name in _PERSONAL_TOOLS:
+                    args["student_id"] = sid or ""
+                # 选课推荐兜底：补齐专业/年级/已修课程/学年号，避免漏传导致纯评分乱推
+                if tool_name == "recommend_courses":
+                    _enrich_recommend_args(args, state, sid)
+                # 添加日程兜底：LLM 常只传标题漏传时间，从问题用 time_parser 解析补齐
+                # （轮1 实测 2026-08-15：首调缺 start_time/end_time 报 validation error）
+                if tool_name == "add_event" and sid:
+                    _enrich_add_event_args(args, state)
+                # 培养方案工具兜底：补齐已修课程/个人方案树，避免缺口误判与方案退化
+                if tool_name == "get_program_progress":
+                    _enrich_program_args(args, state, sid, include_taken=True)
+                elif tool_name in ("get_my_program", "plan_semester"):
+                    _enrich_program_args(args, state, sid)
+                func = registry.get(tool_name)
+                if func is None:
+                    log.error(f"未知工具: {tool_name}")
+                    return {"tool": tool_name, "status": "error",
+                            "result": {"error": f"未知工具: {tool_name}，可用工具: {_TOOL_LIST}"}}
+                try:
+                    result = func.invoke(args) if hasattr(func, "invoke") else func(**args)
+                    log.info(f"工具 {tool_name} 执行成功")
+                    return {"tool": tool_name, "status": "done",
+                            "result": result if isinstance(result, dict) else {"output": str(result)}}
+                except Exception as e:
+                    log.error(f"工具 {tool_name} 执行失败: {e}")
+                    return {"tool": tool_name, "status": "error",
+                            "result": {"error": f"工具 {tool_name} 执行失败: {str(e)}"}}
+            finally:
+                if token is not None:
+                    reset_student(token)
+
+        # 并行执行（≤3 并发；一个失败不影响其余；结果按计划顺序回填）
+        from concurrent.futures import ThreadPoolExecutor
+        max_workers = min(len(plan), 3)
+        if max_workers <= 1:
+            results = [_run_one(call) for call in plan]
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="xiaowo-tool") as pool:
+                results = list(pool.map(_run_one, plan))
 
         update["tool_results"] = (state.get("tool_results") or []) + results
         update["tool_calls"] = []  # 本轮计划已消费，清空避免残留
