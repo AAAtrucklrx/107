@@ -17,12 +17,23 @@
 
 每套都提供 1024×1024 SVG 与 PNG，无文字、无校徽，并保留 Android 圆形/圆角方形裁切安全区。
 
-选择后执行：
+## 当前定稿
+
+2026-09-04 采用“方向 4：负空间知识轨迹”。定稿把蜗壳旋涡、开放书本和中央上升曲线组合为一个独立符号，并以校徽的深科技蓝、学术秩序和向上动势为抽象参考；不使用校名、1958、花瓣环或完整校徽结构。
+
+源文件：
+
+- `assets/branding/xiaowo-mark-v4.svg`：可编辑矢量前景
+- `assets/branding/xiaowo-mark-v4.png`：Android 资源生成源
+- `assets/branding/xiaowo-icon-v4-preview.png`：蓝底预览
+
+重新生成 Android 图标：
 
 ```powershell
-npm run branding -- --source assets/branding/icon-candidates/04-continuous-path.png
+npm run icon:selected
+npm run branding
 & .\scripts\build-debug.ps1
 & .\scripts\build-release.ps1
 ```
 
-当前 Demo APK 继续使用已生成的蓝白蜗牛形象，避免在选择前反复改包。候选生成脚本是确定性的，可重复产出相同 SVG/PNG。
+候选生成脚本和定稿生成脚本都是确定性的，可重复产出相同 SVG/PNG。

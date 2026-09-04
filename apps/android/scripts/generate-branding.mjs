@@ -7,7 +7,7 @@ import sharp from 'sharp';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDirectory, '..');
 const defaultResourceRoot = path.join(projectRoot, 'android', 'app', 'src', 'main', 'res');
-const defaultSource = path.join(projectRoot, 'assets', 'branding', 'xiaowo-mascot-v1.png');
+const defaultSource = path.join(projectRoot, 'assets', 'branding', 'xiaowo-mark-v4.png');
 const sourcePath = path.resolve(projectRoot, argumentValue('--source') ?? defaultSource);
 const resourceRoot = path.resolve(projectRoot, argumentValue('--resource-root') ?? defaultResourceRoot);
 const defaultManifestPath = path.join(projectRoot, 'assets', 'branding', 'branding-manifest.json');
@@ -24,7 +24,8 @@ const densityScales = {
   xxxhdpi: 4,
 };
 
-const background = { r: 8, g: 60, b: 74, alpha: 1 };
+const backgroundHex = '#0756A6';
+const background = { r: 7, g: 86, b: 166, alpha: 1 };
 const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
 const alphaNoiseCutoff = 4;
 
@@ -90,6 +91,14 @@ const adaptiveIcon = `<?xml version="1.0" encoding="utf-8"?>
 await writeGenerated(path.join(anyDpiDirectory, 'ic_launcher.xml'), Buffer.from(adaptiveIcon));
 await writeGenerated(path.join(anyDpiDirectory, 'ic_launcher_round.xml'), Buffer.from(adaptiveIcon));
 
+const valuesDirectory = path.join(resourceRoot, 'values');
+const backgroundResource = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">${backgroundHex}</color>
+</resources>
+`;
+await writeGenerated(path.join(valuesDirectory, 'ic_launcher_background.xml'), Buffer.from(backgroundResource));
+
 await removeLegacyBrandingResources();
 
 const manifest = {
@@ -97,7 +106,7 @@ const manifest = {
   sourceSha256: await sha256(sourcePath),
   sourceDimensions: `${sourceMetadata.width}x${sourceMetadata.height}`,
   generator: `sharp ${sharp.versions.sharp}`,
-  background: '#083C4A',
+  background: backgroundHex,
   outputs: [],
 };
 for (const file of generatedFiles.sort()) {

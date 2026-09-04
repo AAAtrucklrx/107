@@ -5,6 +5,7 @@
   "description": "小蜗 Android WebView client and branding pipeline",
   "scripts": {
     "branding": "node scripts/generate-branding.mjs",
+    "icon:selected": "node scripts/render-selected-icon.mjs",
     "icons:candidates": "node scripts/generate-icon-candidates.mjs"
   },
   "devDependencies": {
