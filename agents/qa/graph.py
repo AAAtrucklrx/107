@@ -7,6 +7,8 @@ think 决策: clarify → 结束追问; compose → 合成; 否则循环回 act
 
 from __future__ import annotations
 
+from typing import Callable
+
 from langgraph.graph import END, START, StateGraph
 
 from agents.qa.nodes import act, compose, embedding_parse, think, world_knowledge
@@ -94,7 +96,8 @@ def run_qa(query: str, module_signal: str = "自动判断",
            student_id: str = None, user_profile: dict = None,
            chat_history: list[dict] = None,
            supplemental_candidates: list[dict] = None,
-           supplemental_candidates_found: bool = False) -> dict:
+           supplemental_candidates_found: bool = False,
+           action_sink: "Callable[[str], None] | None" = None) -> dict:
     """
     统一问答入口（替换原 router/agent 分发）。
 
@@ -128,6 +131,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "chat_history": chat_history or [],
                 "decision": "compose",
                 "world_knowledge": False,
+                "action_sink": action_sink,
                 "retrieve_query": "",
                 "sub_queries": [],
                 "retrieval_log": [],
@@ -163,6 +167,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "chat_history": chat_history or [],
             "decision": "compose",
             "world_knowledge": False,
+            "action_sink": action_sink,
             "retrieve_query": "",
             "sub_queries": [],
             "retrieval_log": [],

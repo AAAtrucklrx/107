@@ -79,6 +79,7 @@ const stageLabels: Record<string, string> = {
   web_fetch: "读取公开页面",
   evidence_check: "核验证据",
   answering: "组织回答",
+  action: "处理中",
   completed: "回答完成",
   cancelled: "已停止",
 };
@@ -109,11 +110,12 @@ function greetingParts(now = new Date()): { greet: string; date: string } {
   return { greet, date };
 }
 
-function withStage(message: ChatMessage, stage: string): ChatMessage {
+function withStage(message: ChatMessage, stage: string, actionMessage?: string): ChatMessage {
   return {
     ...message,
     stage,
     stages: message.stages?.includes(stage) ? message.stages : [...(message.stages ?? []), stage],
+    stageMessage: actionMessage ?? message.stageMessage ?? "",
   };
 }
 
@@ -307,7 +309,12 @@ function StageStrip({ message }: { message: ChatMessage }) {
       {stages.map((stage, index) => {
         const current = index === stages.length - 1;
         const label = stageLabels[stage] ?? "正在处理";
-        return <span key={`${stage}-${index}`} className={current ? "stage-chip doing" : "stage-chip done"}>{label}</span>;
+        const note = current ? message.stageMessage ?? "" : "";
+        return (
+          <span key={`${stage}-${index}`} className={current ? "stage-chip doing" : "stage-chip done"} title={note}>
+            {label}{note ? ` · ${note}` : ""}
+          </span>
+        );
       })}
     </div>
   );
@@ -571,7 +578,9 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   const handleEvent = useCallback((event: SseEnvelope, assistantId: string, conversationId: string | null, selectedMode: RetrievalMode) => {
     const data = event.data as Record<string, unknown>;
     if (event.type === "stage.changed" || event.type === "run.created") {
-      updateAssistant(assistantId, (message) => withStage(message, String(data.stage ?? "queued")));
+      const stage = String(data.stage ?? "queued");
+      const note = String(data.message ?? "");
+      updateAssistant(assistantId, (message) => withStage(message, stage, note));
       return;
     }
     if (event.type === "source.found") {

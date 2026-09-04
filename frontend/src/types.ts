@@ -101,6 +101,7 @@ export interface ChatMessage {
   answerId?: string;
   mode?: RetrievalMode;
   stage?: string;
+  stageMessage?: string;
   stages?: string[];
   status?: "streaming" | "completed" | "cancelled" | "failed";
   sources?: Source[];

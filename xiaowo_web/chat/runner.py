@@ -381,6 +381,12 @@ class LegacyQaRunner:
             call_args["supplemental_candidates"] = approved_candidates
         if accepts_kwargs or "supplemental_candidates_found" in parameter_names:
             call_args["supplemental_candidates_found"] = approved_found
+        # A 方案动作播报：agent 决策/工具动作经 emit_stage("action", msg) 实时推给前端
+        if (
+            (accepts_kwargs or "action_sink" in parameter_names)
+            and request.emit_stage is not None
+        ):
+            call_args["action_sink"] = lambda message: request.emit_stage("action", message)
         call = partial(runner, request.question, **call_args)
         loop = asyncio.get_running_loop()
         result = dict(await loop.run_in_executor(self._executor, call))

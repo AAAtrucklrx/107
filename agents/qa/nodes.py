@@ -393,6 +393,7 @@ def embedding_parse(state: QaState) -> dict:
         log.warning(f"候选召回失败: {e}")
 
     log.info(f"意图识别: {intent} (method={result.get('method')}, module={module_signal}, 候选 {len(candidates)} 条)")
+    _emit_action(state, f"已理解问题：意图「{intent}」")
     # 世界知识快速通道（2026-09-04）：非校内话题（无科大触发词）+ 知识库 0 命中
     # + 意图为通用知识问答 → 不经 think/检索/联网，LLM 世界知识直接回答（带免责标注）
     world_knowledge = bool(
@@ -874,6 +875,13 @@ def think(state: QaState) -> dict:
                 }]
 
         log.info(f"think[{rounds + 1}] → {update.get('decision')} ({data.get('reason', '')[:50]})")
+        plans = [c.get("tool", "") for c in (update.get("tool_calls") or [])]
+        if update.get("decision") == "call_tool" and plans:
+            _emit_action(state, "已确定并行查询：" + " + ".join(plans))
+        elif update.get("decision") == "retrieve":
+            _emit_action(state, f"正在补充检索：{str(update.get('retrieve_query') or '')[:24]}")
+        elif update.get("decision") == "compose":
+            _emit_action(state, "信息已齐，开始整理回答")
         return update
     except Exception as e:
         log.warning(f"think LLM 决策失败，降级为确定性规则: {e}")
@@ -921,6 +929,18 @@ def _build_tool_plan(data: dict, done_tools: set[str]) -> tuple[list[dict], str]
             continue
         safe.append(call)
     return safe[:3], "；".join(notes)
+
+
+def _emit_action(state: QaState, message: str) -> None:
+    """A 方案动作播报：think/act 关键动作实时推送（经 request.emit_stage("action", msg)）。
+    消息须匿名：不携带学号/姓名/成绩等个人数据与内部规则。"""
+    sink = state.get("action_sink") if isinstance(state, dict) else None
+    if sink is None:
+        return
+    try:
+        sink(message)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _parse_json_loose(text: str) -> dict | None:
@@ -1438,6 +1458,7 @@ def act(state: QaState) -> dict:
                 try:
                     result = func.invoke(args) if hasattr(func, "invoke") else func(**args)
                     log.info(f"工具 {tool_name} 执行成功")
+                    _emit_action(state, f"✅ {tool_name} 已获取结果")
                     return {"tool": tool_name, "status": "done",
                             "result": result if isinstance(result, dict) else {"output": str(result)}}
                 except Exception as e:

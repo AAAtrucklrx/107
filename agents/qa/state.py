@@ -3,7 +3,7 @@
 统一问答流程在节点间传递的状态
 """
 
-from typing import TypedDict
+from typing import Callable, TypedDict
 
 
 class QaState(TypedDict):
@@ -30,6 +30,7 @@ class QaState(TypedDict):
     clarify_question: str  # clarify 决策时向用户提出的追问
     personal_qa: str  # think 个人信息问答快速通道命中的字段(grade/major/name/id)
     world_knowledge: bool  # 世界知识快速通道：非校内问答且知识库 0 命中（LLM 常识+免责标注）
+    action_sink: Callable | None  # A 方案动作播报：think/act 实时回调（emit_stage("action", msg)）
     answer: str  # 最终回答
     truncated: bool  # compose 时 LLM 输出触顶(finish_reason=length), 前端展示"继续生成"
     error: str  # 异常/错误信息（如 LLM API 不可用）
