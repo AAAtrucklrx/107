@@ -7,6 +7,8 @@
 
 import math
 import os
+from typing import Any
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from config import CHROMA_PERSIST_DIR, EMBEDDING_CONFIG, FAQ_TOP_K, FAQ_SIMILARITY_THRESHOLD, LLM_CONFIG
@@ -22,6 +24,15 @@ RRF_K = 60
 
 # P3-2：进程级嵌入器缓存（FAQVectorStore 非单例，避免多实例重复探测/加载模型）
 _EMBEDDER_CACHE: dict = {}
+
+
+def shared_embedder() -> tuple[Any, str]:
+    """共享 embedder（encode 接口）+ 检索模式；供语义缓存等复用，不建 Chroma collection。
+
+    复用模块级 _EMBEDDER_CACHE 单例，与 FAQVectorStore 的检索使用同一向量空间。"""
+    shim = FAQVectorStore.__new__(FAQVectorStore)  # 跳过 __init__（不建 collection）
+    model = shim._init_embedding()
+    return model, shim._embed_method
 
 
 class FAQVectorStore:

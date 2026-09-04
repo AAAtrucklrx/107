@@ -19,6 +19,7 @@ from xiaowo_web.chat import ChatManager, LegacyQaRunner, QaRunner
 from xiaowo_web.campus import CampusService, CampusToolStore
 from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
 from xiaowo_web.errors import ApiError, api_error_handler
+from xiaowo_web.knowledge.semantic_cache import SemanticCache
 from xiaowo_web.evidence.clients import BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarHealthProvider
 from xiaowo_web.evidence.extractor import StructuredClaimExtractor
 from xiaowo_web.evidence.pipeline import EvidencePipeline
@@ -48,6 +49,9 @@ def create_app(
     resolved_settings = settings or WebSettings.from_env()
     store = WebStore(resolved_settings)
     resolved_review_store = review_store or ReviewStore(resolved_settings)
+    # 语义缓存：每 app 独立实例（路径随 settings，测试天然隔离）；发布钩子定向失效
+    semantic_cache = SemanticCache(resolved_settings.review_db_path.parent / "semantic_cache.db")
+    resolved_review_store.attach_semantic_cache(semantic_cache)
     resolved_campus_tool_store = campus_tool_store or CampusToolStore(resolved_settings)
     auth_service = AuthService(resolved_settings, store)
     resolved_health_provider = sidecar_health_provider
@@ -63,6 +67,7 @@ def create_app(
         local_runner = LegacyQaRunner(
             approved_retriever=approved_retriever,
             max_workers=min(resolved_settings.max_concurrent_runs, 16),
+            semantic_cache=semantic_cache,
         )
         if resolved_settings.web_search_enabled:
             if resolved_settings.search_provider == "bocha":

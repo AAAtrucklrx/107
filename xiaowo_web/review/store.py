@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from utils.logger import get_logger
+
 from xiaowo_web.settings import WebSettings
 
 
@@ -79,6 +81,7 @@ class ReviewStore:
         self.db_path = Path(settings.review_db_path)
         self.schema_path = Path(settings.schema_review_path)
         self.data_dir = Path(settings.web_evidence_dir)
+        self._semantic_cache: Any | None = None  # attach_semantic_cache 注入（可选）
         self._write_lock = threading.RLock()
         self._last_cleanup_at = 0.0
 
@@ -1503,7 +1506,28 @@ class ReviewStore:
                 (timestamp, job.job_id),
             )
             conn.commit()
+        # 语义缓存定向失效：答案引用的 chunk hash 不在新发布集合中（依据已变化）
+        # 则删除该缓存条目；未受影响的缓存保留。缓存层异常不阻断发布链路。
+        if self._semantic_cache is None:
+            return True
+        try:
+            with self._connect() as conn:
+                hash_rows = conn.execute(
+                    "SELECT DISTINCT content_hash FROM publish_documents WHERE generation_id = ?",
+                    (job.generation_id,),
+                ).fetchall()
+            new_hashes = {str(r["content_hash"]) for r in hash_rows if r["content_hash"]}
+            if new_hashes:
+                removed = self._semantic_cache.invalidate_missing(new_hashes, namespace=job.namespace)
+                if removed:
+                    get_logger("xiaowo.review").info(f"语义缓存定向失效 {removed} 条（generation {job.generation_id}）")
+        except Exception as exc:  # noqa: BLE001
+            get_logger("xiaowo.review").warning(f"语义缓存失效失败（不影响发布）: {exc}")
         return True
+
+    def attach_semantic_cache(self, cache: Any) -> None:
+        """注入语义缓存实例（main 组装时调用）；发布激活时定向失效。"""
+        self._semantic_cache = cache
 
     def fail_publish_job(
         self,

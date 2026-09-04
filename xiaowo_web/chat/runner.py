@@ -88,6 +88,21 @@ _RESULT_METADATA_KEYS = frozenset({
 })
 
 
+_PERSONAL_TOOLS = frozenset({
+    "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa", "query_exam",
+    "query_course_selection", "get_my_program", "get_program_progress", "plan_semester",
+    "import_schedule",
+})
+
+
+def _used_personal_tools(tool_results: list[dict]) -> bool:
+    """本轮回答是否消费了个人数据工具结果——个人化回答禁止写语义缓存。"""
+    for r in tool_results or []:
+        if isinstance(r, dict) and str(r.get("tool") or "") in _PERSONAL_TOOLS and r.get("status") == "done":
+            return True
+    return False
+
+
 def _digest(value: Any) -> str:
     payload = json.dumps(
         value,
@@ -268,11 +283,14 @@ class LegacyQaRunner:
         *,
         max_workers: int = 4,
         approved_retriever: ApprovedRetriever | None = None,
+        semantic_cache: Any | None = None,
     ) -> None:
         self._run_qa_func = run_qa_func
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="xiaowo-qa")
         self._trust_store = SourceTrustStore()
         self._approved_retriever = approved_retriever
+        # 语义缓存（可选）：None = 禁用（测试默认）；生产由 main 注入共享单例
+        self._semantic_cache = semantic_cache
         # ①: reranker 后台预热(加载 ~3s, 避免首次问答卡顿; 模型缺失时静默跳过)
         try:
             from knowledge.reranker import prewarm
@@ -291,6 +309,36 @@ class LegacyQaRunner:
         # 闲聊入口快路径：问候/道谢等短句直接模板回应，跳过批准索引检索与 QA 图
         if is_chitchat_query(request.question):
             return chitchat_reply()
+        # 语义缓存查询：公共知识问题命中时直接返回历史答案（毫秒级）。
+        # 个人化回答不写缓存（见下方写入条件），但读缓存对全员开放——
+        # 公共问题的答案与提问者身份无关。
+        namespace = "demo" if request.principal.auth_mode == "demo" else "production"
+        cached = None
+        if self._semantic_cache is not None:
+            try:
+                cached = self._semantic_cache.lookup(request.question, namespace)
+            except Exception:
+                cached = None  # 缓存层任何异常都旁路，不影响主链路
+        if cached is not None:
+            if request.emit_stage is not None:
+                request.emit_stage("缓存命中", f"⚡ 语义缓存命中（相似度 {cached['score']}）")
+            return AnswerBundle(
+                markdown=cached["answer"],
+                claims=[{
+                    "claim_id": "c1", "text": cached["answer"], "kind": "factual",
+                    "status": "confirmed",
+                    "evidence": [{"source_id": "semantic-cache", "relation": "supports",
+                                  "quote": f"语义缓存命中（相似度 {cached['score']}）"}],
+                }],
+                sources=[{
+                    "citation": "缓存", "source_id": "semantic-cache",
+                    "title": "语义缓存回答", "source": "本地语义缓存",
+                }],
+                limitations=[],
+                terminal_reason="cache_hit",
+                thoughts=[{"round": 0, "decision": "cache_hit",
+                           "reason": f"语义缓存命中（相似度 {cached['score']}），跳过全链路"}],
+            )
         runner = self._resolve_runner()
         profile = dict(request.principal.profile) if request.principal.is_authenticated else {}
         student_id = request.principal.principal_id if request.principal.is_authenticated else None
@@ -414,6 +462,14 @@ class LegacyQaRunner:
             citations = "".join(f"[{source['citation']}]" for source in sources[:3])
             answer = f"{answer.rstrip()} {citations}".rstrip()
             claim["text"] = answer
+        # 语义缓存写入：仅公共知识回答（确认有支撑 + 未调用个人数据工具），
+        # 个人化回答不缓存，避免跨会话/跨用户复用个人数据
+        if self._semantic_cache is not None and claim_status == "confirmed" and not _used_personal_tools(tool_results):
+            try:
+                source_hashes = sorted({_digest(c.get("content") or "") for c in candidates if c.get("content")})
+                self._semantic_cache.store(request.question, answer, namespace, source_hashes=source_hashes)
+            except Exception:
+                pass  # 缓存写入失败不影响回答
         return AnswerBundle(
             markdown=answer,
             claims=[claim],
