@@ -184,3 +184,92 @@ def test_long_question_does_not_take_chitchat_path() -> None:
 
     assert calls["count"] == 1
     assert answer.markdown.startswith("处理：")
+
+
+def test_error_result_is_not_confirmed_nor_cached(monkeypatch) -> None:
+    """LLM 降级（error 非空）不得视为 confirmed，也不得写入语义缓存。"""
+    store = {"calls": 0}
+
+    class FakeCache:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def lookup(self, *_a, **_k):
+            return None
+
+        def store(self, *_a, **_k):
+            store["calls"] += 1
+
+    def fake_run_qa(_question: str, **_kwargs) -> dict:
+        return {
+            "answer": "⚠️ LLM 服务暂不可用，以下为工具/知识库原始结果。",
+            "intent": "知识问答",
+            "candidates_found": True,
+            "candidates": [{"id": "c1", "content": "x", "score": 0.4}],
+            "tool_results": [],
+            "error": "LLM 返回空回答",
+        }
+
+    monkeypatch.setattr(
+        "xiaowo_web.chat.runner.LegacyQaRunner._resolve_runner",
+        lambda self: fake_run_qa,
+    )
+    runner = LegacyQaRunner(fake_run_qa)
+    runner._semantic_cache = FakeCache()
+    try:
+        request = QaRunRequest(
+            run_id="run-err", question="合肥有什么景点", requested_mode="auto",
+            effective_mode="auto",
+            principal=Principal("", "anonymous", {}, False, "session-err"),
+            conversation_id=None,
+        )
+        answer = asyncio.run(runner.run(request))
+    finally:
+        runner.close()
+
+    assert answer.claims[0]["status"] == "insufficient"
+    assert store["calls"] == 0
+
+
+def test_time_sensitive_question_is_not_cached(monkeypatch) -> None:
+    """含时效词的问题不入语义缓存（回答会过期）。"""
+    store = {"calls": 0}
+
+    class FakeCache:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def lookup(self, *_a, **_k):
+            return None
+
+        def store(self, *_a, **_k):
+            store["calls"] += 1
+
+    def fake_run_qa(_question: str, **_kwargs) -> dict:
+        return {
+            "answer": "截至今日的保研政策要点如下。",
+            "intent": "知识问答",
+            "candidates_found": True,
+            "candidates": [{"id": "c1", "content": "x", "score": 0.9}],
+            "tool_results": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(
+        "xiaowo_web.chat.runner.LegacyQaRunner._resolve_runner",
+        lambda self: fake_run_qa,
+    )
+    runner = LegacyQaRunner(fake_run_qa)
+    runner._semantic_cache = FakeCache()
+    try:
+        request = QaRunRequest(
+            run_id="run-time", question="截至今日最新的保研政策是什么？",
+            requested_mode="auto", effective_mode="auto",
+            principal=Principal("", "anonymous", {}, False, "session-time"),
+            conversation_id=None,
+        )
+        asyncio.run(runner.run(request))
+    finally:
+        runner.close()
+
+    assert store["calls"] == 0

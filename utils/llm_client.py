@@ -6,6 +6,8 @@
 import time
 
 import httpx
+from typing import Any
+
 from langchain_openai import ChatOpenAI
 from config import LLM_CONFIG
 
@@ -41,6 +43,22 @@ def mark_llm_down_if_unreachable(exc: Exception) -> bool:
 
 class LLMUnavailableError(ConnectionError):
     """熔断窗内快速失败（区别于真实网络异常，供调用方直接走降级）。"""
+
+
+def llm_content(response: Any) -> str:
+    """提取模型回复文本。DeepSeek 官网 V4 系列偶发 content 为空、
+    推理内容落在 additional_kwargs.reasoning_content——作为最后兜底使用
+    （正常时与 response.content 一致，不会改变现有行为）。"""
+    if response is None:
+        return ""
+    try:
+        text = str(getattr(response, "content", None) or "").strip()
+        if text:
+            return text
+        kwargs = getattr(response, "additional_kwargs", None) or {}
+        return str(kwargs.get("reasoning_content") or "").strip()
+    except Exception:
+        return ""
 
 
 def create_llm(temperature: float = None, model: str | None = None) -> ChatOpenAI:

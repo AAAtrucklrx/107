@@ -9,13 +9,18 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.qa.nodes import act, compose, embedding_parse, think
+from agents.qa.nodes import act, compose, embedding_parse, think, world_knowledge
 from agents.qa.state import QaState
 from utils.logger import get_logger
 
 log = get_logger("xiaowo.qa.graph")
 
 MAX_ROUNDS = 4
+
+
+def _route_after_parse(state: QaState) -> str:
+    """embedding_parse 分流：世界知识快速通道 / 常规 think 决策"""
+    return "world_knowledge" if state.get("world_knowledge") else "think"
 
 
 def _route_after_think(state: QaState) -> str:
@@ -37,12 +42,17 @@ def build_graph():
     """装配 QA 状态机并编译"""
     g = StateGraph(QaState)
     g.add_node("embedding_parse", embedding_parse)
+    g.add_node("world_knowledge", world_knowledge)
     g.add_node("think", think)
     g.add_node("act", act)
     g.add_node("compose", compose)
 
     g.add_edge(START, "embedding_parse")
-    g.add_edge("embedding_parse", "think")
+    g.add_conditional_edges(
+        "embedding_parse",
+        _route_after_parse,
+        {"world_knowledge": "world_knowledge", "think": "think"},
+    )
     g.add_conditional_edges(
         "think",
         _route_after_think,
@@ -50,6 +60,7 @@ def build_graph():
     )
     g.add_edge("act", "think")
     g.add_edge("compose", END)
+    g.add_edge("world_knowledge", END)
 
     return g.compile()
 
@@ -116,6 +127,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "user_profile": user_profile or {},
                 "chat_history": chat_history or [],
                 "decision": "compose",
+                "world_knowledge": False,
                 "retrieve_query": "",
                 "sub_queries": [],
                 "retrieval_log": [],
@@ -150,6 +162,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "user_profile": user_profile or {},
             "chat_history": chat_history or [],
             "decision": "compose",
+            "world_knowledge": False,
             "retrieve_query": "",
             "sub_queries": [],
             "retrieval_log": [],

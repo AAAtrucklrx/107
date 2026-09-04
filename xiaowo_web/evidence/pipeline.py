@@ -552,15 +552,33 @@ class EvidencePipeline:
         terminal_reason: str = "EVIDENCE_INSUFFICIENT",
         claims: list[dict] | None = None,
     ) -> AnswerBundle:
+        # 2026-09-04 证据制软化：提取到声明但未达确认门槛时，仍展示内容+免责，
+        # 而不是只有兜底文案；无内容才用固定文案。
+        placeholder = "暂未找到足够可靠的联网证据。"
+        real_claims = [
+            dict(item) for item in (claims or [])
+            if str(item.get("text") or "").strip()
+            and not str(item.get("text") or "").strip().startswith("暂未找到")
+        ]
+        if real_claims:
+            body = "\n".join(
+                f"- {str(item.get('text') or '').strip()}" for item in real_claims[:5]
+            )
+            notes = [str(item).strip() for item in limitations if str(item).strip()]
+            markdown = (
+                "已找到以下相关信息（来源未达确定性门槛，仅供参考）：\n\n"
+                f"{body}\n\n"
+                f"{'提示：' + '；'.join(notes[:2]) if notes else ''}"
+            )
+        else:
+            markdown = placeholder
+            real_claims = [{
+                "claim_id": "c1", "text": placeholder, "kind": "factual",
+                "status": "insufficient", "evidence": [],
+            }]
         return AnswerBundle(
-            markdown="暂未找到足够可靠的联网证据。",
-            claims=claims or [{
-                "claim_id": "c1",
-                "text": "暂未找到足够可靠的联网证据。",
-                "kind": "factual",
-                "status": "insufficient",
-                "evidence": [],
-            }],
+            markdown=markdown,
+            claims=real_claims,
             sources=sources,
             limitations=limitations,
             terminal_reason=terminal_reason,

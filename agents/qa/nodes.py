@@ -19,7 +19,7 @@ from agents.tool_registry import _build_tool_registry
 from agents.qa.intents import intent_hint
 from agents.qa.state import QaState
 from knowledge.intent_classifier import classify
-from utils.llm_client import create_llm
+from utils.llm_client import create_llm, llm_content
 from utils.logger import get_logger
 
 log = get_logger("xiaowo.qa.nodes")
@@ -324,8 +324,16 @@ def embedding_parse(state: QaState) -> dict:
         log.warning(f"候选召回失败: {e}")
 
     log.info(f"意图识别: {intent} (method={result.get('method')}, module={module_signal}, 候选 {len(candidates)} 条)")
+    # 世界知识快速通道（2026-09-04）：非校内话题（无科大触发词）+ 知识库 0 命中
+    # + 意图为通用知识问答 → 不经 think/检索/联网，LLM 世界知识直接回答（带免责标注）
+    world_knowledge = bool(
+        intent in _WORLD_INTENTS
+        and not found
+        and not WECHAT_TRIGGER_RE.search(query)
+    )
     return {"intent": intent, "intent_top3": top3, "candidates": candidates,
-            "candidates_found": found, "retrieval_log": retrieval_log}
+            "candidates_found": found, "retrieval_log": retrieval_log,
+            "world_knowledge": world_knowledge}
 
 
 # ── think: LLM 自主决策（降级为确定性规则） ────────────
@@ -381,6 +389,23 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 
 _TIME_WORDS = ["今天", "明天", "后天", "昨天", "这周", "下周", "周一", "周二", "周三",
                "周四", "周五", "周六", "周日", "上午", "下午", "晚上"]
+
+# 科大触发词（世界知识通道/微信通道共用判定；与 xiaowo_web.evidence.rewrite 同模式）
+WECHAT_TRIGGER_RE = re.compile(r"科大|中科大|USTC|中国科学技术大学", re.IGNORECASE)
+
+# 世界知识通道允许的意图（通用常识可能被 embedding 归为知识问答/活动推荐；
+# 校园工具意图一律排除，防止"查成绩/空教室"等被世界知识通道截走）
+_WORLD_INTENTS = frozenset({"知识问答", "活动推荐"})
+
+
+def is_world_knowledge_query(query: str) -> bool:
+    """非校内通用常识判定：无科大触发词 + 意图为通用问答类（不进入工具/证据链）。"""
+    if WECHAT_TRIGGER_RE.search(query or ""):
+        return False
+    try:
+        return classify(query or "").get("intent") in _WORLD_INTENTS
+    except Exception:
+        return False
 _BUILDINGS = ["高新", "一教", "二教", "三教", "四教", "五教"]
 _MAJOR_KEYWORDS = {"计算机": "计算机科学", "人工智能": "人工智能", "数学": "数学",
                    "物理": "物理", "生物": "生物", "化学": "化学", "金融": "金融", "经管": "经管"}
@@ -1379,6 +1404,37 @@ def _current_weekday_text() -> str:
     return "星期" + "一二三四五六日"[datetime.now().weekday()]
 
 
+# ── world_knowledge: 世界知识快速通道（2026-09-04 新增） ────────────
+WORLD_PROMPT = """你是小蜗，中国科学技术大学校园智能助手。
+用户的问题不属于校园事务（本地知识库未命中，也不是校内话题），请基于你的世界知识/通用常识直接、稳妥地回答：
+- 开头一句话概括核心答案，再给出 2-4 个要点；只写你确定掌握的通用信息，不得编造具体数字、来源、日期；
+- 必须在回答末尾明确标注："（以上为通用信息，非联网核实，仅供参考）"；
+- 若问题涉及实时数据（最新新闻/价格/政策/赛果）或专业领域个人化问题，如实说明无法核实，建议明确校内外联网查询；
+- 不得声称这是小蜗校园数据、官方信息或知识库内容；回答使用中文，语气友好简洁。"""
+
+
+def world_knowledge(state: QaState) -> dict:
+    """非校内常识问答：LLM 基于世界知识直接回答（含免责标注）；失败降级固定文案。"""
+    query = state.get("query", "")
+    if state.get("llm_down") or not query.strip():
+        return {"answer": "这是通用知识问题，小蜗暂时无法核实准确信息；你可以换个更具体的问题，或让我联网查询。",
+                "error": "LLM 不可用（世界知识通道降级）"}
+    try:
+        llm = create_llm(temperature=0.5)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", WORLD_PROMPT),
+            ("human", query),
+        ])
+        response = (prompt | llm).invoke({})
+        text = _strip_rule_prefix(llm_content(response))
+        return {"answer": text if text.strip() else "这个问题我暂时没有把握，你可以换个说法或让我联网搜寻。"}
+    except Exception as e:
+        from utils.llm_client import mark_llm_down_if_unreachable
+        mark_llm_down_if_unreachable(e)
+        return {"answer": "这是通用知识问题，小蜗暂时无法核实准确信息；你可以换个更具体的问题，或让我联网查询。",
+                "error": f"世界知识通道调用失败: {e}"}
+
+
 def compose(state: QaState) -> dict:
     """生成最终回答；敏感请求固定拒绝、闲聊直接回应；LLM 不可用时降级格式化"""
     query = state.get("query", "")
@@ -1426,7 +1482,7 @@ def compose(state: QaState) -> dict:
             "tool_summary": tool_summary,
             "candidates_found": "已达到匹配阈值" if candidates_found else "未达匹配阈值",
         })
-        answer = _strip_rule_prefix(response.content)
+        answer = _strip_rule_prefix(llm_content(response))
         # B4: 输出触顶截断标记(finish_reason=length) → 前端展示"继续生成"
         truncated = bool(
             (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length"

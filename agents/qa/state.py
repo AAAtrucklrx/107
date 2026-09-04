@@ -29,6 +29,7 @@ class QaState(TypedDict):
     llm_down: bool  # P3-2 熔断标记：本轮内 LLM 已失败，后续轮次直接确定性规则
     clarify_question: str  # clarify 决策时向用户提出的追问
     personal_qa: str  # think 个人信息问答快速通道命中的字段(grade/major/name/id)
+    world_knowledge: bool  # 世界知识快速通道：非校内问答且知识库 0 命中（LLM 常识+免责标注）
     answer: str  # 最终回答
     truncated: bool  # compose 时 LLM 输出触顶(finish_reason=length), 前端展示"继续生成"
     error: str  # 异常/错误信息（如 LLM API 不可用）

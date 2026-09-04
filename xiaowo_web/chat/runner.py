@@ -18,6 +18,8 @@ from xiaowo_web.evidence.trust import SourceTrustStore
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]】)）]+", re.IGNORECASE)
 _INLINE_CITATION = re.compile(r"\[\d+\]")
+# 时效词（2026-09-04：此类问题的回答会过期 → 不入语义缓存）
+_TIME_SENSITIVE = re.compile(r"(?:最新|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
 
 # ── 闲聊入口快路径（2026-09-03：短问候句走模板，跳过知识库检索与整个 QA 图） ──
 _CHITCHAT_WORDS_CACHE: tuple[str, ...] | None = None
@@ -444,7 +446,13 @@ class LegacyQaRunner:
             claim_kind = "recommendation"
         else:
             claim_kind = "factual"
-        claim_status = "confirmed" if supporting_ids or claim_kind == "chitchat" else "insufficient"
+        # 2026-09-04：链路降级（LLM 不可用/返回空等 error）不算确认，
+        # 防止降级内容被当作证据并写入语义缓存
+        claim_status = (
+            "confirmed"
+            if (supporting_ids or claim_kind == "chitchat") and not result.get("error")
+            else "insufficient"
+        )
         claim = {
             "claim_id": "c1",
             "text": answer,
@@ -464,7 +472,13 @@ class LegacyQaRunner:
             claim["text"] = answer
         # 语义缓存写入：仅公共知识回答（确认有支撑 + 未调用个人数据工具），
         # 个人化回答不缓存，避免跨会话/跨用户复用个人数据
-        if self._semantic_cache is not None and claim_status == "confirmed" and not _used_personal_tools(tool_results):
+        if (
+            self._semantic_cache is not None
+            and claim_status == "confirmed"
+            and not result.get("error")
+            and not _TIME_SENSITIVE.search(request.question)
+            and not _used_personal_tools(tool_results)
+        ):
             try:
                 source_hashes = sorted({_digest(c.get("content") or "") for c in candidates if c.get("content")})
                 self._semantic_cache.store(request.question, answer, namespace, source_hashes=source_hashes)
