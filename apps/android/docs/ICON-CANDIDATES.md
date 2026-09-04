@@ -19,13 +19,13 @@
 
 ## 当前定稿
 
-2026-09-04 采用“方向 4：负空间知识轨迹”。定稿把蜗壳旋涡、开放书本和中央上升曲线组合为一个独立符号，并以校徽的深科技蓝、学术秩序和向上动势为抽象参考；不使用校名、1958、花瓣环或完整校徽结构。
+2026-09-04 采用候选板第 04 个“一笔路径”。正式图标直接使用现有蓝色一笔蜗壳、青色触角和白色背景，不再使用 ImageGen 定稿。
 
 源文件：
 
-- `assets/branding/xiaowo-mark-v4.svg`：可编辑矢量前景
-- `assets/branding/xiaowo-mark-v4.png`：Android 资源生成源
-- `assets/branding/xiaowo-icon-v4-preview.png`：蓝底预览
+- `assets/branding/icon-candidates/04-continuous-path.svg`：完整候选图
+- `assets/branding/icon-candidates/04-continuous-path-foreground.svg`：Android 自适应图标前景
+- `assets/branding/icon-candidates/04-continuous-path-foreground.png`：Android 资源生成源
 
 重新生成 Android 图标：
 
