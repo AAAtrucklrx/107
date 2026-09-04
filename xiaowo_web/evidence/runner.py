@@ -91,6 +91,8 @@ class EvidenceAwareRunner:
             request.question,
             profile=request.principal.profile,
             on_stage=request.emit_stage,
+            # auto 模式本地有兜底：单轮联网（未确认即回退本地），省第 2 轮搜索+提取
+            rounds_limit=1,
         )
         # 联网证据不足时回退本地回答，不再丢弃已命中的本地结果。
         # 时效性问题且本地也未确认时，保留诚实拒答（不回退可能过期的数据）。

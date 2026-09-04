@@ -57,7 +57,7 @@ class _StubPipeline:
         self.error = error
         self.calls = 0
 
-    async def answer(self, _question: str, *, profile=None, on_stage=None) -> AnswerBundle:
+    async def answer(self, _question: str, *, profile=None, on_stage=None, rounds_limit=None) -> AnswerBundle:
         self.calls += 1
         if self.error is not None:
             raise self.error

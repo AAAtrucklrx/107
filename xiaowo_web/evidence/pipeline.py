@@ -94,6 +94,7 @@ class EvidencePipeline:
         *,
         profile: dict | None = None,
         on_stage: StageCallback | None = None,
+        rounds_limit: int | None = None,
     ) -> AnswerBundle:
         try:
             sanitized = sanitize_public_query(question, profile)
@@ -135,7 +136,9 @@ class EvidencePipeline:
                     return self._insufficient(sources, limitations_acc, claims=claims)
 
         queries = await self._candidate_queries(sanitized.text)
-        max_rounds = max(1, self.settings.web_search_max_rounds)
+        # 2026-09-04 提速：auto 模式本地有兜底 → 单轮（无本地兜底的 web 模式保持 settings 轮数）
+        max_rounds = max(1, min(rounds_limit or self.settings.web_search_max_rounds,
+                                 self.settings.web_search_max_rounds))
 
         for round_index in range(max_rounds):
             if round_index >= len(queries):

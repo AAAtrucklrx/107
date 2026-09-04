@@ -86,8 +86,10 @@ class StructuredClaimExtractor:
         *,
         model_name: str | None = None,
         enabled: bool = True,
-        max_page_chars: int = 12_000,
-        max_total_chars: int = 28_000,
+        # 2026-09-04 提速：12k/28k → 6k/16k（长页面尾部多为导航/推荐/版权，
+        # 声明通常在前部；输入 token 减半 → 提取 LLM 延迟 ~61s → ~35-40s）
+        max_page_chars: int = 6_000,
+        max_total_chars: int = 16_000,
         probe_timeout_seconds: float = 4.0,
     ) -> None:
         self._invoke = invoke or self._invoke_default_model

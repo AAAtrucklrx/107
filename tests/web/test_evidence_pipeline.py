@@ -432,3 +432,28 @@ def test_hits_retain_original_order_when_rerank_unavailable(tmp_path) -> None:
 
     asyncio.run(pipeline.answer("2026年秋季学期开学时间是几月几号？"))
     assert pipeline.crawler.crawled[:3] == urls[:3]
+
+
+def test_rounds_limit_stops_after_first_round(tmp_path) -> None:
+    """rounds_limit=1：第一轮未确认即收束，不再搜索加轮候选。"""
+    url = "https://www.teach.ustc.edu.cn/notice/notice-teaching/20425.html"
+    markdown = "教务处公告说明，选课通知已发布于教务处教学子栏目。"
+    source_id = "s-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+    site_query = "site:ustc.edu.cn 2026 选课"
+    search = QueryAwareSearch({site_query: [SearchHit("公告", url)]})
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path),
+        search,
+        FakeCrawler({url: _page(url, markdown)}),
+        url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),  # 第一轮永远提取不出 → 不足
+        rewriter=ScriptedRewriter([["关键词A"]]),
+    )
+
+    answer = asyncio.run(pipeline.answer(
+        "请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？",
+        rounds_limit=1,
+    ))
+    # 只有 关键词A（+空结果退避重试一次=2 次调用）；不再搜 site 加轮词
+    assert search.queries == ["关键词A", "关键词A"]
+    assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
