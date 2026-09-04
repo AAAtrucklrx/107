@@ -249,24 +249,93 @@ def _ecosystem_tool_fragment() -> str:
         return ""
 
 
-_TOOL_LIST = (
-    "search_faq(知识库检索), get_faq_categories(知识库分类), "
-    "query_schedule(课表), query_daily_schedule(某天课表), find_empty_room(空教室), "
-    "query_grade(成绩), calc_gpa(绩点), query_exam(考试安排), "
-    "search_courses(课程搜索), get_semester_list(学期列表), "
-    "query_course_selection(选课情况), query_program(培养方案), "
-    "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入), get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入), "
-    "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入), "
-    "collect_preferences(收集选课偏好), recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"workload_preference\",\"course_scope\",\"preferred_teachers\",\"target_term\",\"gpa\"} 或同名顶层参数), "
-    "compare_courses(课程对比, 参数 course_a/course_b), analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course), "
-    "add_event(添加日程), get_day_view(日视图), get_week_view(周视图), "
-    "check_conflict(日程冲突), import_schedule(导入课表), "
-    "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突), "
-    "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估), "
-    "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL), "
-    "query_activities(青春科大第二课堂活动查询, 参数 keyword=关键词 category=分类 time_window=即将截止/周末/本周 limit=条数, 实时返回报名中活动)"
-    + _ecosystem_tool_fragment()
+# 工具目录（单一来源）：条目 = "工具名(描述)"；桶按意图分组裁剪注入 think
+_TOOL_ENTRIES = (
+    "search_faq(知识库检索)",
+    "get_faq_categories(知识库分类)",
+    "query_schedule(课表)",
+    "query_daily_schedule(某天课表)",
+    "find_empty_room(空教室)",
+    "query_grade(成绩)",
+    "calc_gpa(绩点)",
+    "query_exam(考试安排)",
+    "search_courses(课程搜索)",
+    "get_semester_list(学期列表)",
+    "query_course_selection(选课情况)",
+    "query_program(培养方案)",
+    "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入)",
+    "get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入)",
+    "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入)",
+    "collect_preferences(收集选课偏好)",
+    "recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"workload_preference\",\"course_scope\",\"preferred_teachers\",\"target_term\",\"gpa\"} 或同名顶层参数)",
+    "compare_courses(课程对比, 参数 course_a/course_b)",
+    "analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course)",
+    "add_event(添加日程)",
+    "get_day_view(日视图)",
+    "get_week_view(周视图)",
+    "check_conflict(日程冲突)",
+    "import_schedule(导入课表)",
+    "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突)",
+    "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估)",
+    "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL)",
+    "query_activities(青春科大第二课堂活动查询, 参数 keyword=关键词 category=分类 time_window=即将截止/周末/本周 limit=条数, 实时返回报名中活动)",
 )
+
+_TOOL_CATALOG: dict[str, str] = {}
+for _entry in _TOOL_ENTRIES:
+    _name = _entry.split("(")[0].strip()
+    _TOOL_CATALOG[_name] = _entry
+
+def _tool_list_full() -> str:
+    return ", ".join(_TOOL_ENTRIES) + _ecosystem_tool_fragment()
+
+_TOOL_LIST = _tool_list_full()
+
+# 意图→工具桶（2026-09-04 裁剪）：桶成员 = 该意图相关问题常用工具；
+# 万金油（检索/入口/活动）默认保留在全部桶。跨桶意图最多并集 2 桶。
+_BUCKET_TOOLS: dict[str, tuple[str, ...]] = {
+    "personal": (
+        "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa",
+        "query_exam", "query_course_selection", "find_empty_room",
+        "add_event", "get_day_view", "get_week_view", "check_conflict", "import_schedule",
+        "check_course_conflict", "evaluate_selection_pressure",
+    ),
+    "course": (
+        "search_courses", "get_semester_list", "analyze_teacher", "compare_courses",
+        "collect_preferences", "recommend_courses", "query_program",
+        "get_my_program", "get_program_progress", "plan_semester",
+    ),
+    "general": (),
+}
+_ALWAYS_TOOLS = ("search_faq", "get_faq_categories", "render_link", "query_activities")
+
+_INTENT_BUCKET: dict[str, str] = {
+    "查成绩": "personal", "查课表": "personal", "查考试": "personal",
+    "查空教室": "personal", "日程查询": "personal", "日程管理": "personal",
+    "选课冲突": "personal", "退补选评估": "personal",
+    "课程搜索": "course", "选课推荐": "course", "教师点评": "course",
+}
+
+
+def _tools_for_intent(intent: str, top3: list[dict] | None = None) -> str:
+    """按意图裁剪工具清单注入 think（prompt 减少 ~60%，每次决策省数秒）。
+
+    主桶 + top2 意图若不同桶并入（复合问法如"查成绩和空教室"）；
+    无映射（知识问答/闲聊等）→ 通用桶（万金油工具）。"""
+    names: set[str] = set(_ALWAYS_TOOLS)
+    buckets: list[str] = []
+    for item in [intent, *((top3 or []) and [entry.get("intent") for entry in (top3 or [])][1:-1] or [])]:
+        bucket = _INTENT_BUCKET.get(str(item or "") or "")
+        if bucket and bucket not in buckets and len(buckets) < 2:
+            buckets.append(bucket)
+    for bucket in buckets:
+        for name in _BUCKET_TOOLS.get(bucket, ()):
+            names.add(name)
+    ordered = [name for name in _TOOL_CATALOG if name in names]
+    return ", ".join(_TOOL_CATALOG[name] for name in ordered) + _ecosystem_tool_fragment()
+
+
+
 
 
 def embedding_parse(state: QaState) -> dict:
@@ -752,7 +821,7 @@ def think(state: QaState) -> dict:
             ("human", "请做出决策"),
         ])
         response = (prompt | llm).invoke({
-            "tools": _TOOL_LIST,
+            "tools": _tools_for_intent(intent, state.get("intent_top3") or None),
             "query": query,
             "current_date": _current_date_text(),
             "current_weekday": _current_weekday_text(),

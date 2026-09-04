@@ -97,3 +97,36 @@ def test_act_one_failure_does_not_affect_others(monkeypatch) -> None:
     statuses = {r["tool"]: r["status"] for r in out["tool_results"]}
     assert statuses["echo_bad"] == "error"
     assert statuses["echo_ok"] == "done"
+
+
+def test_tools_for_intent_trims_by_bucket() -> None:
+    """意图裁剪：个人桶只含个人工具；知识问答只给万金油；跨桶并集。"""
+    personal = nodes._tools_for_intent("查成绩")
+    assert "query_grade" in personal and "query_schedule" in personal
+    assert "recommend_courses" not in personal
+    assert "search_faq" in personal  # 万金油保留
+
+    course = nodes._tools_for_intent("选课推荐")
+    assert "recommend_courses" in course
+    assert "query_grade" not in course
+
+    general = nodes._tools_for_intent("知识问答")
+    assert "query_grade" not in general
+    assert "recommend_courses" not in general
+    assert "search_faq" in general
+
+    cross = nodes._tools_for_intent("查课表", [
+        {"intent": "查成绩", "score": 0.9}, {"intent": "查课表", "score": 0.8},
+        {"intent": "课程搜索", "score": 0.4},
+    ])
+    assert "query_schedule" in cross and "query_grade" in cross
+    # 第三不同桶不再并入（限制 2 桶）
+    assert "search_courses" not in cross
+
+
+def test_tool_catalog_covers_full_list() -> None:
+    """"裁剪后仍可从目录重组完整清单（无工具丢失）。"""
+    full = nodes._tool_list_full()
+    for entry in nodes._TOOL_ENTRIES:
+        name = entry.split("(")[0].strip()
+        assert name in full
