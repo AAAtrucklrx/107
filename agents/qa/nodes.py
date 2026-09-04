@@ -1322,6 +1322,8 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 
 意图: {intent}
 
+知识库命中判定: {candidates_found}
+
 知识库候选片段（引用时须标注来源）:
 {candidates_summary}
 
@@ -1348,6 +1350,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 绩点、学分、日期、百分比等数值性知识必须以知识库候选片段或工具结果中的官方数值为准；候选片段含对照表/数字时逐条核对后再回答，严禁凭记忆输出或推算数值（如"XX分对应多少绩点"必须按候选片段中的对照表回答）
 - 当官方信息含"因专业/因年份/因人群而有差异的多个数值"时（如不同专业学费不同、不同年份缴费标准不同），必须区分适用对象作答，**不得用其中某一个特例数值代表整体**（例如学费应区分"普通本科4800/传播学4500"，不得笼统答"4500"），并在必要时提示不同对象数值以官方为准
 - 数据不足时如实说明并引导用户补充信息，不编造
+- 知识库命中判定为"未达匹配阈值"且工具也无有效结果时：如实告知该问题超出了小蜗的校园知识范围；通用常识（如历史、科学常识）可正常回答但须注明"非校园知识库内容，仅供参考"；禁止引用低相关候选片段拼凑回答
 
 ## 开头示例（模仿其"直接开讲"的语气与句式，内容须按实际结果生成）
 用户问"推荐几门给分好的课" → 回答第一句可以是：小蜗来啦！结合你的需求，帮你筛选了几门口碑不错的课～
@@ -1398,6 +1401,7 @@ def compose(state: QaState) -> dict:
             "student_info": _build_student_info(state),
             "candidates_summary": candidates_summary,
             "tool_summary": tool_summary,
+            "candidates_found": "已达到匹配阈值" if candidates_found else "未达匹配阈值",
         })
         answer = _strip_rule_prefix(response.content)
         # B4: 输出触顶截断标记(finish_reason=length) → 前端展示"继续生成"
@@ -1426,6 +1430,9 @@ def _llm_down_answer(tool_summary: str, candidates_summary: str,
     完整呈现），退化路径与旧 _fallback_answer 一致（无任何结果时如实说明）。
     """
     body = ""
+    # ① 无命中不倾倒：检索类工具 found=False（未达匹配阈值）时，其原始候选与
+    # 问题无关，直接进降级输出会让天马行空问题收到无关 FAQ 原文
+    results = [r for r in results if not _is_missed_search(r)]
     if tool_summary and tool_summary.strip():
         body = tool_summary.strip()
         if candidates_summary and candidates_summary.strip():
@@ -1541,6 +1548,9 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] 执行失败: {res.get('error', '未知错误')}")
         elif res.get("error"):
             lines.append(f"[{tool}] {res['error']}")
+        elif isinstance(res.get("results"), list) and "found" in res and not res.get("found"):
+            # 无命中不倾倒：未达阈值时明确告知 LLM，避免无关候选被拼进回答
+            lines.append(f"[{tool}] 未找到与问题相关的知识（未达匹配阈值）。")
         elif isinstance(res.get("results"), list) and res.get("found"):
             lines.append(f"[{tool}] 找到 {len(res['results'])} 条结果:")
             for item in res["results"][:3]:
@@ -1794,6 +1804,12 @@ def _build_tool_summary(results: list[dict]) -> str:
     return "\n".join(lines) if lines else "（无工具结果）"
 
 
+def _is_missed_search(r: dict) -> bool:
+    """检索类工具 found=False（未达匹配阈值）——其候选与问题无关，不进降级输出。"""
+    res = (r or {}).get("result") or {}
+    return isinstance(res.get("results"), list) and "found" in res and not res.get("found")
+
+
 def _fallback_answer(results: list[dict], candidates: list[dict]) -> str:
     """LLM 不可用时的降级回答：工具结果优先，其次展示候选片段（含来源）"""
     done = [r for r in results if r.get("status") == "done"]
@@ -1806,6 +1822,8 @@ def _fallback_answer(results: list[dict], candidates: list[dict]) -> str:
         if res.get("error"):
             # 错误文案脱敏：工具 error 可能含内部异常细节，不透出原文
             lines.append(f"[{r.get('tool', '工具')}] 查询暂时失败，请稍后重试。")
+        elif _is_missed_search(r):
+            continue  # 无命中检索结果不进降级回答
         elif isinstance(res.get("results"), list) and res.get("found"):
             top = res["results"][0]
             content = str(top.get("content", ""))
