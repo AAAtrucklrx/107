@@ -113,6 +113,8 @@ class WebSettings:
     searxng_url: str
     crawl4ai_url: str
     ingestion_worker_enabled: bool
+    # ingest 清洗器：true（默认）= LLM 语义清洗（失败自动回退确定性）；false = 仅确定性归一化
+    ingest_llm_clean: bool = True
     # Web evidence extraction is capability-gated: a configured model must
     # pass the runtime probe before the web gate opens.
     evidence_extractor_enabled: bool = True
@@ -214,6 +216,7 @@ class WebSettings:
                 searxng_url=source.get("XIAOWO_SEARXNG_URL", "http://127.0.0.1:8080").rstrip("/"),
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),
+                ingest_llm_clean=_env_bool(source, "XIAOWO_INGEST_LLM_CLEAN", default=True),
                 evidence_extractor_enabled=_env_bool(
                     source, "XIAOWO_EVIDENCE_EXTRACTOR_ENABLED", default=True,
                 ),
