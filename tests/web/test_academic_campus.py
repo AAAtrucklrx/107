@@ -148,8 +148,7 @@ def test_campus_services_are_public_and_curated(tmp_path) -> None:
             "个人事务",
             "生活服务",
             "就业发展",
-            "社区工具",
-        ]
+        ]  # 社区工具分类已并入「校园工具」（学生共建体系，含预置精选）
 
 
 def test_campus_activities_mapped_to_frontend_contract() -> None:

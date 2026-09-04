@@ -30,6 +30,28 @@ class CampusToolError(ValueError):
         self.status_code = status_code
 
 
+_CURATED_TOOLS: list[dict[str, str]] = [
+{
+"name": "我的科大网页版",
+"url": "https://wdkd.feixu.site",
+"description": "学生自制的智慧校园导航聚合，聚合教务/生活/学习等常用入口（非官方，由 飞旭 feixukeji 开发）",
+"category": "information",
+},
+{
+"name": "蜗壳大雾实验工具",
+"url": "https://dawu.feixu.site",
+"description": "大学物理实验助手：数据绘图、不确定度计算、公式生成（非官方，由 飞旭 feixukeji 开发，开源 github.com/feixukeji/PhyX）",
+"category": "study",
+},
+{
+"name": "科大选课助手",
+"url": "https://class-arrange.raymondzylei.me",
+"description": "学生自制的选课排课辅助工具，可视化课表对比（非官方，由 raymondzylei 开发）",
+"category": "study",
+},
+]
+
+
 class CampusToolStore:
     def __init__(self, settings: WebSettings, *, url_guard: UrlGuard | None = None) -> None:
         self.db_path = Path(settings.review_db_path)
@@ -43,6 +65,10 @@ class CampusToolStore:
         with self._connect() as conn:
             conn.executescript(schema)
             conn.commit()
+        try:
+            self.ensure_curated_tools()
+        except Exception:  # noqa: BLE001 — 预置失败不阻塞初始化
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10)
@@ -904,6 +930,59 @@ class CampusToolStore:
         if len(cleaned) > max_length:
             raise CampusToolError("TOOL_FIELD_TOO_LONG", "字段超过长度限制。", 422)
         return cleaned
+
+
+
+
+
+    def ensure_curated_tools(self, *, now: float | None = None) -> int:
+        """管理员预置的精选学生工具（幂等）：approved 申请 + active 工具，双命名空间。
+
+        贡献者署名并入 description；重复运行按 normalized_url 跳过已存在条目。
+        """
+        timestamp = time.time() if now is None else now
+        inserted = 0
+        with self._write_lock, self._connect() as conn:
+            for namespace in ("demo", "production"):
+                for tool in _CURATED_TOOLS:
+                    parts = urlsplit(tool["url"].strip())
+                    host = parts.hostname.casefold().rstrip(".")
+                    normalized = urlunsplit(("https", host, parts.path or "/", parts.query, ""))
+                    existing = conn.execute(
+                        "SELECT 1 FROM campus_tools WHERE namespace = ? AND normalized_url = ? AND status = 'active'",
+                        (namespace, normalized),
+                    ).fetchone()
+                    if existing is not None:
+                        continue
+                    tool_id = "tool-" + secrets.token_urlsafe(16)
+                    application_id = "tool-app-curated-" + secrets.token_urlsafe(8)
+                    conn.execute(
+                        """
+                        INSERT INTO campus_tool_applications(
+                            application_id, namespace, applicant_principal_id, applicant_auth_mode,
+                            applicant_name_snapshot, name, description, category, submitted_url,
+                            normalized_url, status, decision_reason, reviewed_by, reviewed_at,
+                            request_id, version, created_at, updated_at
+                        ) VALUES (?, ?, 'curated', 'cas', '小蜗精选', ?, ?, ?, ?, ?, 'approved',
+                                  '管理员预置精选', 'xiaowo-curated', ?, 'curated-' || ?, 1, ?, ?)
+                        """,
+                        (application_id, namespace, tool["name"], tool["description"], tool["category"],
+                         tool["url"], normalized, timestamp, secrets.token_urlsafe(8), timestamp, timestamp),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO campus_tools(
+                            tool_id, namespace, application_id, name, description, category,
+                            url, normalized_url, status, published_by, published_at,
+                            version, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'xiaowo-curated', ?, 1, ?, ?)
+                        """,
+                        (tool_id, namespace, application_id, tool["name"], tool["description"],
+                         tool["category"], tool["url"], normalized, timestamp, timestamp, timestamp),
+                    )
+                    inserted += 1
+            conn.commit()
+        return inserted
 
     @staticmethod
     def _normalize_trusted_demo_url(value: str) -> str:

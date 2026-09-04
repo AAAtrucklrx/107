@@ -132,9 +132,9 @@ links:
 
   - name: 评课社区 icourse.club
     url: https://icourse.club
-    description: 学生自办课程评价社区（小蜗评课数据快照来源）
-    category: 社区工具
-    scene: [评课社区, icourse, 课程评价网站]
+    description: 学生自办课程评价社区（小蜗评课数据快照来源；非官方学生社区）
+    category: 教务学习
+    scene: [评课社区, icourse, 课程评价网站, 评课]
 
   # ── 以下为 2026-09-04 新增：官方补充入口与学生第三方工具 ──
 
@@ -162,26 +162,3 @@ links:
     category: 交流升学
     scene: [迎新, 新生, 入学, 报到]
 
-  - name: 我的科大网页版
-    url: https://wdkd.feixu.site
-    description: 学生自制的智慧校园导航聚合，聚合教务/生活/学习等常用入口（非官方，由 飞旭 feixukeji 开发）
-    category: 社区工具
-    third_party: true
-    contributor: 飞旭（feixukeji）
-    scene: [我的科大, 智慧校园, 导航, 入口聚合, wdkd]
-
-  - name: 蜗壳大雾实验工具
-    url: https://dawu.feixu.site
-    description: 大学物理实验助手：数据绘图、不确定度计算、公式生成（非官方，由 飞旭 feixukeji 开发，开源 github.com/feixukeji/PhyX）
-    category: 社区工具
-    third_party: true
-    contributor: 飞旭（feixukeji）
-    scene: [大物实验, 物理实验, 不确定度, 实验数据, 绘图, 大雾]
-
-  - name: 科大选课助手
-    url: https://class-arrange.raymondzylei.me
-    description: 学生自制的选课排课辅助工具，可视化课表对比（非官方，由 raymondzylei 开发）
-    category: 社区工具
-    third_party: true
-    contributor: raymondzylei
-    scene: [选课助手, 排课, 课表模拟, class-arrange]

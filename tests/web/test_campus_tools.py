@@ -49,7 +49,10 @@ def test_anonymous_can_browse_but_cannot_submit_tools(tmp_path) -> None:
         directory = client.get("/api/v1/campus/tools")
         assert directory.status_code == 200
         assert directory.json()["source"]["kind"] == "approved_community"
-        assert directory.json()["items"] == []
+        # 初始目录含 3 个管理员预置的精选学生工具（幂等 seed），匿名可浏览但提交仍需登录
+        assert {item["name"] for item in directory.json()["items"]} == {
+            "我的科大网页版", "蜗壳大雾实验工具", "科大选课助手",
+        }
 
         denied = _submit(client, csrf, url="https://example.edu/tool")
         assert denied.status_code == 401
