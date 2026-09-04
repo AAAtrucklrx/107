@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -123,7 +124,7 @@ class WechatClient:
     def __init__(
         self,
         *,
-        ocr_model: str = "unlimited-ocr",
+        ocr_model: str = os.getenv("XIAOWO_OCR_MODEL", "unlimited-ocr"),
         block_threshold: int = _BLOCK_THRESHOLD,
         block_cooldown: float = _BLOCK_COOLDOWN_SECONDS,
         sogou_throttle: float = _SOGOU_THROTTLE_SECONDS,
