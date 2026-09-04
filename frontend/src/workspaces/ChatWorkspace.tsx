@@ -524,6 +524,21 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     }
   }, [onSeedConsumed, seededQuestion]);
 
+  // 移动端软键盘兜底：不支持 interactive-widget=resizes-content 的 WebView 上，
+  // 聚焦输入框后滚动使其进入键盘上方的可视区
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "TEXTAREA") {
+        window.setTimeout(() => {
+          target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }, 300);
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   const selectStarterPrompt = useCallback((question: string) => {
     setDraft(question);
     window.setTimeout(() => {
