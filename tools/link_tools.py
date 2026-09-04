@@ -65,6 +65,7 @@ def render_link(scene: str) -> dict:
             "source": "官方",
         }
 
+    third_party = best.get("third_party") is True
     return {
         "found": True,
         "name": best["name"],
@@ -72,5 +73,7 @@ def render_link(scene: str) -> dict:
         "description": best.get("description", ""),
         "category": best.get("category", ""),
         "matched_keywords": [kw for kw in (best.get("scene") or []) if kw in scene],
-        "source": "官方",
+        "source": (f"第三方工具（非官方，由 {best.get('contributor') or '学生开发者'} 提供）" if third_party else "官方"),
+        "third_party": third_party,
+        "contributor": str(best.get("contributor") or ""),
     }
