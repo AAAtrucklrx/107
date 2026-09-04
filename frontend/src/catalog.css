@@ -2463,7 +2463,7 @@ select:focus-visible,
   }
 
   .starter-prompt-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(min(158px, 100%), 1fr));
   }
 
   .launch-grid--featured,
