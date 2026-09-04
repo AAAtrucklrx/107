@@ -127,6 +127,13 @@ class ChatManager:
                         self._stage(request.run_id, "web_search", "正在联网搜索")
                     else:
                         self._stage(request.run_id, "local_retrieval", "正在检索本地资料")
+                    # 2026-09-04 占位流式：答案生成前先出字（前端 completed 时用最终 claims 替换）
+                    self.store.append_event(request.run_id, "answer.segment", {
+                        "segment_id": "__placeholder__",
+                        "markdown": "小蜗正在为你整理答案，请稍候…",
+                        "claim_ids": [],
+                        "placeholder": True,
+                    })
                     if request.effective_mode == "web" and not self.settings.web_search_enabled:
                         self._stage(request.run_id, "evidence_check", "正在核验证据")
                         bundle = AnswerBundle(

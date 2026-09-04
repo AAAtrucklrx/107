@@ -602,9 +602,13 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     if (event.type === "answer.completed") {
       activeRun.current = null;
       setBusy(false);
+      // 2026-09-04：最终 claims 文本替换占位段（"小蜗正在为你整理答案…"）
+      const finalClaims = (data.claims as Array<{ text?: string }> | undefined) ?? [];
+      const finalText = finalClaims.find((claim) => typeof claim.text === "string" && claim.text.trim())?.text ?? "";
       setMessages((current) => {
         const next = current.map((message) => message.id === assistantId ? {
           ...withStage(message, "completed"),
+          content: finalText || message.content || "",
           answerId: String(data.answer_id ?? ""),
           status: "completed" as const,
           sources: (data.sources as Source[] | undefined) ?? message.sources ?? [],

@@ -438,8 +438,8 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 7. 意图分类仅供参考，自行判断真实需求并修正
 8. 绝不编造数据：工具结果不足时继续 retrieve/call_tool/clarify，不要硬答
 9. 禁止重复调用：已有工具结果（tool_summary 中 status=done 的工具）不得再次调用同一工具，应转 compose 或 clarify
-10. 选课推荐：已有画像（专业/兴趣/偏好）或问题中明确请求推荐时调用 recommend_courses，并完整传递用户本轮条件（选修/通识/必修、低负担/冲分/挑战、兴趣、教师、目标学期）；本轮明确条件优先于 GPA 自动画像。课程范围是硬条件，兴趣/负担/教师/目标学期默认只参与排序，只有用户明确说“只要/必须”时才可作为硬条件。用户没提供任何偏好信息（无画像且问题中无专业/兴趣/年级线索）时先 clarify 追问或 collect_preferences，不要用默认画像硬推。若用户同时问“推荐且不冲突”，本轮仍只调用 recommend_courses，并明确说明候选课尚未与个人课表做冲突检查
-11. "XX课哪个老师好/哪个老师教得好"类问题用 analyze_teacher(course="课程名")，"XX老师怎么样"用 analyze_teacher(teacher_name="教师名")；"XX老师在XX课怎么样/XX老师的XX课评价"（同时含老师与课程）用 analyze_teacher(teacher_name="教师名", course="课程名") 双参数，聚焦该老师在该课程的评价，不要只用 teacher_name 全量返回
+10. 选课推荐：有画像或明确请求才调用 recommend_courses，并完整传本轮条件（选修/通识/必修、负担、兴趣、教师、目标学期）。课程范围=硬条件；其余默认仅排序，用户说"只要/必须"才升级硬条件。无任何偏好信息时先 clarify 或 collect_preferences。同问"推荐且不冲突"仍只调 recommend_courses 并说明未查冲突。
+11. 问"课程哪个老师好/老师教得好"→analyze_teacher(course)；"老师怎么样"→analyze_teacher(teacher_name)；"老师某课怎么样/评价"（含两者）→双参数 teacher_name+course，不要只传 teacher_name。
 12. 工具执行失败若为参数格式错误（validation error），必须用正确参数格式重试一次，不得声称工具不可用或跳过
 13. 调用课程相关工具（recommend_courses / analyze_teacher）时，args 中的课程名关键词先解析为规范形式：补全常见简称（"数分"→"数学分析"、"线代"→"线性代数"、"概统"→"概率论与数理统计"），班型编号直接连写在课程名后（如"数学分析B1"），不要凭空添加括号
 14. 工具结果含 ambiguity=true 时：decision=clarify，clarify_text 引用 candidates 中的课程名/学院/评论样本量信息反问用户选择哪个班型（例如"您指的是数学分析(B1)（数学科学学院）还是数学分析(B2)？"）；禁止自行替用户做选择
@@ -447,9 +447,9 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 16. 个人数据工具（query_grade/calc_gpa/query_schedule/query_daily_schedule/query_exam/query_course_selection/query_program/add_event/get_day_view/get_week_view/check_conflict/import_schedule）调用时，args 必须携带 student_id（取自已提供的学生信息），不得省略；调用 query_daily_schedule/get_day_view 时，问句中的"周X/明天/后天"等日期词必须解析后作为 date/date_str 传参，不得缺省为今天
 17. 选课冲突/退补选：没有推荐诉求、单独问"冲突/撞课/时间重/课表重"→ check_course_conflict（course_names 可选，只检测指定课程）；问"退选/退课/补选/学分超/学分压力/选太多/要退哪门"→ evaluate_selection_pressure（add_courses/drop_courses 可选，模拟加退课）；周次不重叠不算冲突，周次未知按重叠保守判定，一切以工具返回如实转述，不得臆造排课时间
 18. 复合问题可并行调用多个**相互独立**的工具：单轮 tools 数组 1-3 个（如"查一下我的成绩和课表"→[query_grade, query_schedule] 并行执行，一轮完成）；同一工具只允许出现一次；工具间有先后依赖时必须分开轮次（如"先查我的成绩再推荐课程"→ 先 call_tool 成绩，下一轮再把成绩一并传给 recommend_courses）；最多 {max_rounds} 轮；选择工具前先核对工具清单与规则 1-17，确保工具与问题意图匹配
-19. 联系人类事务问法（"退学/休学/转专业/缓考/选课异常等事务联系谁/找谁/联系方式"）：若当前候选片段中未含具体联系人（姓名/电话/邮箱/办公地点），须调用 search_faq(query="<学生所属学院名> 教学秘书 联系方式") 或改写检索词补一次知识库检索。注意：检索词必须含**学院名**（取自 student_info 中的专业/学院，如"人工智能 学院 教学秘书 联系方式"），仅搜"教学秘书联系方式"或"退学"这类通用词无法命中学院名单块（名单块需学院名做锚点）；拿到具体联系信息后再合成
+19. 事务联系谁/联系方式类：候选无具体联系人（姓名/电话/邮箱/地点）时用 search_faq，检索词必须含学生所属学院名（如"人工智能 学院 教学秘书 联系方式"），通用词无法命中学院名单块。
 20. 生态工具（名称以 eco: 开头，第三方同学提供）：结果转述时必须标注提供者署名与"仅供参考"，不得与官方数据混写；工具失败时如实说明失败原因，不编造结果；用户明确要求测试/使用该第三方工具时才调用
-21. 强操作类诉求（改变官方系统状态的操作：选课/退课/换班/评教提交/缴费/活动报名等，小蜗无权代办）→ 调 render_link(scene=场景) 给出官方入口 URL，并主动提供小蜗能做的辅助（如退课前 evaluate_selection_pressure 模拟、选课前 check_course_conflict 冲突检测）；**URL 只能来自 render_link 返回或知识库来源，禁止自行生成/拼造任何 URL**；render_link 返回 found=false 时如实说不知道入口
+21. 强操作（选课/退课/换班/评教/缴费/活动报名）无权代办→render_link(scene) 给官方入口并附小蜗能做的辅助（如退课前压力模拟）；URL 只能来自 render_link 或知识库，禁止拼造；found=false 如实说。
 22. 活动/第二课堂问句（"有什么活动/讲座/志愿可以报名"、"最近有什么活动"、"周末有什么活动"、"XX月X日有什么活动"）→ 调 query_activities（可带 keyword/category/time_window 过滤），如实转述返回的活动（名称/主办方/时间/报名截止），不得编造活动或修改时间；活动报名本身是强操作，追问报名入口时按规则 21 给 render_link
 
 ## 输出格式（严格 JSON）
@@ -1026,7 +1026,8 @@ def _build_candidates_summary(candidates: list[dict]) -> str:
     lines = []
     for i, c in enumerate(ordered[:12], 1):
         title = c.get("title") or c.get("source") or "未命名"
-        content = str(c.get("content", ""))[:220]
+        # 2026-09-04 压缩：正文 220 → 120 字符（think 只需判断相关度，选段凑数后 compose 再用全量）
+        content = str(c.get("content", ""))[:120]
         src = c.get("source")
         src_part = f" 来源:{src}" if src else ""
         lines.append(f"[{i}] 《{title}》 score={c.get('score')} is_official={c.get('is_official', True)}{src_part}: {content}")
