@@ -9,9 +9,9 @@ flowchart TB
     PRE --> Wx{"科大相关问题？"}
 
     Wx -->|"是（触发词）"| WX["微信公众号官方号优先<br/>白名单 · OCR · 熔断限频"]
-    Wx -->|"否"| BS["博查 Web Search<br/>（SearXNG 引擎组备用）"]
+    Wx -->|"否"| BS["博查 Web Search API<br/>（国内直连）"]
 
-    WX --> FETCH["抓取公开页面<br/>robots + 速率限制<br/>SSRF 阻断内网/回环/云元数据/重定向"]
+    WX --> FETCH["抓取公开页面（Crawl4AI sidecar）<br/>robots + 速率限制<br/>SSRF 阻断内网/回环/云元数据/重定向"]
     BS --> FETCH
 
     FETCH --> EXTRACT["LLM 证据抽取<br/>结构化 claim"]

@@ -66,7 +66,7 @@ BRIEF_SECTIONS: list[tuple[str, list]] = [
     ]),
     ("四、核心功能", [
         "智能问答（RAG）：80 篇校园知识文档、769 条向量分块的混合检索（向量 + BM25），回答附官方来源网址。",
-        "联网证据通道：本地资料不足或问题要求最新信息时，经隐私清洗后联网检索（博查 Web Search / SearXNG），"
+        "联网证据通道：本地资料不足或问题要求最新信息时，经隐私清洗后联网检索（博查 Web Search API 国内直连），"
         "并按证据门槛核验后才输出确定结论；科大相关问题优先检索微信公众号官方号。",
         "课业助手：成绩、GPA、周课表（1–13 小节精确映射科大校历时间）、考试安排、空教室查询。",
         "今日卡弹窗：登录用户打开页面即自动弹出今日概览——今日课程（真实课表周次+星期匹配）与今日开始的活动"
@@ -83,7 +83,8 @@ BRIEF_SECTIONS: list[tuple[str, list]] = [
         "经 LangChain ChatOpenAI 封装，用于意图分类、think 决策、compose 回答合成、查询改写、证据抽取五类调用点。",
         "向量模型：科大 LLM 平台 qwen3-embedding，用于知识分块向量化与语义检索。",
         "图片 OCR：科大 LLM 平台 unlimited-ocr，用于微信公众号文章配图的文字提取。",
-        "联网搜索：博查 Web Search API（国内直连）；SearXNG + Crawl4AI sidecar 作为备用通道。",
+        "联网搜索：博查 Web Search API（国内直连，无需自托管搜索引擎，搜索源可配置切换）；"
+        "页面抓取经 Crawl4AI sidecar（egress/robots/连接固定健康检查前置）。",
         "工具调用：30+ 内置工具经统一 Tool Registry 注册，智能体在决策循环中按需选择并可并行调用；"
         "个人数据类工具（成绩/课表/培养方案等）的学号由认证上下文强制注入，不接受用户输入伪造。",
         "校内服务对接：科大统一身份认证（CAS）、综合教务 jw API、青春科大 young 平台。",
@@ -231,7 +232,8 @@ DESIGN_SECTIONS: list[tuple[str, list]] = [
         "队列、超时、取消、busy 限制）/ 智能体层（LangGraph 图 + 30+ 工具注册表）/ 服务层（CAS/jw/young/LLM 熔断）"
         "/ 数据层（三 SQLite 库 + ChromaDB/BM25 generation 版本化）。",
         "关键设计决策：同步 LangGraph 经有界线程池执行，不阻塞 FastAPI 事件循环；SSE 事件持久化 SQLite + "
-        "进程内通知唤醒 + 1 秒轮询兜底（支持 Last-Event-ID 断线续传）；审核/发布 worker 与 Web 进程分离，"
+        "进程内通知唤醒 + 1 秒轮询兜底（支持 Last-Event-ID 断线续传）；联网链路为博查搜索（国内直连）+ "
+        "Crawl4AI 抓取 sidecar（egress/robots 健康检查前置），无自托管搜索引擎依赖；审核/发布 worker 与 Web 进程分离，"
         "发布约束（乐观锁、generation、不可变快照）保证知识库变更可追溯可回滚。",
         ("h3", "4.3 调试与优化能力（输出可靠性与响应效率）"),
         ("img", "4-streaming.png", "图 4  流式响应时序（真实 SSE 事件时间线，问题\"我的成绩怎么样\"）"),

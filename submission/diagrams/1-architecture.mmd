@@ -25,7 +25,8 @@ graph TB
         LLM["科大 LLM 平台<br/>deepseek-v4-flash · qwen3-embedding"]
         JW["综合教务 jw API"]
         YOUNG["青春科大 young"]
-        SEARCH["博查 Web Search<br/>（SearXNG+Crawl4AI 备用）"]
+        SEARCH["博查 Web Search API<br/>（国内直连）"]
+        CRAWL["Crawl4AI 抓取 sidecar<br/>egress/robots 健康检查"]
     end
 
     subgraph DATA["数据层"]
@@ -44,4 +45,5 @@ graph TB
     GRAPH --> KB
     TOOLS --> DB
     WORKER --> KB
+    WORKER --> CRAWL
     SEARCH --> WORKER
