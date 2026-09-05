@@ -33,7 +33,25 @@ import httpx
 _ALLOWED_FINAL_DOMAINS = frozenset({"mp.weixin.qq.com"})
 _ALLOWED_JUMP_DOMAINS = frozenset({"weixin.sogou.com", "mp.weixin.qq.com"})
 
-# 官方号白名单（账号名匹配，2026-09-01 用户确定：中科大/中国科大/蜗壳）
+# 官方号白名单（账号名精确匹配，2026-09-05 用户确认名单；未列出的号仅回退子串匹配）
+_OFFICIAL_ACCOUNT_NAMES = frozenset(
+    {
+        "蜗壳小道消息",
+        "中科大本科招生",
+        "科科小黑板",
+        "蜗壳学业与少创咨询",
+        "中国科大教务",
+        "科大国际",
+        "南七集市",
+        "青春科大",
+        "USTCCS",
+        "中国科学技术大学",
+        "中国科大研究生",
+        "中国科大芳草社",
+        "中国科学技术大学社团管指委",
+    }
+)
+_OFFICIAL_ACCOUNT_NAMES_LC = frozenset(n.lower() for n in _OFFICIAL_ACCOUNT_NAMES)
 _OFFICIAL_ACCOUNT_RE = re.compile(r"中国科学技术大学|中科大|中国科大|蜗壳")
 
 _MOBILE_UA = (
@@ -533,7 +551,10 @@ def extract_pure(html_text: str) -> dict[str, Any]:
 
 
 def is_official_account(account_name: str) -> bool:
-    return bool(_OFFICIAL_ACCOUNT_RE.search(account_name or ""))
+    name = (account_name or "").strip()
+    if name.lower() in _OFFICIAL_ACCOUNT_NAMES_LC:
+        return True
+    return bool(_OFFICIAL_ACCOUNT_RE.search(name))
 
 
 def build_markdown(article_text: str, ocr_spans: list[str]) -> str:

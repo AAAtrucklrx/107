@@ -104,6 +104,28 @@ def test_official_account_whitelist() -> None:
     assert is_official_account("") is False
 
 
+def test_official_account_curated_names() -> None:
+    # 2026-09-05 用户确认的官方号名单：精确命中（含旧子串匹配覆盖不到的号）
+    for name in [
+        "科科小黑板",
+        "科大国际",
+        "南七集市",
+        "蜗壳学业与少创咨询",
+        "中国科大教务",
+        "青春科大",
+        "USTCCS",
+        "中国科大研究生",
+        "中国科大芳草社",
+        "中国科学技术大学社团管指委",
+    ]:
+        assert is_official_account(name) is True, name
+    # 大小写不敏感（搜狗解析的大小写不定）
+    assert is_official_account("ustccs") is True
+    assert is_official_account("UsTccs") is True
+    # 名单外的号（无科大字样）仍不视为官方
+    assert is_official_account("南七包子铺") is False
+
+
 def test_build_markdown_and_hash() -> None:
     md = build_markdown("正文", ["[图1·OCR] 名单表格"])
     assert "[图1·OCR]" in md
