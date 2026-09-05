@@ -293,10 +293,15 @@ class LegacyQaRunner:
         self._approved_retriever = approved_retriever
         # 语义缓存（可选）：None = 禁用（测试默认）；生产由 main 注入共享单例
         self._semantic_cache = semantic_cache
-        # ①: reranker 后台预热(加载 ~3s, 避免首次问答卡顿; 模型缺失时静默跳过)
+        # ①: reranker/embedder 后台预热(避免首次问答卡顿 3s/20s; 缺失时静默跳过)
         try:
             from knowledge.reranker import prewarm
             prewarm()
+        except Exception:
+            pass
+        try:
+            from knowledge.vector_store import prewarm_embedder
+            prewarm_embedder()
         except Exception:
             pass
 

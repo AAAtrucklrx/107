@@ -71,7 +71,7 @@ def create_llm(temperature: float = None, model: str | None = None) -> ChatOpenA
     if llm_circuit_open():
         raise LLMUnavailableError("LLM 平台近期不可用（熔断窗内快速失败）")
     temp = temperature if temperature is not None else LLM_CONFIG["temperature"]
-    return ChatOpenAI(
+    llm = ChatOpenAI(
         base_url=LLM_CONFIG["base_url"],
         api_key=LLM_CONFIG["api_key"],
         model=model or LLM_CONFIG["model"],
@@ -83,3 +83,6 @@ def create_llm(temperature: float = None, model: str | None = None) -> ChatOpenA
         # 避免 langchain 默认 2 次重试 × 30s 超时把断网拖成分钟级假死
         max_retries=int(LLM_CONFIG.get("max_retries", 1)),
     )
+    # P1② 官网 V4 flash 推理仅 1-2 句：关闭思考省 0.5-1s/次（实例赋值，init 参数在部分版本不落地）
+    llm.model_kwargs = {"extra_body": {"thinking": {"type": "disabled"}}}
+    return llm

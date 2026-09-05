@@ -190,3 +190,11 @@ def test_structured_extension_specs() -> None:
     tables = nodes._tool_to_structured([{"tool": "plan_semester", "status": "done",
                                          "result": {"terms": [{"term": "2秋", "courses": [{"name": "线性代数", "credit": 4}]}]}}])
     assert tables[0]["rows"][0] == ["2秋", "线性代数", "4"]
+
+
+def test_create_llm_disables_thinking() -> None:
+    """P1②：create_llm 通过 extra_body 关闭官网推理（省 0.5-1s/次）。"""
+    from utils.llm_client import create_llm
+    llm = create_llm(model="deepseek-v4-flash", temperature=0)
+    extra = (llm.model_kwargs or {}).get("extra_body") or {}
+    assert extra.get("thinking", {}).get("type") == "disabled"

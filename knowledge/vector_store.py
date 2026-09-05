@@ -7,6 +7,7 @@
 
 import math
 import os
+import threading
 from typing import Any
 
 import chromadb
@@ -24,6 +25,7 @@ RRF_K = 60
 
 # P3-2：进程级嵌入器缓存（FAQVectorStore 非单例，避免多实例重复探测/加载模型）
 _EMBEDDER_CACHE: dict = {}
+_EMBEDDER_LOCK = threading.Lock()  # prewarm/首次检索并发加载互斥（避免双载 22s）
 
 
 def shared_embedder() -> tuple[Any, str]:
@@ -33,6 +35,27 @@ def shared_embedder() -> tuple[Any, str]:
     shim = FAQVectorStore.__new__(FAQVectorStore)  # 跳过 __init__（不建 collection）
     model = shim._init_embedding()
     return model, shim._embed_method
+
+
+_PREWARMED: set[str] = set()
+
+
+def prewarm_embedder() -> None:
+    """后台预热共享 embedder（服务启动时调用，不阻塞）：
+    本地模型首次加载 ~20s，预热后首问 1s 生效；重复调用幂等。"""
+    if _EMBEDDER_CACHE.get("shared") is not None or "embedder" in _PREWARMED:
+        return
+    _PREWARMED.add("embedder")
+
+    def _load() -> None:
+        # 不加外层锁：_init_embedding 内部已持锁并做二次检查（防重入死锁+防双载）
+        try:
+            shared_embedder()
+            log.info("embedder 已预热")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"embedder 预热失败: {e}")
+
+    threading.Thread(target=_load, name="embedder-prewarm", daemon=True).start()
 
 
 class FAQVectorStore:
@@ -80,10 +103,11 @@ class FAQVectorStore:
     def _init_embedding(self):
         # P3-2：嵌入器模块级缓存（FAQVectorStore 非单例，历史上每个实例都重新
         # 探测 API —— 断网时每次探测 ~21s 防火墙丢包超时，一问可撞多次）
-        cached = _EMBEDDER_CACHE.get("shared")
-        if cached is not None:
-            self._embed_method = cached[1]
-            return cached[0]
+        with _EMBEDDER_LOCK:
+            cached = _EMBEDDER_CACHE.get("shared")
+            if cached is not None:
+                self._embed_method = cached[1]
+                return cached[0]
 
         from utils.llm_client import llm_circuit_open
 
