@@ -161,7 +161,7 @@ class ChatManager:
                                 "evidence": [],
                             }],
                             sources=[],
-                            limitations=["SearXNG 与 Crawl4AI sidecar 当前未启用。"],
+                            limitations=["联网检索当前未启用。"],
                             terminal_reason="EVIDENCE_INSUFFICIENT",
                         )
                     else:

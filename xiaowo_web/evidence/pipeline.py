@@ -344,7 +344,7 @@ class EvidencePipeline:
         except (TimeoutError, SidecarContractError, Exception) as exc:
             if isinstance(exc, asyncio.CancelledError):
                 raise
-            return None, ["SearXNG 搜索当前不可用或超时。"]
+            return None, ["联网搜索当前不可用或超时。"]
         if not batch.hits:
             await asyncio.sleep(1.5)
             try:
@@ -355,7 +355,7 @@ class EvidencePipeline:
             except (TimeoutError, SidecarContractError, Exception) as exc:
                 if isinstance(exc, asyncio.CancelledError):
                     raise
-                return None, ["SearXNG 搜索当前不可用或超时。"]
+                return None, ["联网搜索当前不可用或超时。"]
         limitations = ["部分搜索引擎未响应，结果可能不完整。"] if batch.partial else []
         return batch, limitations
 
