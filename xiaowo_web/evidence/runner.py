@@ -11,7 +11,7 @@ from xiaowo_web.chat.runner import QaRunner, chitchat_reply, is_chitchat_query
 from xiaowo_web.evidence.pipeline import EvidencePipeline
 
 
-_CURRENT_TERMS = re.compile(r"(?:最新|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
+_CURRENT_TERMS = re.compile(r"(?:最新|最近|近期|近日|最近几天|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
 
 
 _TOOL_INTENTS = frozenset({

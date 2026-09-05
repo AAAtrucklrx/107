@@ -19,7 +19,7 @@ from xiaowo_web.evidence.trust import SourceTrustStore
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]】)）]+", re.IGNORECASE)
 _INLINE_CITATION = re.compile(r"\[\d+\]")
 # 时效词（2026-09-04：此类问题的回答会过期 → 不入语义缓存）
-_TIME_SENSITIVE = re.compile(r"(?:最新|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
+_TIME_SENSITIVE = re.compile(r"(?:最新|最近|近期|近日|最近几天|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
 
 # ── 闲聊入口快路径（2026-09-03：短问候句走模板，跳过知识库检索与整个 QA 图） ──
 _CHITCHAT_WORDS_CACHE: tuple[str, ...] | None = None
