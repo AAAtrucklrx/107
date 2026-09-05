@@ -20,7 +20,7 @@ from xiaowo_web.campus import CampusService, CampusToolStore
 from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
 from xiaowo_web.errors import ApiError, api_error_handler
 from xiaowo_web.knowledge.semantic_cache import SemanticCache
-from xiaowo_web.evidence.clients import BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarHealthProvider
+from xiaowo_web.evidence.clients import (BaiduSearchClient, BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarHealthProvider)
 from xiaowo_web.evidence.extractor import StructuredClaimExtractor
 from xiaowo_web.evidence.pipeline import EvidencePipeline
 from xiaowo_web.evidence.rewrite import QueryRewriter
@@ -74,6 +74,12 @@ def create_app(
                 search_client = BochaWebSearchClient(
                     resolved_settings.bocha_api_key,
                     base_url=resolved_settings.bocha_base_url,
+                    timeout=resolved_settings.search_timeout_seconds,
+                )
+            elif resolved_settings.search_provider == "baidu":
+                search_client = BaiduSearchClient(
+                    resolved_settings.baidu_api_key,
+                    base_url=resolved_settings.baidu_base_url,
                     timeout=resolved_settings.search_timeout_seconds,
                 )
             else:

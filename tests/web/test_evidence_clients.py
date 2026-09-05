@@ -8,7 +8,7 @@ import json
 import httpx
 import pytest
 
-from xiaowo_web.evidence.clients import BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarContractError
+from xiaowo_web.evidence.clients import BaiduSearchClient, BochaWebSearchClient, Crawl4AiClient, SearxngClient, SidecarContractError
 
 
 def test_bocha_parses_web_pages_and_sends_bearer_key() -> None:
@@ -175,6 +175,41 @@ def test_crawl4ai_rejects_a_mismatched_content_hash() -> None:
         adapter = Crawl4AiClient("http://crawl4ai", client=client)
         with pytest.raises(SidecarContractError):
             await adapter.crawl("https://example.com/public")
+        await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_baidu_parses_references_and_authority_hint() -> None:
+    """百度适配器：references→SearchHit，authority_score 透出 rank_hint。"""
+    async def scenario() -> None:
+        seen_auth = None
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal seen_auth
+            seen_auth = request.headers.get("authorization")
+            assert request.url.path == "/v2/ai_search/web_search"
+            body = json.loads(request.content)
+            assert body["messages"][0]["content"]
+            assert body["resource_type_filter"][0]["type"] == "web"
+            return httpx.Response(200, headers={"content-type": "application/json"}, json={
+                "references": [
+                    {"id": 1, "url": "https://www.gov.cn/a.html", "title": "官方通知",
+                     "date": "2026-09-01", "content": "正文摘要", "authority_score": 1,
+                     "website": "中国政府网"},
+                    {"url": ""},
+                ],
+            })
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://qianfan.baidubce.com")
+        adapter = BaiduSearchClient("bce-v3/ALTAK-test", client=client)
+        batch = await adapter.search("2026年国庆放假", limit=5)
+        assert seen_auth == "Bearer bce-v3/ALTAK-test"
+        assert len(batch.hits) == 1
+        assert batch.hits[0].title == "官方通知"
+        assert batch.hits[0].engine == "baidu"
+        assert batch.hits[0].rank_hint == 1.0
+        assert batch.hits[0].published_at == "2026-09-01"
         await client.aclose()
 
     asyncio.run(scenario())

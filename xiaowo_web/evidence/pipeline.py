@@ -102,6 +102,7 @@ class EvidencePipeline:
             return self._insufficient([], [exc.message], terminal_reason=exc.code)
 
         sources_acc: list[dict] = []
+        wechat_sources: list[dict] = []  # 2026-09-05：公众号未确认时保留，供互联网检索后合并
         limitations_acc: list[str] = []
         claims_acc: list[dict] | None = None
         year_anchor = temporal_anchor(sanitized.text) if self.settings.web_query_rewrite else None
@@ -130,10 +131,11 @@ class EvidencePipeline:
                     )
                     if confirmed is not None:
                         return confirmed
-                    # 公众号内容已查看但不达门槛：以公众号来源收束（不再叠加通用两轮，守住总预算）
-                    sources = [self._public_source(record, index + 1) for index, record in enumerate(pages)]
-                    limitations_acc.append("已查看公众号内容，但尚无声明达到确定性证据门槛。")
-                    return self._insufficient(sources, limitations_acc, claims=claims)
+                    # 2026-09-05 体验放宽：公众号已查看但未达门槛 → 保留微信来源，继续通用互联网搜索
+                    wechat_sources = [
+                        self._public_source(record, index + 1) for index, record in enumerate(pages)
+                    ]
+                    limitations_acc.append("已查看公众号内容，但尚无声明达到确定性证据门槛；继续检索互联网公开页面。")
 
         queries = await self._candidate_queries(sanitized.text)
         # 2026-09-04 提速：auto 模式本地有兜底 → 单轮（无本地兜底的 web 模式保持 settings 轮数）
@@ -215,7 +217,12 @@ class EvidencePipeline:
                 return confirmed
             claims_acc = claims
 
-        return self._insufficient(sources_acc, limitations_acc, claims=claims_acc)
+        merged_sources = list(sources_acc)
+        seen_sids = {str(item.get("source_id") or "") for item in merged_sources}
+        for item in wechat_sources:
+            if str(item.get("source_id") or "") not in seen_sids:
+                merged_sources.append(item)
+        return self._insufficient(merged_sources, limitations_acc, claims=claims_acc)
 
 
     async def _assess_and_answer(
@@ -502,7 +509,10 @@ class EvidencePipeline:
     def _rank_hit(self, hit: SearchHit) -> tuple[int, str]:
         decision = self.trust_store.classify_url_without_dns(hit.url)
         rank = {"official_primary": 0, "reliable_independent": 1, "general": 2, "unverified": 3}
-        return rank.get(decision.level, 3), hit.url
+        # 2026-09-05：信任级同级内，权威分高者优先（百度 authority_score：1 权威 / 0.5 普通）
+        authority = f"{float(getattr(hit, 'rank_hint', 0.5)):0.1f}"
+        return rank.get(decision.level, 3), authority, hit.url
+
 
     async def _rerank_hits(self, query: str, ranked: list[SearchHit]) -> list[SearchHit]:
         """搜索命中语义精排：信任级为主序、bge-reranker 相关分为副序（本地 ONNX）。
@@ -573,6 +583,22 @@ class EvidencePipeline:
                 f"{body}\n\n"
                 f"{'提示：' + '；'.join(notes[:2]) if notes else ''}"
             )
+        elif sources:
+            # 2026-09-05 体验放宽：有来源但提取/裁决不足 → 列出检索到的相关内容（附来源编号）
+            lines = []
+            for index, item in enumerate(sources[:5], start=1):
+                title = str(item.get("title") or item.get("institution") or "").strip()
+                if title:
+                    lines.append(f"- 《{title}》[{index}]")
+            markdown = (
+                "已检索到以下相关内容（尚未达到确定性验证门槛，仅供参考）：\n\n"
+                + "\n".join(lines)
+                + "\n\n如需核实，可点击上方来源链接。"
+            )
+            real_claims = [{
+                "claim_id": "c1", "text": markdown, "kind": "factual",
+                "status": "insufficient", "evidence": [],
+            }]
         else:
             markdown = placeholder
             real_claims = [{

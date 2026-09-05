@@ -268,7 +268,8 @@ def test_found_general_source_stays_insufficient_and_is_listed(tmp_path) -> None
     )
     answer = asyncio.run(pipeline.answer("查询公开背景信息"))
     assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
-    assert answer.markdown == "暂未找到足够可靠的联网证据。"
+    assert "暂未找到" not in answer.markdown
+    assert "教务处公告" in answer.markdown  # 2026-09-05 体验放宽：来源列出（title 而非 URL）
     assert len(answer.sources) == 1
     assert answer.sources[0]["level"] == "general"
     assert any("部分搜索引擎" in item for item in answer.limitations)
@@ -457,3 +458,15 @@ def test_rounds_limit_stops_after_first_round(tmp_path) -> None:
     # 只有 关键词A（+空结果退避重试一次=2 次调用）；不再搜 site 加轮词
     assert search.queries == ["关键词A", "关键词A"]
     assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
+
+
+def test_insufficient_lists_sources_when_extraction_empty() -> None:
+    """体验放宽：无提取声明但有来源时，正文列出检索到的内容而非仅有兜底文案。"""
+    answer = EvidencePipeline._insufficient(
+        [{"source_id": "s1", "title": "中国科大新闻网", "citation": 1}],
+        ["部分候选页面未通过抓取或重定向后的安全校验。"],
+        claims=[],
+    )
+    assert "暂未找到" not in answer.markdown
+    assert "中国科大新闻网" in answer.markdown
+    assert "仅供参考" in answer.markdown

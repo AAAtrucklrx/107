@@ -125,10 +125,12 @@ class WebSettings:
     web_search_max_rounds: int = 2
     # 微信公众号通道（科大相关问题优先，受熔断保护；由 XIAOWO_WECHAT_ENABLED 控制）
     wechat_enabled: bool = True
-    # 联网搜索源："searxng"（自托管 sidecar）或 "bocha"（博查 Web Search API，国内直连免 sidecar）
+    # 联网搜索源："searxng"（自托管 sidecar）/"bocha"（博查）/ "baidu"（百度千帆，自带权威分）
     search_provider: str = "searxng"
     bocha_api_key: str = ""
     bocha_base_url: str = "https://api.bochaai.com"
+    baidu_api_key: str = ""
+    baidu_base_url: str = "https://qianfan.baidubce.com"
     # 演示重置保护（2026-09-03 事故加固）：默认关闭端点；开启需额外密钥头
     demo_reset_enabled: bool = False
     demo_reset_key: str = ""
@@ -213,6 +215,8 @@ class WebSettings:
                 search_provider=source.get("XIAOWO_SEARCH_PROVIDER", "searxng").strip().casefold(),
                 bocha_api_key=source.get("XIAOWO_BOCHA_API_KEY", "").strip(),
                 bocha_base_url=source.get("XIAOWO_BOCHA_BASE_URL", "https://api.bochaai.com").rstrip("/"),
+                baidu_api_key=source.get("XIAOWO_BAIDU_SEARCH_KEY", "").strip(),
+                baidu_base_url=source.get("XIAOWO_BAIDU_BASE_URL", "https://qianfan.baidubce.com").rstrip("/"),
                 searxng_url=source.get("XIAOWO_SEARXNG_URL", "http://127.0.0.1:8080").rstrip("/"),
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),
@@ -324,6 +328,11 @@ class WebSettings:
                 if not self.bocha_api_key:
                     raise SettingsError(
                         "XIAOWO_SEARCH_PROVIDER=bocha 时必须配置 XIAOWO_BOCHA_API_KEY"
+                    )
+            elif self.search_provider == "baidu":
+                if not self.baidu_api_key:
+                    raise SettingsError(
+                        "XIAOWO_SEARCH_PROVIDER=baidu 时必须配置 XIAOWO_BAIDU_SEARCH_KEY"
                     )
             else:
                 self._validate_sidecar_url(self.searxng_url, "XIAOWO_SEARXNG_URL")

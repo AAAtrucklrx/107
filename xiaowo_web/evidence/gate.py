@@ -67,6 +67,21 @@ def assess_claim(sources: list[EvidenceSource]) -> ClaimAssessment:
             contradicting_source_ids=(),
             reason="两个相互独立且一致的可靠来源支持该声明。",
         )
+    # 2026-09-05 门槛放宽：1 个可靠来源 + 1 个任意级别的独立交叉佐证 → 确认
+    # （主证据可靠优先；普通来源仅作佐证，仍需独立家族）
+    if reliable_supports:
+        corroborators = [
+            source for source in supports
+            if source.level not in _RELIABLE_LEVELS
+            and not any(_same_family(source, r) for r in reliable_supports)
+        ]
+        if corroborators:
+            return ClaimAssessment(
+                status="confirmed",
+                supporting_source_ids=(reliable_supports[0].source_id, corroborators[0].source_id),
+                contradicting_source_ids=(),
+                reason="一个可靠来源支持并有独立普通来源交叉佐证。",
+            )
     return ClaimAssessment(
         status="insufficient",
         supporting_source_ids=tuple(source.source_id for source in supports),

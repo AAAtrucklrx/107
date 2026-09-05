@@ -148,6 +148,89 @@ class BochaWebSearchClient:
             await self._client.aclose()
 
 
+class BaiduSearchClient:
+    """百度千帆搜索 API 适配器（官方中文综合搜索，自带 authority_score 权威分）。
+
+    POST {base}/v2/ai_search/web_search，Bearer bce-v3/ALTAK 令牌；响应 references[]
+    含 url/title/date/content/snippet/rerank_score/authority_score——authority_score 由
+    SearchHit.rank_hint 透出，供 pipeline 抓取排序使用（0.5 普通 / 1 权威）。
+    """
+
+    _HEALTH_TTL = 600.0
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        base_url: str = "https://qianfan.baidubce.com",
+        timeout: float = 8.0,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("Baidu api_key is required")
+        self._api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self._owned_client = client is None
+        self._client = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout),
+            trust_env=False,
+            headers={"User-Agent": "xiaowo-evidence/1"},
+        )
+        self._health_ok: bool | None = None
+        self._health_at: float = 0.0
+
+    async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
+        response = await self._client.post(
+            f"{self.base_url}/v2/ai_search/web_search",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json={
+                "messages": [{"role": "user", "content": query}],
+                "search_source": "baidu_search_v2",
+                "resource_type_filter": [{"type": "web", "top_k": max(1, min(limit, 30))}],
+                "search_filter": {"match": {}},
+                "search_recency_filter": "year",
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        refs = payload.get("references") or []
+        if not isinstance(refs, list):
+            raise SidecarContractError("Baidu references contract is invalid")
+        hits: list[SearchHit] = []
+        for item in refs:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            hits.append(SearchHit(
+                title=str(item.get("title") or "").strip(),
+                url=url,
+                snippet=str(item.get("snippet") or item.get("content") or "").strip(),
+                engine="baidu",
+                published_at=str(item.get("date") or "").strip() or None,
+                # 权威分透出：1=权威源，0.5=普通；供 pipeline 抓取排序
+                rank_hint=float(item.get("authority_score") or 0.5),
+            ))
+        return SearchBatch(hits=hits, partial=False, unavailable_engines=())
+
+    async def health(self) -> bool:
+        now = time.monotonic()
+        if self._health_ok is not None and now - self._health_at < self._HEALTH_TTL:
+            return self._health_ok
+        try:
+            batch = await self.search("中国科学技术大学", limit=1)
+            self._health_ok = bool(batch.hits)
+        except Exception:
+            self._health_ok = False
+        self._health_at = now
+        return self._health_ok
+
+    async def close(self) -> None:
+        if self._owned_client:
+            await self._client.aclose()
+
+
 class Crawl4AiClient:
     def __init__(self, base_url: str, *, timeout: float = 8.0, client: httpx.AsyncClient | None = None) -> None:
         self.base_url = base_url.rstrip("/")

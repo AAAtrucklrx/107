@@ -36,6 +36,8 @@ class SearchHit:
     snippet: str = ""
     engine: str = ""
     published_at: str | None = None
+    # 搜索源权威分透出（百度 authority_score：1 权威 / 0.5 普通）；供抓取排序
+    rank_hint: float = 0.5
 
 
 @dataclass(frozen=True, slots=True)

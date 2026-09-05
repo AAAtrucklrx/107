@@ -134,3 +134,23 @@ def test_reliable_source_conflict_is_never_guessed() -> None:
     assert result.status == "conflict"
     assert result.supporting_source_ids == ("a",)
     assert result.contradicting_source_ids == ("b",)
+
+
+def test_relaxed_gate_reliable_plus_corroborator_confirms() -> None:
+    """2026-09-05 放宽：可靠来源 + 任意级别独立交叉佐证 → confirmed。"""
+    result = assess_claim([
+        _source("gov-1", level="reliable_independent"),
+        _source("blog-1", level="general"),
+    ])
+    assert result.status == "confirmed"
+
+
+def test_relaxed_gate_still_needs_independent_family() -> None:
+    """放宽后仍要求同域/同文不算独立佐证；仅单 general 仍 insufficient。"""
+    same = assess_claim([
+        _source("gov-1", level="reliable_independent", domain="example.gov.cn"),
+        _source("gov-2", level="general", domain="example.gov.cn"),  # 同 registered domain
+    ])
+    assert same.status == "insufficient"
+    lone = assess_claim([_source("blog-1", level="general")])
+    assert lone.status == "insufficient"
