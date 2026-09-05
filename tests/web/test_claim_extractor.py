@@ -98,17 +98,31 @@ def test_configured_default_model_path_passes_the_capability_probe(monkeypatch) 
                 }],
             }
 
-    class Model:
-        def with_structured_output(self, _schema, *, method: str):
-            assert method == "json_mode"
-            return StructuredModel()
+    import json as _json
 
-    def create_llm(*, temperature: int, model: str):
-        assert temperature == 0
-        assert model == "fixture-structured-model"
-        return Model()
+    import httpx as _httpx
 
-    monkeypatch.setattr("utils.llm_client.create_llm", create_llm)
+    def fake_post(url: str, *, json: dict, headers: dict, timeout: float, trust_env: bool):
+        assert json["response_format"] == {"type": "json_object"}
+        assert url.endswith("/chat/completions")
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                content = _json.dumps({
+                    "claims": [{
+                        "text": "办理时间为九月一日至九月三日。",
+                        "evidence": [{"source_id": "probe-source", "relation": "supports",
+                                      "quote": "公开探针文本：办理时间为九月一日至九月三日。"}],
+                    }],
+                }, ensure_ascii=False)
+                return {"choices": [{"message": {"content": content}}]}
+
+        return _Resp()
+
+    monkeypatch.setattr(_httpx, "post", fake_post)
     extractor = StructuredClaimExtractor(model_name="fixture-structured-model")
     assert asyncio.run(extractor.ready()) is True
     assert extractor.last_error_code is None

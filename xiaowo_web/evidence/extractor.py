@@ -169,6 +169,10 @@ class StructuredClaimExtractor:
         try:
             raw = await asyncio.to_thread(self._invoke, prompt)
             payload = _coerce_payload(raw)
+            if not payload.claims:
+                # 2026-09-05 官网 json 请求偶发空 claims（实测 ~25%）；瞬时失败重试一次
+                raw = await asyncio.to_thread(self._invoke, prompt)
+                payload = _coerce_payload(raw)
         except asyncio.CancelledError:
             raise
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -249,10 +253,35 @@ class StructuredClaimExtractor:
         return prompt, visible_pages
 
     def _invoke_default_model(self, prompt: str) -> Any:
+        """httpx 直连（2026-09-05）：langchain json_mode 在官网 V4 + thinking disabled
+        组合下偶发返回空（语言模型层解析差异）；直连经实测稳定（0.8s 完整 JSON）。
+        返回 JSON 字符串，交由 _coerce_payload 解析。"""
         if not self.model_name:
             raise ClaimExtractionUnavailable("structured extractor model is not configured")
-        from utils.llm_client import create_llm
+        import httpx
 
-        model = create_llm(temperature=0, model=self.model_name)
-        structured = model.with_structured_output(_ExtractionPayload, method="json_mode")
-        return structured.invoke(prompt)
+        from config import LLM_CONFIG
+
+        base = str(LLM_CONFIG["base_url"]).rstrip("/")
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": int(LLM_CONFIG.get("max_tokens", 4096)),
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+        }
+        resp = httpx.post(
+            base + "/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {LLM_CONFIG['api_key']}"},
+            timeout=float(LLM_CONFIG.get("timeout", 30)),
+            trust_env=False,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        message = ((data.get("choices") or [{}])[0].get("message") or {})
+        text = str(message.get("content") or message.get("reasoning_content") or "").strip()
+        if not text:
+            raise ClaimExtractionUnavailable("structured extractor returned empty content")
+        return text
