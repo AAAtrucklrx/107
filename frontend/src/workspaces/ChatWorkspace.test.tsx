@@ -84,7 +84,7 @@ test("public starter prompt fills and focuses the composer without sending", asy
   expect(screen.queryByText(/已核验的完整回答/)).not.toBeInTheDocument();
 });
 
-test("personal academic capability selects valid personal starter prompts", () => {
+test("personal academic capability selects valid personal starter prompts", async () => {
   const personalSession: SessionPayload = {
     ...session,
     principal: {
@@ -98,6 +98,8 @@ test("personal academic capability selects valid personal starter prompts", () =
   };
   render(<Tooltip.Provider><ChatWorkspace config={config} session={personalSession} /></Tooltip.Provider>);
 
+  // 今日弹窗（Radix 模态）打开时背景为 aria-hidden，先关闭再校验启动提示
+  await userEvent.setup().click(screen.getByRole("button", { name: "知道了" }));
   expect(screen.getByRole("button", { name: /今日课表/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /本周日程/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /独立冲突检查/ })).not.toBeInTheDocument();

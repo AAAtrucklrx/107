@@ -151,15 +151,19 @@ function todaysCourses(schedule: AcademicSchedule | null): TodayCourse[] {
 
 function TodayPopup({ open, onClose, session }: { open: boolean; onClose: () => void; session: SessionPayload }) {
   const [schedule, setSchedule] = useState<AcademicSchedule | null>(null);
+  // 2026-09-05 审核修复：区分「加载中/失败/真的无课」三态，加载与失败不再闪现「今日无课」
+  const [scheduleLoaded, setScheduleLoaded] = useState(false);
   const [activities, setActivities] = useState<CampusActivity[] | null>(null);
   const personal = session.capabilities.personal_academic;
 
   useEffect(() => {
     if (!open || !personal) return;
     let alive = true;
+    setScheduleLoaded(false);
     Promise.resolve(apiGet<AcademicSchedule>("/academic/schedule"))
       .then((data) => { if (alive && data) setSchedule(data); })
-      .catch(() => { /* 静默 */ });
+      .catch(() => { /* 静默：失败按 spec 显示「今日无课」（不再无限加载态） */ })
+      .finally(() => { if (alive) setScheduleLoaded(true); });
     Promise.resolve(apiGet<{ items?: CampusActivity[] }>("/campus/activities?time_window=今日&limit=3"))
       .then((data) => { if (alive && data && Array.isArray(data.items)) setActivities(data.items); })
       .catch(() => { /* 静默 */ });
@@ -169,47 +173,56 @@ function TodayPopup({ open, onClose, session }: { open: boolean; onClose: () => 
   if (!open || !personal) return null;
   const courses = todaysCourses(schedule);
   return (
-    <div className="dialog-overlay today-popup-overlay" role="presentation" onClick={onClose}>
-      <div className="dialog-content today-popup" role="dialog" aria-label="今日日程与活动" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-heading">
-          <h2>今日{schedule?.semester ? ` · ${schedule.semester}` : ""}{schedule?.current_week != null ? ` 第${schedule.current_week}周` : ""}</h2>
-          <button type="button" className="dialog-close" aria-label="关闭" onClick={onClose}>×</button>
-        </div>
-        <div className="today-popup-section">
-          <div className="today-popup-section-title">📚 今日课程</div>
-          {courses.length === 0 ? (
-            <div className="today-popup-empty">今日无课</div>
-          ) : (
-            <ul className="today-popup-list">
-              {courses.slice(0, 5).map((course, index) => (
-                <li key={`${course.start}-${course.name}-${index}`}>
-                  <b>{course.start}</b> {course.name} · {course.location}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {activities && activities.length > 0 && (
-          <div className="today-popup-section">
-            <div className="today-popup-section-title">🎯 今日可以报名</div>
-            <ul className="today-popup-list today-popup-activities">
-              {activities.slice(0, 3).map((item, index) => (
-                <li key={`${item.start_time}-${item.title}-${index}`} title={String(item.location ?? "")}>
-                  <span className="today-popup-activity-name">📌 {item.title}</span>
-                  <span className="today-popup-activity-meta">
-                    {item.start_time ? String(item.start_time).slice(11, 16) : ""}
-                    {item.location ? ` · ${item.location}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
+    // 2026-09-05 审核修复：改用项目统一的 Radix Dialog（与 FeedbackDialog 一致），
+    // 白得 Esc 关闭/焦点陷阱/aria-modal/背景滚动锁定；遮罩点击与 X/知道了关闭不变
+    <Dialog.Root open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content today-popup" aria-describedby={undefined}>
+          <div className="dialog-heading">
+            <Dialog.Title asChild>
+              <h2>今日{schedule?.semester ? ` · ${schedule.semester}` : ""}{schedule?.current_week != null ? ` 第${schedule.current_week}周` : ""}</h2>
+            </Dialog.Title>
+            <Dialog.Close className="dialog-close" aria-label="关闭">×</Dialog.Close>
           </div>
-        )}
-        <div className="today-popup-footer">
-          <button type="button" className="button button--primary" onClick={onClose}>知道了</button>
-        </div>
-      </div>
-    </div>
+          <div className="today-popup-section">
+            <div className="today-popup-section-title">📚 今日课程</div>
+            {!scheduleLoaded ? (
+              <div className="today-popup-empty">正在加载今日日程…</div>
+            ) : courses.length === 0 ? (
+              <div className="today-popup-empty">今日无课</div>
+            ) : (
+              <ul className="today-popup-list">
+                {courses.slice(0, 5).map((course, index) => (
+                  <li key={`${course.start}-${course.name}-${index}`}>
+                    <b>{course.start}</b> {course.name} · {course.location}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {activities && activities.length > 0 && (
+            <div className="today-popup-section">
+              <div className="today-popup-section-title">🎯 今日可以报名</div>
+              <ul className="today-popup-list today-popup-activities">
+                {activities.slice(0, 3).map((item, index) => (
+                  <li key={`${item.start_time}-${item.title}-${index}`} title={String(item.location ?? "")}>
+                    <span className="today-popup-activity-name">📌 {item.title}</span>
+                    <span className="today-popup-activity-meta">
+                      {item.start_time ? String(item.start_time).slice(11, 16) : ""}
+                      {item.location ? ` · ${item.location}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="today-popup-footer">
+            <Dialog.Close className="button button--primary">知道了</Dialog.Close>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
