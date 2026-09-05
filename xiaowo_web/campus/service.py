@@ -52,14 +52,15 @@ class CampusService:
             "source": {"kind": "curated_config", "label": "仓库审核官方入口", "stale": False},
         }
 
-    def activities(self, query: str = "", category: str = "", limit: int = 12) -> dict[str, Any]:
+    def activities(self, query: str = "", category: str = "", limit: int = 12,
+                   time_window: str = "", student_id: str = "") -> dict[str, Any]:
         if self._activity_provider is not None:
             result = self._activity_provider(
                 keyword=query,
                 category=category,
-                time_window="",
+                time_window=time_window,
                 limit=limit,
-                student_id="",
+                student_id=student_id,
             )
         else:
             from tools.activity_tools import query_activities
@@ -67,9 +68,9 @@ class CampusService:
             result = query_activities.invoke({
                 "keyword": query,
                 "category": category,
-                "time_window": "",
+                "time_window": time_window,
                 "limit": limit,
-                "student_id": "",
+                "student_id": student_id,
             })
         if result.get("error"):
             return {

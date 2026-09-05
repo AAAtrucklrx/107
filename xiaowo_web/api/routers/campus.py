@@ -52,12 +52,18 @@ async def activities(
     query: Annotated[str, Query(max_length=100)] = "",
     category: Annotated[str, Query(max_length=40)] = "",
     limit: Annotated[int, Query(ge=1, le=20)] = 12,
+    time_window: Annotated[str, Query(max_length=20)] = "",
+    principal: Annotated[Principal | None, Depends(optional_principal)] = None,
 ) -> dict:
+    # 登录用户传 student_id → 推荐引擎启用课表空闲匹配+个性化（理由含真实时间匹配）
+    sid = principal.principal_id if (principal is not None and principal.is_authenticated) else ""
     return await asyncio.to_thread(
         request.app.state.campus_service.activities,
         query,
         category,
         limit,
+        time_window,
+        sid,
     )
 
 

@@ -198,3 +198,61 @@ def test_create_llm_disables_thinking() -> None:
     llm = create_llm(model="deepseek-v4-flash", temperature=0)
     extra = (llm.model_kwargs or {}).get("extra_body") or {}
     assert extra.get("thinking", {}).get("type") == "disabled"
+
+
+def test_activity_recommender_wiring(monkeypatch) -> None:
+    """query_activities 接线推荐引擎：返回推荐序 + reason；引擎异常回退原序。"""
+    import tools.activity_tools as at
+
+    fake_acts = [
+        type("A", (), {
+            "id": str(i), "name": f"活动{i}", "organizer": "团委", "category": "单次项目",
+            "start_time": "2026-09-07 10:00", "end_time": "2026-09-07 12:00",
+            "apply_start": None, "apply_end": "2026-09-08",
+            "description": "x", "place_info": "", "xq": "", "contact": "",
+            "form": "", "people_num": 0, "service_hour": "", "fav_count": 0,
+        })() for i in range(3)]
+
+    def fake_fetch():
+        return fake_acts, None
+
+    monkeypatch.setattr(at, "_fetch_enrolment_cached", fake_fetch)
+    monkeypatch.setattr(at, "_enrich_places", lambda acts: acts)
+
+    def fake_recommend(activities, **kwargs):
+        assert kwargs.get("top_n") == 3
+        return [{"activity": a, "score": 0.9 - i * 0.1, "reason": f"理由{i}"}
+                for i, a in enumerate(reversed(activities))]
+
+    monkeypatch.setattr("services.activity_recommender.recommend", fake_recommend)
+    monkeypatch.setattr("services.activity_recommender.FreeTimeMatcher", lambda **kw: object())
+
+    fn = at.query_activities.func if hasattr(at.query_activities, "func") else at.query_activities
+    out = fn(limit=3)
+    assert out["activities"][0]["name"] == "活动2"
+    assert out["activities"][0]["reason"] == "理由0"
+
+    def boom(*_a, **_k):
+        raise RuntimeError("engine down")
+
+    monkeypatch.setattr("services.activity_recommender.recommend", boom)
+    out2 = fn(limit=3)
+    assert [a["name"] for a in out2["activities"]] == ["活动0", "活动1", "活动2"]
+    assert out2["activities"][0]["reason"] == ""
+
+
+def test_in_window_today_uses_beijing_date() -> None:
+    """今日窗口：按北京时区判定活动开始日（容器时区 UTC 时不误判）。"""
+    from tools.activity_tools import _in_window, _bj_today
+
+    class A:
+        start_dt = None
+        apply_deadline = None
+
+    a = A()
+    today_bj = _bj_today()
+    a.start_dt = today_bj.replace(hour=10)
+    assert _in_window(a, "今日", None) is True
+
+    a.start_dt = today_bj.replace(hour=10) + __import__("datetime").timedelta(days=1)
+    assert _in_window(a, "今日", None) is False

@@ -5358,3 +5358,20 @@ body::after {
 .schedule-event-card[data-conflict] {
   background: color-mix(in srgb, var(--danger-soft) 82%, transparent);
 }
+
+/* 2026-09-04 今日条活动 chips：与课程 chips 同风格，略区分配色 */
+.activity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(52, 168, 83, 0.16), rgba(102, 187, 106, 0.14));
+  border: 1px solid rgba(52, 168, 83, 0.35);
+  color: var(--text, inherit);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}

@@ -47,6 +47,7 @@ import type {
   AcademicSchedule,
   ChatMessage,
   ChatRunCreated,
+  CampusActivity,
   ConversationDetail,
   ConversationSummary,
   PublicConfig,
@@ -127,8 +128,8 @@ interface TodayCourse {
   location: string;
 }
 
-function todaysCourses(schedule: AcademicSchedule): TodayCourse[] {
-  if (schedule.current_week == null) return [];
+function todaysCourses(schedule: AcademicSchedule | null): TodayCourse[] {
+  if (!schedule || schedule.current_week == null) return [];
   const jsDay = new Date().getDay();
   const weekday = jsDay === 0 ? 7 : jsDay;
   return schedule.courses
@@ -147,28 +148,29 @@ function todaysCourses(schedule: AcademicSchedule): TodayCourse[] {
 
 function TodayStrip({ session }: { session: SessionPayload }) {
   const [schedule, setSchedule] = useState<AcademicSchedule | null>(null);
+  const [activities, setActivities] = useState<CampusActivity[] | null>(null);
   const personal = session.capabilities.personal_academic;
 
   useEffect(() => {
     if (!personal) return;
     let alive = true;
+    // 今日课程（与后台真实课表一致：教学周 + 星期匹配）
     Promise.resolve(apiGet<AcademicSchedule>("/academic/schedule"))
-      .then((data) => {
-        if (alive && data) setSchedule(data);
-      })
-      .catch(() => {
-        /* 静默：条仅在有数据时出现 */
-      });
-    return () => {
-      alive = false;
-    };
+      .then((data) => { if (alive && data) setSchedule(data); })
+      .catch(() => { /* 静默：条仅在有数据时出现 */ })
+      .finally(() => { if (alive && personal) setSchedule((prev) => prev ?? null); });
+    // 今日活动（2026-09-04 今日条升级：时间窗=北京今天，时间文本直透后台真实 start/end/deadline）
+    Promise.resolve(apiGet<{ items?: CampusActivity[] }>("/campus/activities?time_window=今日&limit=4"))
+      .then((data) => { if (alive && data && Array.isArray(data.items)) setActivities(data.items); })
+      .catch(() => { /* 静默 */ });
+    return () => { alive = false; };
   }, [personal]);
 
-  if (!personal || !schedule) return null;
+  if (!personal || (!schedule && !activities)) return null;
   const courses = todaysCourses(schedule);
   return (
-    <section className="today-strip" aria-label="今日课程">
-      <b>今日{schedule.semester ? ` · ${schedule.semester}` : ""}{schedule.current_week != null ? ` 第${schedule.current_week}周` : ""}</b>
+    <section className="today-strip" aria-label="今日课程与活动">
+      <b>今日{schedule?.semester ? ` · ${schedule.semester}` : ""}{schedule?.current_week != null ? ` 第${schedule.current_week}周` : ""}</b>
       {courses.length === 0 ? (
         <span className="today-strip__free">今日无课</span>
       ) : (
@@ -178,6 +180,12 @@ function TodayStrip({ session }: { session: SessionPayload }) {
           </span>
         ))
       )}
+      {(activities ?? []).map((item, index) => (
+        <span key={`${item.start_time}-${item.title}-${index}`} className="activity-chip">
+          📌 {item.title}{item.start_time ? ` · ${String(item.start_time).slice(5, 16)}` : ""}
+          {item.location ? ` · ${item.location}` : ""}
+        </span>
+      ))}
     </section>
   );
 }

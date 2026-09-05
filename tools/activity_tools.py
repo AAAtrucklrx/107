@@ -113,6 +113,17 @@ def _load_snapshot_activities():
         return [], ""
 
 
+def _bj_today(now: datetime | None = None) -> datetime:
+    """北京时区当前日期（活动时间为北京时间；容器 TZ 可能是 UTC，今日/本周判定必须锚定北京）。"""
+    from zoneinfo import ZoneInfo
+    try:
+        if now is not None and now.tzinfo is not None:
+            return now.astimezone(ZoneInfo("Asia/Shanghai"))
+    except Exception:  # noqa: BLE001
+        pass
+    return datetime.now(ZoneInfo("Asia/Shanghai"))
+
+
 def _in_window(act, window: str, now: datetime) -> bool | None:
     """时间窗过滤：返回 None 表示无窗口信息不过滤。"""
     if not window:
@@ -120,6 +131,11 @@ def _in_window(act, window: str, now: datetime) -> bool | None:
     w = window.strip()
     deadline = act.apply_deadline
     start = act.start_dt
+    if "今日" in w or "今天" in w:  # 2026-09-04：今日窗口（活动开始日=北京今天）
+        ref = start or deadline
+        if ref is None:
+            return False
+        return ref.date() == _bj_today(now).date()
     if "截止" in w or "快" in w:  # 即将截止（3 天内）
         if deadline is None:
             return False
@@ -132,7 +148,8 @@ def _in_window(act, window: str, now: datetime) -> bool | None:
         ref = start or deadline
         if ref is None:
             return False
-        monday = now.date() - timedelta(days=now.isoweekday() - 1)
+        today = _bj_today(now)
+        monday = today.date() - timedelta(days=today.isoweekday() - 1)
         return monday <= ref.date() <= monday + timedelta(days=6)
     return None
 
@@ -177,6 +194,40 @@ def query_activities(keyword: str = "", category: str = "",
             continue
         out.append(a)
 
+    # 2026-09-04 接线推荐引擎：紧迫度+课表空闲+热度+(登录)个性化 四因子 + MMR 多样性，
+    # 全部推荐附带理由；推荐器失败/异常时回退原始顺序（降级不报错）
+    reasons: dict[int, str] = {}
+    try:
+        from services.activity_recommender import FreeTimeMatcher, recommend
+
+        matcher = None
+        personal_profile = None
+        if student_id:
+            from services.service_container import ServiceContainer
+            from services.activity_profile import get_profile
+            db = ServiceContainer().db
+            try:
+                matcher = FreeTimeMatcher.from_db(db, student_id)
+            except Exception:  # noqa: BLE001 — 课表解析失败 → 空闲因子中性
+                matcher = None
+            try:
+                personal_profile = get_profile(db, student_id)
+            except Exception:  # noqa: BLE001 — 画像不可用 → 退回三因子
+                personal_profile = None
+
+        ranked = recommend(
+            out,
+            matcher=matcher,
+            now=now,
+            top_n=max(1, min(int(limit or 8), 20)),
+            personal_profile=personal_profile,
+        )
+        if ranked:
+            out = [item["activity"] for item in ranked]
+            reasons = {id(item["activity"]): str(item.get("reason", "") or "") for item in ranked}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"活动推荐引擎异常，回退原始顺序: {e}")
+
     out = out[: max(1, min(int(limit or 8), 20))]
 
     # 2026-09-02：展示集补全地点/联系人（仅实时模式；快照回退时 token 多已失效，详情接口同样不可用）
@@ -212,6 +263,7 @@ def query_activities(keyword: str = "", category: str = "",
             "people_num": a.people_num,
             "service_hour": a.service_hour,
             "description": (a.description or "")[:120],
+            "reason": reasons.get(id(a), ""),
         } for a in out],
         "fetched_at": datetime.fromtimestamp(_cache["ts"]).strftime("%Y-%m-%d %H:%M"),
         "source": source,

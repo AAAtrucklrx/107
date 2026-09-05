@@ -574,6 +574,10 @@ _DIRECT_ROUTE_KEYWORDS: dict[str, tuple[str, tuple[str, ...]]] = {
     "退补选评估": ("evaluate_selection_pressure",
                    ("退选", "退课", "补选", "退补选", "学分超", "学分够", "学分压力",
                     "选太多", "退掉", "退哪门", "压力")),
+    # 2026-09-04：活动推荐——LLM 常把"推荐活动"误改成 recommend_courses 课程推荐，
+    # 高置信词（活动/讲座/志愿/报名/第二课堂）确定性路由 query_activities
+    "活动推荐": ("query_activities",
+                 ("活动", "讲座", "志愿", "报名", "第二课堂", "活动推荐", "有没有项目")),
 }
 
 
@@ -658,6 +662,30 @@ def _direct_tool_route(state: QaState) -> dict | None:
             "thought_log": (state.get("thought_log") or []) + [{
                 "round": rounds + 1, "decision": "call_tool",
                 "reason": "培养方案个人数据确定性路由（get_my_program）",
+            }],
+        }
+    # 活动推荐确定性路由（2026-09-04）：优先于推荐课程（LLM 常误判"推荐活动"为课程推荐）
+    activity_kw = _DIRECT_ROUTE_KEYWORDS["活动推荐"][1]
+    if any(k in query for k in activity_kw):
+        tool = "query_activities"
+        results = state.get("tool_results") or []
+        if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
+            return {"decision": "compose", "tool_calls": [],
+                    "thought_log": (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "compose",
+                        "reason": "活动推荐工具已有结果，直接合成",
+                    }]}
+        args: dict = {}
+        for kw in ("讲座", "志愿", "体育", "音乐", "辩论", "竞赛", "团课", "志愿"):
+            if kw in query:
+                args["keyword"] = kw
+                break
+        return {
+            "decision": "call_tool",
+            "tool_calls": [{"tool": tool, "args": args}],
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "call_tool",
+                "reason": "活动推荐确定性路由（query_activities）",
             }],
         }
     recommendation_request = _is_recommendation_request(query)
@@ -1835,13 +1863,14 @@ _STRUCTURE_SPECS: dict[str, dict] = {
         ],
     },
     "query_activities": {
-        "title": "活动报名",
+        "title": "活动推荐",
         "items_key": "activities",
-        "columns": ["活动", "组织方", "时间", "地点", "报名截止"],
+        "columns": ["活动", "组织方", "时间", "地点", "报名截止", "推荐理由"],
         "row": lambda r: [
             str(r.get("name", "") or ""), str(r.get("organizer", "") or ""),
             f"{str(r.get('start', '') or '')[:16]}~{str(r.get('end', '') or '')[:16]}",
             str(r.get("place", "") or ""), str(r.get("apply_end", "") or ""),
+            str(r.get("reason", "") or ""),
         ],
     },
     "find_empty_room": {
