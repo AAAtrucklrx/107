@@ -4,11 +4,11 @@
 
 ## 项目一句话
 
-小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/培养方案等 13 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
+小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/空教室/培养方案三件/日周视图/课程搜索等 12 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
 
 ## ⚠️ 当前状态（2026-09-01 实测）——动手前必看
 
-- HEAD：`cf6fea2`（feat(search): recency words… 2026-09-05），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`c0e7fdb`（docs: sync 2026-09-04/05 state… 2026-09-05），main 分支，远端 `github.com/AAAtrucklrx/107`。
 - **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
@@ -19,7 +19,7 @@
 
 | 服务 | 端口 | 说明 |
 |---|---|---|
-| Web（SPA+API+SSE） | 8000（公网 8850 转发） | `competition + demo`，公网访问 `http://114.214.241.119:8850`（origin 单值校验，改地址须同步 `.env` 的 `XIAOWO_PUBLIC_ORIGIN`）；**联网已启用**（readiness 四项全绿：database/review_database/web_evidence/evidence_extractor） |
+| Web（SPA+API+SSE） | 8000（公网 8850 转发） | `competition + demo`，公网访问 `http://114.214.241.119:8850`（origin 单值校验，改地址须同步 `.env` 的 `XIAOWO_PUBLIC_ORIGIN`）；**联网已启用**（readiness 六项：database/review_database/approved_index/search_quality/web_evidence/evidence_extractor，前两项+web_evidence+evidence_extractor 为硬门槛） |
 | 审核/发布 worker | — | `python -m xiaowo_web.worker`，常驻 |
 | Streamlit 回退 | 8502 | 仅紧急回退 |
 

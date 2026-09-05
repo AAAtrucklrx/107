@@ -170,9 +170,12 @@ class StructuredClaimExtractor:
             raw = await asyncio.to_thread(self._invoke, prompt)
             payload = _coerce_payload(raw)
             if not payload.claims:
-                # 2026-09-05 官网 json 请求偶发空 claims（实测 ~25%）；瞬时失败重试一次
-                raw = await asyncio.to_thread(self._invoke, prompt)
-                payload = _coerce_payload(raw)
+                # 2026-09-05 官网 json 请求偶发空 claims（实测 25~40%）；瞬时失败重试（总 3 次尝试）
+                for _retry in range(2):
+                    raw = await asyncio.to_thread(self._invoke, prompt)
+                    payload = _coerce_payload(raw)
+                    if payload.claims:
+                        break
         except asyncio.CancelledError:
             raise
         except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:

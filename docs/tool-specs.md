@@ -1101,7 +1101,7 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - 工具结果、来源、限制和已有课程卡片转换为公开 SSE 事件；转换不得篡改数值或伪造来源。
 
 **2026-09-05 增补（事件面扩展）**：
-- **`data.table`**：结构化数据卡（成绩/课表/考试/选课/活动/空教室/培养方案/日周视图/课程搜索 13 类工具结果）——**工具完成即推**（先于正文，前端先行渲染）；内容 `{title, columns, rows, source_tool}`；前端按 `title|tool|行数` 去重。
+- **`data.table`**：结构化数据卡（成绩/课表/考试/选课/活动/空教室/培养方案/日周视图/课程搜索 12 类工具结果）——**工具完成即推**（先于正文，前端先行渲染）；内容 `{title, columns, rows, source_tool}`；前端按 `title|tool|行数` 去重。
 - **`stage.changed(action=…)`**：动作播报（"已理解问题：意图「X」/已确定并行查询：A+B/✅ A 已获取结果/信息已齐"）——匿名（不含学号/成绩/规则）；per-run 经 QaState 传递，并发 run 不串线。
 - **占位段**：run 开始即推 `answer.segment`（"小蜗正在为你整理答案…"），`answer.completed` 时前端以最终 claims 文本替换。
 - **`/api/v1/campus/activities`**：新增 `time_window`（含 **今日**——北京时区锚定）与登录态注入 `student_id`（推荐引擎个性化）；活动条目含 `reason`（推荐理由）。
