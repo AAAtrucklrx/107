@@ -4080,9 +4080,6 @@ body::after {
   width: 100%;
 }
 
-.today-strip {
-  margin-top: 18px;
-}
 
 /* ---- 完全复刻方向稿：tile 造型 ---- */
 .launch-tile__index {
@@ -4097,31 +4094,8 @@ body::after {
 }
 
 /* ---- 今日课程条（真实数据：/academic/schedule） ---- */
-.today-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 18px;
-  border: 1px solid var(--gborder-soft);
-  border-radius: var(--r);
-  background: var(--glass-weak);
-  box-shadow: var(--gshadow);
-  padding: 12px 16px;
-  text-align: left;
-}
 
-.today-strip b {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 650;
-  margin-right: 4px;
-}
 
-.today-strip__free {
-  color: var(--ink-3, var(--faint));
-  font-size: 13px;
-}
 
 .course-chip {
   padding: 5px 12px;
@@ -4750,9 +4724,6 @@ body::after {
   }
 
   /* 今日课程条 chips 11px（方向稿 .p-today） */
-  .today-strip b {
-    font-size: 12px;
-  }
 
   .course-chip {
     font-size: 11px;
@@ -5142,11 +5113,6 @@ body::after {
 }
 
 /* ---- 首页今日课程条：玻璃化对齐整体风格 ---- */
-.today-strip {
-  border-radius: 14px;
-  backdrop-filter: var(--gblur);
-  -webkit-backdrop-filter: var(--gblur);
-}
 
 /* ---- 消息链路长文本断行兑底（无空格长串不撑破玻璃卡） ---- */
 .message,
@@ -5360,18 +5326,63 @@ body::after {
 }
 
 /* 2026-09-04 今日条活动 chips：与课程 chips 同风格，略区分配色 */
-.activity-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(52, 168, 83, 0.16), rgba(102, 187, 106, 0.14));
-  border: 1px solid rgba(52, 168, 83, 0.35);
-  color: var(--text, inherit);
-  font-size: 0.78rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 320px;
+
+/* 2026-09-05 今日推荐弹窗（替代顶部条）：玻璃卡风格，复用 dialog 基类 */
+.today-popup {
+  max-width: 480px;
+  width: calc(100vw - 2rem);
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+.today-popup-section + .today-popup-section {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.18);
+}
+.today-popup-section-title {
+  font-size: 0.85rem;
+  font-weight: 650;
+  opacity: 0.75;
+  margin-bottom: 0.45rem;
+}
+.today-popup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.today-popup-list li {
+  font-size: 0.88rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.06);
+}
+.today-popup-list li b {
+  min-width: 3.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.today-popup-activities li {
+  background: linear-gradient(135deg, rgba(52, 168, 83, 0.12), rgba(102, 187, 106, 0.1));
+  border: 1px solid rgba(52, 168, 83, 0.28);
+}
+.today-popup-activity-name {
+  font-weight: 600;
+}
+.today-popup-activity-meta {
+  opacity: 0.7;
+  font-size: 0.8rem;
+}
+.today-popup-empty {
+  opacity: 0.6;
+  font-size: 0.85rem;
+}
+.today-popup-footer {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: flex-end;
 }

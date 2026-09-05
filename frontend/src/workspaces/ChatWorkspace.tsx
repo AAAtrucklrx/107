@@ -146,47 +146,67 @@ function todaysCourses(schedule: AcademicSchedule | null): TodayCourse[] {
     .sort((a, b) => a.start.localeCompare(b.start));
 }
 
-function TodayStrip({ session }: { session: SessionPayload }) {
+function TodayPopup({ open, onClose, session }: { open: boolean; onClose: () => void; session: SessionPayload }) {
   const [schedule, setSchedule] = useState<AcademicSchedule | null>(null);
   const [activities, setActivities] = useState<CampusActivity[] | null>(null);
   const personal = session.capabilities.personal_academic;
 
   useEffect(() => {
-    if (!personal) return;
+    if (!open || !personal) return;
     let alive = true;
-    // 今日课程（与后台真实课表一致：教学周 + 星期匹配）
     Promise.resolve(apiGet<AcademicSchedule>("/academic/schedule"))
       .then((data) => { if (alive && data) setSchedule(data); })
-      .catch(() => { /* 静默：条仅在有数据时出现 */ })
-      .finally(() => { if (alive && personal) setSchedule((prev) => prev ?? null); });
-    // 今日活动（2026-09-04 今日条升级：时间窗=北京今天，时间文本直透后台真实 start/end/deadline）
-    Promise.resolve(apiGet<{ items?: CampusActivity[] }>("/campus/activities?time_window=今日&limit=4"))
+      .catch(() => { /* 静默 */ });
+    Promise.resolve(apiGet<{ items?: CampusActivity[] }>("/campus/activities?time_window=今日&limit=3"))
       .then((data) => { if (alive && data && Array.isArray(data.items)) setActivities(data.items); })
       .catch(() => { /* 静默 */ });
     return () => { alive = false; };
-  }, [personal]);
+  }, [open, personal]);
 
-  if (!personal || (!schedule && !activities)) return null;
+  if (!open || !personal) return null;
   const courses = todaysCourses(schedule);
   return (
-    <section className="today-strip" aria-label="今日课程与活动">
-      <b>今日{schedule?.semester ? ` · ${schedule.semester}` : ""}{schedule?.current_week != null ? ` 第${schedule.current_week}周` : ""}</b>
-      {courses.length === 0 ? (
-        <span className="today-strip__free">今日无课</span>
-      ) : (
-        courses.map((course, index) => (
-          <span key={`${course.start}-${course.name}-${index}`} className={`course-chip cc${(index % 5) + 1}`}>
-            {course.start} {course.name} · {course.location}
-          </span>
-        ))
-      )}
-      {(activities ?? []).map((item, index) => (
-        <span key={`${item.start_time}-${item.title}-${index}`} className="activity-chip">
-          📌 {item.title}{item.start_time ? ` · ${String(item.start_time).slice(5, 16)}` : ""}
-          {item.location ? ` · ${item.location}` : ""}
-        </span>
-      ))}
-    </section>
+    <div className="dialog-overlay today-popup-overlay" role="presentation" onClick={onClose}>
+      <div className="dialog-content today-popup" role="dialog" aria-label="今日日程与活动" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-heading">
+          <h2>今日{schedule?.semester ? ` · ${schedule.semester}` : ""}{schedule?.current_week != null ? ` 第${schedule.current_week}周` : ""}</h2>
+          <button type="button" className="dialog-close" aria-label="关闭" onClick={onClose}>×</button>
+        </div>
+        <div className="today-popup-section">
+          <div className="today-popup-section-title">📚 今日课程</div>
+          {courses.length === 0 ? (
+            <div className="today-popup-empty">今日无课</div>
+          ) : (
+            <ul className="today-popup-list">
+              {courses.slice(0, 5).map((course, index) => (
+                <li key={`${course.start}-${course.name}-${index}`}>
+                  <b>{course.start}</b> {course.name} · {course.location}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {activities && activities.length > 0 && (
+          <div className="today-popup-section">
+            <div className="today-popup-section-title">🎯 今日可以报名</div>
+            <ul className="today-popup-list today-popup-activities">
+              {activities.slice(0, 3).map((item, index) => (
+                <li key={`${item.start_time}-${item.title}-${index}`} title={String(item.location ?? "")}>
+                  <span className="today-popup-activity-name">📌 {item.title}</span>
+                  <span className="today-popup-activity-meta">
+                    {item.start_time ? String(item.start_time).slice(11, 16) : ""}
+                    {item.location ? ` · ${item.location}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="today-popup-footer">
+          <button type="button" className="button button--primary" onClick={onClose}>知道了</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -501,6 +521,8 @@ function FeedbackDialog({
 
 export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQuestion, onSeedConsumed }: ChatWorkspaceProps) {
   const authenticated = session.capabilities.server_history;
+  // 今日弹窗（2026-09-05）：登录（个人课表能力）打开即弹；演示阶段每次打开都显示
+  const [todayPopupOpen, setTodayPopupOpen] = useState<boolean>(Boolean(session.capabilities.personal_academic));
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [localConversations, setLocalConversations] = useState<LocalConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -865,6 +887,8 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   }), [activeId, clearHistory, conversations, deleteConversation, newConversation, selectConversation]);
 
   return (
+    <>
+    <TodayPopup open={todayPopupOpen} onClose={() => setTodayPopupOpen(false)} session={session} />
     <section className={"chat-workspace" + (conversations.length === 0 ? " chat-workspace--solo" : "")}>
       {conversations.length > 0 && (
         <aside className="chat-history-pane"><HistoryPanel {...historyProps} /></aside>
@@ -919,7 +943,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   </div>
                 </section>
               )}
-              <TodayStrip session={session} />
+
             </div>
           ) : messages.map((message, index) => (
             <article key={message.id} className={`message message--${message.role}`}>
@@ -1028,5 +1052,6 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
         </Dialog.Portal>
       </Dialog.Root>
     </section>
+    </>
   );
 }
