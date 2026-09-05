@@ -338,3 +338,59 @@ def test_wechat_channel_uses_rewritten_query(tmp_path) -> None:
     )
     asyncio.run(pipeline.answer("请问中国科学技术大学2026年秋季学期本科生选课通知在哪里发布？"))
     assert wechat.queries == ["中国科学技术大学 选课"]
+
+
+
+
+def test_wechat_relevant_non_official_article_is_kept(tmp_path) -> None:
+    """非官方号但标题含业务词（月饼）保留并正常参与核算。"""
+    import asyncio as _aio
+
+    from tests.web.test_evidence_pipeline import FakeCrawler, FakeSearch, FixedExtractor
+    from tests.web.helpers import make_settings
+    from xiaowo_web.evidence.pipeline import EvidencePipeline
+    from xiaowo_web.evidence.url_security import UrlGuard
+
+    article = WechatArticle(
+        title="中秋月饼上新啦！",
+        author="科大后勤", url="https://mp.weixin.qq.com/s?src=11&signature=R1",
+        markdown="食堂中秋月饼正式上线，欢迎选购。",
+    )
+    wechat = FakeWechat([article])
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path), FakeSearch([]), FakeCrawler({}),
+        url_guard=UrlGuard(lambda _h, _p: ["8.8.8.8"]),
+        extractor=FixedExtractor([]), wechat=wechat,
+    )
+    answer = _aio.run(pipeline.answer("中科大月饼怎么买？"))
+    # 非官方号但标题含"月饼" → 保留（后续未确认时仍列来源）
+    assert any("中秋月饼" in str(s.get("title")) for s in answer.sources)
+
+
+
+    """非官方号且标题不含业务词的微信文章被丢弃 → 继续通用搜索（不再列噪音来源）。"""
+    import asyncio as _aio
+
+    from tests.web.test_evidence_pipeline import FakeCrawler, FakeSearch, FixedExtractor
+    from xiaowo_web.evidence.url_security import UrlGuard
+    from tests.web.helpers import make_settings
+    from xiaowo_web.evidence.pipeline import EvidencePipeline
+
+    noise = WechatArticle(
+        title="中科大《自然·通讯》超低温界面聚合技术让纳滤膜性能大跃升",
+        author="高分子科学前沿", url="https://mp.weixin.qq.com/s?src=11&signature=N1",
+        markdown="与月饼无关的科研内容。",
+    )
+    wechat = FakeWechat([noise])
+    web_search = FakeSearch([])
+    pipeline = EvidencePipeline(
+        make_settings(tmp_path), web_search, FakeCrawler({}),
+        url_guard=UrlGuard(lambda _h, _p: ["8.8.8.8"]),
+        extractor=FixedExtractor([]),
+        wechat=wechat,
+    )
+    answer = _aio.run(pipeline.answer("中科大月饼怎么买？"))
+    # 噪音微信文章被丢弃（无官方号、标题无"月饼"）→ 继续通用搜索（FakeSearch 无命中）
+    assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
+    assert "与问题无关的内容" in "\n".join(answer.limitations)
+    assert web_search.queries, "应继续通用搜索"

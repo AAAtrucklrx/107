@@ -125,6 +125,20 @@ class EvidencePipeline:
                 limitations_acc.append("微信公众号检索超时，已回退通用检索。")
             if bundle is not None and bundle.articles:
                 pages = await self._wechat_pages(bundle.articles)
+                # 2026-09-05 相关性过滤：非官方号文章标题必须命中查询核心词（去官方名），
+                # 否则丢弃（搜狗对"中科大 x"类常返回标题含"中科大"但内容无关的公众号）
+                if pages:
+                    business_words = self._wechat_core_words(sanitized.text)
+                    if business_words:
+                        kept = [
+                            p for p in pages
+                            if p.trust.rule_id == "wechat_official"
+                            or any(w in str(p.page.title or "") for w in business_words)
+                        ]
+                        dropped = len(pages) - len(kept)
+                        pages = kept
+                        if dropped and dropped > 0:
+                            limitations_acc.append(f"微信公众号命中 {dropped} 条与问题无关的内容，已忽略。")
                 if pages:
                     confirmed, claims = await self._assess_and_answer(
                         pages, sanitized.text, limitations_acc, year_anchor, on_stage,
@@ -505,6 +519,23 @@ class EvidencePipeline:
                 "evidence_span_hash": hashlib.sha256("|".join(spans).encode("utf-8")).hexdigest(),
             })
         return candidates
+
+    @staticmethod
+    def _wechat_core_words(question: str) -> list[str]:
+        """微信命中相关性词：去官方名后的中文 2 字窗口（含"月饼"类词）。
+        疑问词停用（怎么/什么…）避免宽度匹配；词表外查询也能获得业务词。"""
+        text = question or ""
+        for name in ("中国科学技术大学", "中科大", "中国科大", "USTC", "科大"):
+            text = text.replace(name, "")
+        import re as _re
+        stop = ("怎么", "什么", "多少", "何时", "哪里", "如何", "啥", "吗", "呢", "哪个", "多久")
+        words: list[str] = []
+        for seg in _re.findall(r"[\u4e00-\u9fff]{2,}", text):
+            for i in range(len(seg) - 1):
+                w = seg[i:i + 2]
+                if w not in stop:
+                    words.append(w)
+        return list(dict.fromkeys(words))
 
     def _rank_hit(self, hit: SearchHit) -> tuple[int, str]:
         decision = self.trust_store.classify_url_without_dns(hit.url)
