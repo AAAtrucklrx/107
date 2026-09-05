@@ -23,11 +23,11 @@
 | 审核/发布 worker | — | `python -m xiaowo_web.worker`，常驻 |
 | Streamlit 回退 | 8502 | 仅紧急回退 |
 
-- 公众号联网通道：科大相关问题优先检索微信公众号（`XIAOWO_WECHAT_ENABLED=true`，官方号白名单 `中国科学技术大学|中科大|中国科大|蜗壳`，图片 OCR 走平台 unlimited-ocr；熔断+限频+SSRF 域白名单保护；详见 `docs/公众号联网通道_spec_2026-09.md` 与 `docs/部署规格与记录_2026-09-01.md` §11）。
-- 联网 sidecar（宿主机 Docker 29.7.2，已 attestation）：SearXNG `127.0.0.1:8080` + Crawl4AI 0.9.2 + adapter `127.0.0.1:11235`，三容器 healthy；管理经 `/var/run/docker.sock`（沙箱内可 exec/restart，脚本 `deploy/server/docker_exec.py`）或宿主机 `docker compose -f deploy/sidecars/compose.yml`。**搜索源已切换 `XIAOWO_SEARCH_PROVIDER=bocha`**（2026-09-03 晚，博查 Web Search API 国内直连；SearXNG 引擎组 5 引擎全封降为备用）；sentinel 已跟随 provider；sidecar 细节与调优见 `docs/部署规格与记录_2026-09-01.md` §7。
+- 公众号联网通道：科大相关问题并行检索微信公众号与全网（结果合并核验，不再只搜公众号；`XIAOWO_WECHAT_ENABLED=true`，官方号白名单 `中国科学技术大学|中科大|中国科大|蜗壳`，图片 OCR 走平台 unlimited-ocr；熔断+限频+SSRF 域白名单保护；详见 `docs/公众号联网通道_spec_2026-09.md` 与 `docs/部署规格与记录_2026-09-01.md` §11）。
+- 联网 sidecar（宿主机 Docker 29.7.2，已 attestation）：SearXNG `127.0.0.1:8080` + Crawl4AI 0.9.2 + adapter `127.0.0.1:11235`，三容器 healthy；管理经 `/var/run/docker.sock`（沙箱内可 exec/restart，脚本 `deploy/server/docker_exec.py`）或宿主机 `docker compose -f deploy/sidecars/compose.yml`。**搜索源已切换 `XIAOWO_SEARCH_PROVIDER=baidu`**（2026-09-05，百度千帆搜索 API 国内直连，自带 authority_score 权威分排序；bocha/SearXNG 保留为可切换适配器，公众号通道与全网并行检索结果合并）；sentinel 已跟随 provider；sidecar 细节与调优见 `docs/部署规格与记录_2026-09-01.md` §7。
 - 管理：`deploy/server/{start_all,stop_all,status}.sh`（nohup + pidfile，**无 systemd**）；日志 `deploy/server/logs/`。
 - 健康：`GET /api/v1/health/live`、`/api/v1/health/ready`、`/api/v1/config/public`。
-- `.env` 是服务器唯一配置：**LLM=DeepSeek 官网**（`LLM_BASE_URL=https://api.deepseek.com/v1`，`deepseek-v4-flash`，`thinking: disabled` 经 extra_body 关闭，OCR=`deepseek-v4-flash-vision-exp`）、YOUNG_TOKEN、`XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_PUBLIC_ORIGIN`、搜索 `XIAOWO_SEARCH_PROVIDER=bocha`+BOCHA key、预算（生成 120s / run 150s / 证据 40s）。密钥不进 git。
+- `.env` 是服务器唯一配置：**LLM=DeepSeek 官网**（`LLM_BASE_URL=https://api.deepseek.com/v1`，`deepseek-v4-flash`，`thinking: disabled` 经 extra_body 关闭，OCR=`deepseek-v4-flash-vision-exp`）、YOUNG_TOKEN、`XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_PUBLIC_ORIGIN`、搜索 `XIAOWO_SEARCH_PROVIDER=baidu`+BAIDU_SEARCH key、预算（生成 120s / run 150s / 证据 40s）。密钥不进 git。
 - **2026-09-05 新增可观测行为**：事件流含 `data.table`（结构化卡：工具完成即推，先于正文）、`answer.delta`（compose 增量流式）、`stage.changed(action=…)`（动作播报：意图/并行查询/✅工具/信息已齐）、占位段（run 开始即出字）；前端行为：登录即弹「今日卡」（Radix Dialog）、打字机渐显、Stripe 收起。**演示要点**：时事类问题请切「网页模式」（auto 对"最近/最新"类会联网核验但置信门槛严格，可能如实降级）。
 
 ## 环境事实（Linux 服务器 · 2026-09-01 实测）

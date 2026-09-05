@@ -8,8 +8,8 @@ flowchart TB
     NEED -->|"是"| PRE["隐私清洗<br/>不含用户问题/身份/私密上下文"]
     PRE --> Wx{"科大相关问题？"}
 
-    Wx -->|"是（触发词）"| WX["微信公众号官方号优先<br/>白名单 · OCR · 熔断限频"]
-    Wx -->|"否"| BS["博查 Web Search API<br/>（国内直连）"]
+    Wx -->|"是（触发词）"| WX["微信公众号通道（并行检索、结果合并）<br/>白名单 · OCR · 熔断限频"]
+    Wx -->|"否"| BS["百度千帆搜索 API<br/>（自带权威分）"]
 
     WX --> FETCH["抓取公开页面（Crawl4AI sidecar）<br/>robots + 速率限制<br/>SSRF 阻断内网/回环/云元数据/重定向"]
     BS --> FETCH
@@ -17,7 +17,7 @@ flowchart TB
     FETCH --> EXTRACT["LLM 证据抽取<br/>结构化 claim"]
     EXTRACT --> GATE{"证据门槛判定"}
 
-    GATE -->|"官方一手来源<br/>（或双独立一致来源）"| CONFIRM["确定结论<br/>附可点击来源"]
+    GATE -->|"官方一手来源<br/>（或可靠来源+独立佐证）"| CONFIRM["确定结论<br/>附可点击来源"]
     GATE -->|"不足"| INSUF["如实回答「证据不足」<br/>claim 降级 insufficient"]
     GATE -->|"冲突"| CONFLICT["说明来源冲突<br/>不让模型自行猜测"]
 

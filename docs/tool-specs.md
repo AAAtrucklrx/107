@@ -1113,10 +1113,10 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 联网门控在本地 `found=false`、权威证据低于阈值、问题明确要求最新信息或用户本轮选择“联网”时触发；用户选择“本地”时永久禁止该轮联网。
 
 1. `SearchPrivacyGuard` 先确定性清除或拒绝外发学号、姓名、成绩、课表、培养方案、画像、CAS 信息和私密上下文。
-2. `SearxngClient` 在 4 秒预算内搜索；科大问题同时走审核白名单通道和全网通道。（2026-09-03 起搜索源按 `XIAOWO_SEARCH_PROVIDER` 用博查（bocha）或 SearXNG；校内事务问题自动注入 `site:ustc.edu.cn` 业务词查询，命中后经本地 bge-reranker 语义精排取 Top 3——详见部署记录 §7/§9。）
+2. `SearxngClient` 在 4 秒预算内搜索；科大问题同时走审核白名单通道和全网通道。（搜索源按 `XIAOWO_SEARCH_PROVIDER` 选择：**baidu**（百度千帆，自带 authority_score 权威分，2026-09-05 定稿）/ 博查（bocha）/ SearXNG；校内事务问题自动注入 `site:ustc.edu.cn` 业务词查询，命中后按"信任级主序 + 权威分副序"重排取 Top 3——详见部署记录 §7/§9。）
 3. `Crawl4AiClient` 只调用私有 adapter，Top 3 并行抓取；URL、DNS 和每跳重定向均执行 SSRF 防护与 robots/限速约束。
 4. `SourceTrustStore` 按精确 host/path 白名单分级。未知 `*.ustc.edu.cn` 只能获得 `ustc_domain` 标签，不能自动成为 `official_primary`。
-5. 一个有效官方一手来源，或两个相互独立且一致的可靠来源，才能支撑确定结论。证据冲突时单列“信息存在分歧”；不足时固定说明“暂未找到足够可靠的联网证据”并展示不足来源。
+5. 一个有效官方一手来源，或一个可靠来源加一个相互独立的佐证（任意信任级），才能支撑确定结论。证据冲突时单列“信息存在分歧”；不足时固定说明“暂未找到足够可靠的联网证据”并展示不足来源。
 6. `StructuredClaimExtractor` 默认复用 `LLM_MODEL`，也可由 `XIAOWO_EVIDENCE_EXTRACTOR_MODEL` 独立指定。联网 readiness 必须先通过合成公开文本的结构化输出与逐字引用探针；未配置、超时或格式不合格时保持 fail-closed，并返回可诊断的证据不足原因。
 
 整个 run 从创建起计算 20 秒硬上限：搜索 4 秒、证据 12 秒、生成到第 18 秒，最后 2 秒用于确定性收尾。达到证据门槛立即取消低优先级抓取。
