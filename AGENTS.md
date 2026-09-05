@@ -4,11 +4,11 @@
 
 ## 项目一句话
 
-小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 → compose 合成），SQLite 双库 + ChromaDB 混合检索 + 29 内置工具（2026-09-03 实测，另侧提交新增 search_all_lessons，_TOOL_LIST 待同步；+ `eco:` 生态工具）+ 校内服务（教务/CAS/青春科大 young/科大 LLM 平台）。Streamlit（`app_test.py`）仅作回退入口。
+小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/培养方案等 13 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
 
 ## ⚠️ 当前状态（2026-09-01 实测）——动手前必看
 
-- HEAD：`d09f6ff`（feat(evidence): bocha web search provider… 2026-09-03 晚），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`cf6fea2`（feat(search): recency words… 2026-09-05），main 分支，远端 `github.com/AAAtrucklrx/107`。
 - **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
@@ -27,7 +27,8 @@
 - 联网 sidecar（宿主机 Docker 29.7.2，已 attestation）：SearXNG `127.0.0.1:8080` + Crawl4AI 0.9.2 + adapter `127.0.0.1:11235`，三容器 healthy；管理经 `/var/run/docker.sock`（沙箱内可 exec/restart，脚本 `deploy/server/docker_exec.py`）或宿主机 `docker compose -f deploy/sidecars/compose.yml`。**搜索源已切换 `XIAOWO_SEARCH_PROVIDER=bocha`**（2026-09-03 晚，博查 Web Search API 国内直连；SearXNG 引擎组 5 引擎全封降为备用）；sentinel 已跟随 provider；sidecar 细节与调优见 `docs/部署规格与记录_2026-09-01.md` §7。
 - 管理：`deploy/server/{start_all,stop_all,status}.sh`（nohup + pidfile，**无 systemd**）；日志 `deploy/server/logs/`。
 - 健康：`GET /api/v1/health/live`、`/api/v1/health/ready`、`/api/v1/config/public`。
-- `.env` 是服务器唯一配置（LLM key、YOUNG_TOKEN、`XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_PUBLIC_ORIGIN`、chroma/reranker/review 各 Linux 路径、生成预算 60s/70s——长生成实测 ~32s 所需）。密钥不进 git。
+- `.env` 是服务器唯一配置：**LLM=DeepSeek 官网**（`LLM_BASE_URL=https://api.deepseek.com/v1`，`deepseek-v4-flash`，`thinking: disabled` 经 extra_body 关闭，OCR=`deepseek-v4-flash-vision-exp`）、YOUNG_TOKEN、`XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo`、`XIAOWO_PUBLIC_ORIGIN`、搜索 `XIAOWO_SEARCH_PROVIDER=bocha`+BOCHA key、预算（生成 120s / run 150s / 证据 40s）。密钥不进 git。
+- **2026-09-05 新增可观测行为**：事件流含 `data.table`（结构化卡：工具完成即推，先于正文）、`answer.delta`（compose 增量流式）、`stage.changed(action=…)`（动作播报：意图/并行查询/✅工具/信息已齐）、占位段（run 开始即出字）；前端行为：登录即弹「今日卡」（Radix Dialog）、打字机渐显、Stripe 收起。**演示要点**：时事类问题请切「网页模式」（auto 对"最近/最新"类会联网核验但置信门槛严格，可能如实降级）。
 
 ## 环境事实（Linux 服务器 · 2026-09-01 实测）
 
@@ -35,7 +36,7 @@
 - Python 3.12.3；仓库 venv：`.venv`（get-pip 引导，pip 26.2.1）→ 一律用 `.venv/bin/python` / `.venv/bin/pip`。
 - Node v22.23.2 / npm 10.9.8；npm 缓存必须指工作区：`--cache /root/Desktop/小蜗/.npm-cache`（默认 `/root/.npm` 只读，报 EROFS）。
 - 依赖：`requirements.lock.txt`（163 锁定，**缺 fastapi/pytest 两个锁文件遗漏项**，已补装）；前端 lock 已含全部依赖。
-- 网络：科大 LLM ✓（`api.llm.ustc.edu.cn`，`deepseek-v4-flash` + `qwen3-embedding` 均在模型表）、PyPI/npm/hf-mirror ✓；**github.com 仅经 Watt Toolkit 加速通道**（见下）。
+- 网络：**DeepSeek 官网 ✓**（`api.deepseek.com/v1`，`deepseek-v4-flash`/`-v4-pro`/`-flash-vision-exp`；2026-09-04 自 `api.llm.ustc.edu.cn` 切换）、PyPI/npm/hf-mirror ✓；**github.com 仅经 Watt Toolkit 加速通道**（见下；加速器进程若死：`nohup /root/Downloads/dotnet/dotnet /root/Downloads/modules/Accelerator/Steam++.Accelerator >/tmp/accel.log 2>&1 &` 即恢复 443）。
 - **Git 通道（Watt Toolkit / Steam++）**：本机 DNS 将 github.com/api.github.com 解析到 127.0.0.1，`Steam++.Accelerator` 监听 0.0.0.0:443 代发。**根证书 2026-08-31 已轮换**，当前 CA = `scripts/data/steamtools_ca_latest.pem`（本地文件，不入库；旧 `steamtools_ca.pem` 已失效）。Linux 版 git 为 **GnuTLS 后端，无 openssl 后端**（接手日志里 `-c http.sslBackend=openssl` 的命令在此机器直接报错）：
   ```bash
   # pull（匿名可读）
@@ -58,7 +59,7 @@ $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 158 passed（2026-09-03 实测）
+$PY -m pytest tests/web -q          # 225 passed（2026-09-05 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build
