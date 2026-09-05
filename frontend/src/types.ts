@@ -50,6 +50,13 @@ export interface SessionPayload {
   csrf_token: string;
 }
 
+export interface StructuredBlock {
+  title: string;
+  columns: string[];
+  rows: string[][];
+  source_tool?: string;
+}
+
 export interface Source {
   source_id: string;
   title: string;
@@ -109,6 +116,7 @@ export interface ChatMessage {
   limitations?: string[];
   terminalReason?: string;
   thoughts?: ThoughtStep[];
+  structured?: StructuredBlock[];
   truncated?: boolean;
   editing?: boolean;
 }

@@ -97,7 +97,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
            chat_history: list[dict] = None,
            supplemental_candidates: list[dict] = None,
            supplemental_candidates_found: bool = False,
-           action_sink: "Callable[[str], None] | None" = None) -> dict:
+           action_sink: "Callable[[str, dict | None], None] | None" = None) -> dict:
     """
     统一问答入口（替换原 router/agent 分发）。
 
@@ -132,6 +132,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
                 "decision": "compose",
                 "world_knowledge": False,
                 "action_sink": action_sink,
+                "structured": [],
                 "retrieve_query": "",
                 "sub_queries": [],
                 "retrieval_log": [],
@@ -168,6 +169,7 @@ def run_qa(query: str, module_signal: str = "自动判断",
             "decision": "compose",
             "world_knowledge": False,
             "action_sink": action_sink,
+            "structured": [],
             "retrieve_query": "",
             "sub_queries": [],
             "retrieval_log": [],

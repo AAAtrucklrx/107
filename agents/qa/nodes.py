@@ -931,14 +931,15 @@ def _build_tool_plan(data: dict, done_tools: set[str]) -> tuple[list[dict], str]
     return safe[:3], "；".join(notes)
 
 
-def _emit_action(state: QaState, message: str) -> None:
+def _emit_action(state: QaState, message: str, payload: dict | None = None) -> None:
     """A 方案动作播报：think/act 关键动作实时推送（经 request.emit_stage("action", msg)）。
-    消息须匿名：不携带学号/姓名/成绩等个人数据与内部规则。"""
+    消息须匿名：不携带学号/姓名/成绩等个人数据与内部规则。
+    payload：可选结构化数据（emit_table 通道，工具完成即推卡片）。"""
     sink = state.get("action_sink") if isinstance(state, dict) else None
     if sink is None:
         return
     try:
-        sink(message)
+        sink(message, payload)
     except Exception:  # noqa: BLE001
         pass
 
@@ -1458,7 +1459,12 @@ def act(state: QaState) -> dict:
                 try:
                     result = func.invoke(args) if hasattr(func, "invoke") else func(**args)
                     log.info(f"工具 {tool_name} 执行成功")
-                    _emit_action(state, f"✅ {tool_name} 已获取结果")
+                    _emit_action(state, f"✅ {tool_name} 已获取结果",
+                                 payload=_tool_to_structured([{
+                                     "tool": tool_name, "status": "done", "result": result,
+                                 }])[0] if _tool_to_structured([{
+                                     "tool": tool_name, "status": "done", "result": result,
+                                 }]) else None)
                     return {"tool": tool_name, "status": "done",
                             "result": result if isinstance(result, dict) else {"output": str(result)}}
                 except Exception as e:
@@ -1519,6 +1525,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 工具结果含"第三方工具 · XX 提供"（eco: 前缀生态工具）时：回答必须保留该提供者署名并注明"仅供参考"，不得表述为小蜗或官方数据
 - 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
 - 数据表格用 Markdown 展示，回答简洁有条理
+- {structured_note}
 - 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有分组时依次展示「必修」「方案内选修」「方向补充」，方向补充必须明确说明不在当前定位到的培养方案清单中；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
 - **指定课程直查**（recommend_courses 返回 source=exact_course）：结果即该课程的全部班级（每班一行：教师组合|评分|样本|评论），**不是培养方案推荐**；必须逐班**列全所有班级**（不得遗漏、合并或只挑高分班），班级多时每班最多引用 1 条评论；**每个班级只列一次**，已在前面列出的班级不得再次出现（禁止「已在上方列出」这类重复段）；禁止使用「必修/选修/方案学期/培养方案要求」等方案措辞；program_hint 为空时不得编造方案学期或开课学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
@@ -1630,6 +1637,11 @@ def compose(state: QaState) -> dict:
             "candidates_summary": candidates_summary,
             "tool_summary": tool_summary,
             "candidates_found": "已达到匹配阈值" if candidates_found else "未达匹配阈值",
+            "structured_note": (
+                "注意：工具数据（成绩/课表/考试/选课）已通过下方数据表格呈现，"
+                "请只写 2-4 句要点与结论（如总数、平均绩点、注意点），不要重复罗列表格中的数据。"
+                if _tool_to_structured(results) else "本回答无结构化数据卡，请按上述规则生成正文。"
+            ),
         })
         answer = _strip_rule_prefix(llm_content(response))
         # B4: 输出触顶截断标记(finish_reason=length) → 前端展示"继续生成"
@@ -1641,7 +1653,8 @@ def compose(state: QaState) -> dict:
             return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates,
                                                note="LLM 返回空回答"),
                     "error": error or "LLM 返回空回答", "truncated": False}
-        return {"answer": answer, "error": error, "truncated": truncated}
+        return {"answer": answer, "error": error, "truncated": truncated,
+                "structured": _tool_to_structured(results)}
     except Exception as e:
         log.warning(f"QA 综合回答 LLM 失败，降级为结果格式化: {e}")
         from utils.llm_client import mark_llm_down_if_unreachable
@@ -1751,6 +1764,77 @@ def _term_zh(term) -> str:
     zh_n = "一二三四五六"[int(m.group(1)) - 1]
     zh_s = {"秋": "上", "春": "下", "夏": "暑期"}[m.group(2)]
     return f"大{zh_n}{zh_s}"
+
+
+# ── 结构化数据卡（阶段1：工具结果卡片化，不经过 LLM 重述） ──
+_STRUCTURE_SPECS: dict[str, dict] = {
+    "query_grade": {
+        "title": "个人成绩单",
+        "items_key": "grades",
+        "columns": ["学期", "课程", "学分", "成绩", "绩点"],
+        "row": lambda r: [
+            str(r.get("semester", "") or ""),
+            str(r.get("course_name", "") or ""),
+            str(r.get("credits", 0) or 0),
+            ((str(r.get("score_text") or "")) if r.get("score") == -1 else str(r.get("score", 0) or 0)),
+            str(r.get("grade_point", 0) or 0),
+        ],
+    },
+    "query_daily_schedule": {
+        "title": "当日课表",
+        "items_key": "courses",
+        "columns": ["节次", "课程", "地点", "教师"],
+        "row": lambda r: [
+            str(r.get("periods", "") or "见备注"),
+            str(r.get("course_name", "") or ""),
+            str(r.get("location", "") or ""),
+            str(r.get("teacher", "") or ""),
+        ],
+    },
+    "query_exam": {
+        "title": "考试安排",
+        "items_key": "exams",
+        "columns": ["日期", "时间", "课程", "地点", "类型"],
+        "row": lambda r: [
+            str(r.get("date", "") or ""), str(r.get("time", "") or ""),
+            str(r.get("course", "") or ""), str(r.get("location", "") or ""),
+            str(r.get("type", "") or "考试"),
+        ],
+    },
+    "query_course_selection": {
+        "title": "选课情况",
+        "items_key": "selections",
+        "columns": ["课程", "教师", "学分", "状态"],
+        "row": lambda r: [
+            str(r.get("course_name", "") or ""), str(r.get("teacher", "") or ""),
+            str(r.get("credits", 0) or 0), str(r.get("status", "") or "已选"),
+        ],
+    },
+}
+
+
+def _tool_to_structured(results: list[dict]) -> list[dict]:
+    """工具结果 → 结构化数据卡（表格）。结果非空且 spec 匹配时输出。"""
+    tables: list[dict] = []
+    for item in results:
+        if not isinstance(item, dict) or item.get("status") != "done":
+            continue
+        spec = _STRUCTURE_SPECS.get(str(item.get("tool") or ""))
+        if spec is None:
+            continue
+        payload = item.get("result") or {}
+        rows_raw = payload.get(spec["items_key"]) or []
+        if not isinstance(rows_raw, list) or not rows_raw:
+            continue
+        rows = [spec["row"](r) for r in rows_raw if isinstance(r, dict)]
+        if rows:
+            tables.append({
+                "title": spec["title"],
+                "columns": list(spec["columns"]),
+                "rows": rows,
+                "source_tool": item.get("tool"),
+            })
+    return tables
 
 
 def _build_tool_summary(results: list[dict]) -> str:

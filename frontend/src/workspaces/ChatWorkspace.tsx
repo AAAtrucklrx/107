@@ -55,6 +55,7 @@ import type {
   Source,
   SseEnvelope,
   Theme,
+  StructuredBlock,
   ThoughtStep,
 } from "../types";
 
@@ -200,6 +201,7 @@ function toChatMessages(detail: ConversationDetail): ChatMessage[] {
     answerId: message.metadata?.answer_id,
     mode: message.metadata?.mode,
     claims: message.metadata?.claims,
+    structured: (message.metadata as { structured?: StructuredBlock[] } | undefined)?.structured,
     sources: message.metadata?.sources,
     limitations: message.metadata?.limitations,
     status: "completed",
@@ -343,10 +345,33 @@ function TypewrittenAnswer({ message }: { message: ChatMessage }) {
     return () => window.cancelAnimationFrame(raf);
   }, [active, full]);
   return (
-    <RenderedAnswer
-      content={full.slice(0, shown)}
-      sources={message.sources ?? []}
-    />
+    <>
+      {(message.structured ?? []).map((table, index) => (
+        <DataTable key={index} table={table} />
+      ))}
+      <RenderedAnswer
+        content={full.slice(0, shown)}
+        sources={message.sources ?? []}
+      />
+    </>
+  );
+}
+
+function DataTable({ table }: { table: StructuredBlock }) {
+  return (
+    <div className="structured-table" role="table" aria-label={table.title}>
+      <div className="structured-table-title">{table.title}</div>
+      <table>
+        <thead>
+          <tr>{table.columns.map((column, i) => <th key={i}>{column}</th>)}</tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, ri) => (
+            <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{cell}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -596,6 +621,15 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       const stage = String(data.stage ?? "queued");
       const note = String(data.message ?? "");
       updateAssistant(assistantId, (message) => withStage(message, stage, note));
+      return;
+    }
+    if (event.type === "data.table") {
+      const table = data as unknown as StructuredBlock;
+      updateAssistant(assistantId, (message) => {
+        const key = (t: StructuredBlock) => `${t.title}|${t.source_tool ?? ""}|${t.rows.length}`;
+        const existing = (message.structured ?? []).filter((t) => key(t) !== key(table));
+        return { ...message, structured: [...existing, table] };
+      });
       return;
     }
     if (event.type === "source.found") {

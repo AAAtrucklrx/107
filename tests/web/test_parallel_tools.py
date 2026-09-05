@@ -130,3 +130,38 @@ def test_tool_catalog_covers_full_list() -> None:
     for entry in nodes._TOOL_ENTRIES:
         name = entry.split("(")[0].strip()
         assert name in full
+
+
+def test_tool_to_structured_builds_tables() -> None:
+    """工具结果 → 结构化卡片：成绩/课表映射正确；空结果/未知工具不输出。"""
+    results = [
+        {"tool": "query_grade", "status": "done", "result": {
+            "grades": [{"semester": "2025-1", "course_name": "数学分析(B1)", "credits": 6.0,
+                        "score": 85, "score_text": None, "grade_point": 3.7}],
+            "count": 1,
+        }},
+        {"tool": "query_daily_schedule", "status": "done", "result": {
+            "courses": [{"periods": "1-2节", "course_name": "英语", "location": "东区一教", "teacher": "王老师"}],
+        }},
+        {"tool": "query_exam", "status": "done", "result": {"exams": []}},
+        {"tool": "unknown_tool", "status": "done", "result": {"x": 1}},
+        {"tool": "query_grade", "status": "error", "result": {"error": "x"}},
+    ]
+    tables = nodes._tool_to_structured(results)
+    assert len(tables) == 2
+    grade = tables[0]
+    assert grade["title"] == "个人成绩单"
+    assert grade["columns"] == ["学期", "课程", "学分", "成绩", "绩点"]
+    assert grade["rows"][0] == ["2025-1", "数学分析(B1)", "6.0", "85", "3.7"]
+    schedule = tables[1]
+    assert schedule["rows"][0][1] == "英语"
+
+
+def test_tool_to_structured_handles_score_text() -> None:
+    """等级制成绩（score=-1 + score_text）显示原文。"""
+    tables = nodes._tool_to_structured([{
+        "tool": "query_grade", "status": "done",
+        "result": {"grades": [{"semester": "2025-2", "course_name": "政治", "credits": 2,
+                               "score": -1, "score_text": "通过", "grade_point": 3.0}]},
+    }])
+    assert tables[0]["rows"][0][3] == "通过"

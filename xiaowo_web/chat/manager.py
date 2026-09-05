@@ -86,6 +86,7 @@ class ChatManager:
             conversation_id=conversation_id,
             chat_history=history,
             emit_stage=lambda stage, message: self._stage(run.run_id, stage, message),
+            emit_table=lambda table: self.store.append_event(run.run_id, "data.table", table),
         )
         self.store.append_event(
             run.run_id,
@@ -185,6 +186,9 @@ class ChatManager:
                     )
                 },
             )
+        # 阶段1 结构化数据卡：工具表格以独立事件先于正文推流（前端先渲染卡片）
+        for table in list(getattr(bundle, "structured", None) or []):
+            self.store.append_event(request.run_id, "data.table", table)
         segment_id = secrets.token_urlsafe(10)
         self.store.append_event(
             request.run_id,

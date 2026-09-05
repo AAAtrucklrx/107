@@ -386,7 +386,12 @@ class LegacyQaRunner:
             (accepts_kwargs or "action_sink" in parameter_names)
             and request.emit_stage is not None
         ):
-            call_args["action_sink"] = lambda message: request.emit_stage("action", message)
+            def _action_sink(message: str, payload: dict | None = None) -> None:
+                request.emit_stage("action", message)
+                if payload and request.emit_table is not None:
+                    request.emit_table(payload)
+
+            call_args["action_sink"] = _action_sink
         call = partial(runner, request.question, **call_args)
         loop = asyncio.get_running_loop()
         result = dict(await loop.run_in_executor(self._executor, call))
@@ -495,6 +500,7 @@ class LegacyQaRunner:
             claims=[claim],
             sources=sources,
             limitations=limitations,
+            structured=list(result.get("structured") or []),
             terminal_reason="local_answer",
             thoughts=thoughts,
             truncated=bool(result.get("truncated")),

@@ -19,6 +19,8 @@ class QaRunRequest:
     conversation_id: str | None
     chat_history: list[dict[str, str]] = field(default_factory=list)
     emit_stage: Callable[[str, str], None] | None = None
+    # 阶段2：结构化卡片事件（工具完成即推，先于正文）
+    emit_table: Callable[[dict], None] | None = None
 
 
 @dataclass(slots=True)
@@ -31,4 +33,6 @@ class AnswerBundle:
     ingestion_candidates: list[dict[str, Any]] = field(default_factory=list)
     # B2: think 决策过程(前端折叠卡展示); B4: LLM 输出触顶截断标记(前端"继续生成")
     thoughts: list[dict[str, Any]] = field(default_factory=list)
+    # 阶段1 结构化数据卡：工具结果表格（成绩/课表/考试/选课），不经 LLM 重述
+    structured: list[dict[str, Any]] = field(default_factory=list)
     truncated: bool = False
