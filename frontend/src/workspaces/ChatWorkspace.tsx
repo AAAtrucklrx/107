@@ -60,6 +60,9 @@ import type {
   ThoughtStep,
 } from "../types";
 
+// 占位流式文案（与后端 manager 的 placeholder 段一致）：首段 answer.delta 到达时被替换
+const STREAM_PLACEHOLDER = "小蜗正在为你整理答案，请稍候…";
+
 const loadRenderedAnswer = () => import("../components/RenderedAnswer");
 const RenderedAnswer = lazy(() => loadRenderedAnswer().then((module) => ({ default: module.RenderedAnswer })));
 const loadClaimCheckList = () => import("../components/ClaimCheckList");
@@ -680,10 +683,20 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       }));
       return;
     }
+    if (event.type === "answer.delta") {
+      // compose 增量流式：正文 token 逐段拼接（占位文案被首段 delta 替换）
+      updateAssistant(assistantId, (message) => {
+        const prev = message.content === STREAM_PLACEHOLDER ? "" : message.content;
+        return { ...withStage(message, "answering"), content: prev + String(data.delta ?? "") };
+      });
+      return;
+    }
     if (event.type === "answer.segment") {
+      // 占位段与最终段均为替换语义：流式已拼出的内容由最终段/answer.completed 覆盖
+      const markdown = String(data.markdown ?? "");
       updateAssistant(assistantId, (message) => ({
         ...withStage(message, "answering"),
-        content: `${message.content}${String(data.markdown ?? "")}`,
+        content: data.placeholder === true ? markdown : (markdown || message.content),
       }));
       return;
     }

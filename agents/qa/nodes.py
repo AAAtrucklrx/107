@@ -716,6 +716,40 @@ def _direct_tool_route(state: QaState) -> dict | None:
             }],
         }
 
+    # 个人数据高置信路由（2026-09-05）：成绩/GPA/考试/课表是登录用户最高频查询，
+    # 确定性直连工具省一次 think LLM 往返。条件刻意保守（宁缺毋滥）：须登录 +
+    # 疑似个人指代（含「我/自己」或问句很短）；student_id 由 act 层 _PERSONAL_TOOLS
+    # 以认证上下文强制覆盖，工具自行处理未登录锁定。
+    if state.get("student_id") and (len(query) <= 12 or "我" in query or "自己" in query):
+        personal_tool = ""
+        if "成绩" in query:
+            personal_tool = "query_grade"
+        elif "绩点" in query or "gpa" in query.lower():
+            personal_tool = "calc_gpa"
+        elif any(k in query for k in ("考试安排", "考试时间", "期末考试", "考试周", "我的考试", "什么时候考试")):
+            personal_tool = "query_exam"
+        elif ("课表" in query or (any(w in query for w in ("这周", "本周", "下周")) and "课" in query)) and "导入" not in query:
+            personal_tool = "query_schedule"
+        if personal_tool:
+            results = state.get("tool_results") or []
+            if any(r.get("tool") == personal_tool and r.get("status") == "done" for r in results):
+                return {
+                    "decision": "compose",
+                    "tool_calls": [],
+                    "thought_log": (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "compose",
+                        "reason": f"个人数据路由工具 {personal_tool} 已有结果，直接合成",
+                    }],
+                }
+            return {
+                "decision": "call_tool",
+                "tool_calls": [{"tool": personal_tool, "args": {}}],
+                "thought_log": (state.get("thought_log") or []) + [{
+                    "round": rounds + 1, "decision": "call_tool",
+                    "reason": f"个人数据确定性路由→{personal_tool}",
+                }],
+            }
+
     intent_set = {intent}
     entry = None
     if intent_set & {"选课冲突", "退补选评估"}:
@@ -1678,7 +1712,8 @@ def compose(state: QaState) -> dict:
             ("system", COMPOSE_PROMPT),
             ("human", "请直接输出回答正文，第一句必须是面向用户的内容。"),
         ])
-        response = (prompt | llm).invoke({
+        chain = prompt | llm
+        invoke_vars = {
             "query": query,
             "current_date": _current_date_text(),
             "current_weekday": _current_weekday_text(),
@@ -1694,12 +1729,42 @@ def compose(state: QaState) -> dict:
                 "严格禁止在正文中输出任何 Markdown 表格（| 分隔行）或逐条罗列表格数据。"
                 if _tool_to_structured(results) else "本回答无结构化数据卡，请按上述规则生成正文。"
             ),
-        })
-        answer = _strip_rule_prefix(llm_content(response))
-        # B4: 输出触顶截断标记(finish_reason=length) → 前端展示"继续生成"
-        truncated = bool(
-            (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length"
-        )
+        }
+        sink = state.get("action_sink") if isinstance(state, dict) else None
+        if sink is not None:
+            # 2026-09-05 compose 增量流式：正文 token 边生成边推（answer_delta 事件），
+            # 首字延迟从"整篇生成完"降为首个 token。缓冲 ~16 字再推以控制事件量；
+            # 流中断且已有部分内容时保留部分并标记截断，无内容则回退原有异常路径。
+            parts: list[str] = []
+            buf: list[str] = []
+            finish_reason = ""
+            try:
+                for chunk in chain.stream(invoke_vars):
+                    delta = llm_content(chunk)
+                    if delta:
+                        parts.append(delta)
+                        buf.append(delta)
+                        if sum(len(b) for b in buf) >= 16:
+                            _emit_action(state, "answer_delta", {"delta": "".join(buf)})
+                            buf = []
+                    reason = (getattr(chunk, "response_metadata", None) or {}).get("finish_reason")
+                    if reason:
+                        finish_reason = str(reason)
+                if buf:
+                    _emit_action(state, "answer_delta", {"delta": "".join(buf)})
+                answer = _strip_rule_prefix("".join(parts))
+                truncated = finish_reason == "length"
+            except Exception:
+                if not "".join(parts).strip():
+                    raise  # 无任何内容，走原有异常降级路径
+                answer = _strip_rule_prefix("".join(parts))
+                truncated = True
+        else:
+            response = chain.invoke(invoke_vars)
+            answer = _strip_rule_prefix(llm_content(response))
+            truncated = bool(
+                (getattr(response, "response_metadata", None) or {}).get("finish_reason") == "length"
+            )
         if not (answer or "").strip():
             log.warning("compose LLM 返回空回答，降级为结果格式化")
             return {"answer": _llm_down_answer(tool_summary, candidates_summary, results, candidates,

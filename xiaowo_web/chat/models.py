@@ -21,6 +21,8 @@ class QaRunRequest:
     emit_stage: Callable[[str, str], None] | None = None
     # 阶段2：结构化卡片事件（工具完成即推，先于正文）
     emit_table: Callable[[dict], None] | None = None
+    # compose 增量流式：正文 token 推流（answer.delta 事件，前端拼接显示）
+    emit_delta: Callable[[str], None] | None = None
 
 
 @dataclass(slots=True)

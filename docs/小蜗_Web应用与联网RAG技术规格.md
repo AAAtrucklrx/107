@@ -139,7 +139,8 @@ tests/web/                 API、契约、安全和集成测试
 | `run.created` | 运行 ID、模式和时间预算 |
 | `stage.changed` | `local_retrieval`、`web_search`、`evidence_check`、`answering` 等固定枚举和简短文案 |
 | `source.found` | 可公开的来源元数据，不含抓取内部信息 |
-| `answer.segment` | 完整句子或完整结构块，不发送半句 |
+| `answer.delta` | compose 阶段增量正文小段（约 16 字一批），前端拼接；被后续 `answer.segment`/`answer.completed` 覆盖 |
+| `answer.segment` | 完整句子或完整结构块，不发送半句；对已拼出的 `answer.delta` 内容为替换语义 |
 | `answer.completed` | 最终引用、限制和结束原因 |
 | `run.failed` | 稳定错误码及可操作提示，不返回堆栈 |
 

@@ -393,6 +393,11 @@ class LegacyQaRunner:
             and request.emit_stage is not None
         ):
             def _action_sink(message: str, payload: dict | None = None) -> None:
+                if message == "answer_delta":
+                    # compose 增量流式：正文 token 推 answer.delta 事件，不走 stage/table 通道
+                    if payload and request.emit_delta is not None:
+                        request.emit_delta(str(payload.get("delta") or ""))
+                    return
                 request.emit_stage("action", message)
                 if payload and request.emit_table is not None:
                     request.emit_table(payload)

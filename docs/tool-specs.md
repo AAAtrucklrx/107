@@ -1093,7 +1093,7 @@ TOOL_REGISTRY = {
 | 反馈 | `POST /answers/{id}/feedback` |
 | 管理 | `/admin` 下的校园工具申请/目录/审计，以及知识审核条目、版本、逐块批准、拒绝、撤回、复抓、发布重试、generation、来源规则建议 |
 
-SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。事件提交 SQLite 后通过进程内通知立即唤醒 SSE；每 1 秒读取 SQLite 作为多进程和漏通知兜底，不再以 0.1 秒固定轮询。
+SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`、compose 阶段的增量正文 `answer.delta`（小段拼接，约 16 字一批）、完整句子/结构块形式的 `answer.segment`、`answer.completed`、`run.cancelled` 或稳定错误码。禁止发送思维链、提示词、工具选择理由、堆栈或凭证。`answer.segment`/`answer.completed` 为替换语义（最终段覆盖 `answer.delta` 已拼出的内容）；生成超时但已有流式正文时以 `answer.completed`（`terminal_reason=GENERATION_TIMEOUT_PARTIAL`、`truncated=true`）部分收尾，不整体失败。事件 ID 在单个 run 内单调递增，并按创建它的 principal 隔离。事件提交 SQLite 后通过进程内通知立即唤醒 SSE；每 1 秒读取 SQLite 作为多进程和漏通知兜底，不再以 0.1 秒固定轮询。
 
 ### 本地 QA 适配
 

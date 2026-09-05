@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from xiaowo_web.auth.models import Principal
@@ -15,11 +15,18 @@ from xiaowo_web.errors import ApiError
 from xiaowo_web.settings import WebSettings
 from xiaowo_web.storage import WebStore
 
+from utils.logger import get_logger
+
+
+log = get_logger(__name__)
+
 
 @dataclass(slots=True)
 class _Job:
     request: QaRunRequest
     initial_limitations: list[str]
+    # compose 增量流式正文累积（超时部分收尾用；emit_delta 闭包写入）
+    streamed: dict[str, str] = field(default_factory=dict)
 
 
 class ChatManager:
@@ -77,6 +84,12 @@ class ChatManager:
                 ]
 
         run = self.store.create_run(principal.session_key, mode)
+        streamed: dict[str, str] = {"text": ""}
+
+        def _emit_delta(delta: str) -> None:
+            streamed["text"] += delta
+            self.store.append_event(run.run_id, "answer.delta", {"delta": delta})
+
         request = QaRunRequest(
             run_id=run.run_id,
             question=question,
@@ -87,6 +100,7 @@ class ChatManager:
             chat_history=history,
             emit_stage=lambda stage, message: self._stage(run.run_id, stage, message),
             emit_table=lambda table: self.store.append_event(run.run_id, "data.table", table),
+            emit_delta=_emit_delta,
         )
         self.store.append_event(
             run.run_id,
@@ -100,7 +114,7 @@ class ChatManager:
             },
         )
         task = asyncio.create_task(
-            self._execute(_Job(request=request, initial_limitations=limitations)),
+            self._execute(_Job(request=request, initial_limitations=limitations, streamed=streamed)),
             name=f"chat-run:{run.run_id}",
         )
         self._tasks[run.run_id] = task
@@ -161,11 +175,38 @@ class ChatManager:
                         return
                     await self._complete(job, bundle)
         except TimeoutError:
-            self._fail(request.run_id, "UPSTREAM_TIMEOUT", "回答超过时间预算，请重试。")
+            if (job.streamed.get("text") or "").strip():
+                # 2026-09-05 流式部分收尾：正文已在逐段推出时，超时不再整体失败，
+                # 以已生成内容收尾（truncated），前端保留已流出的文本
+                log.warning(
+                    "chat run %s 生成超时，已有 %d 字流式正文，部分收尾",
+                    request.run_id, len(job.streamed["text"]),
+                )
+                self._stage(request.run_id, "answering", "生成超时，展示已生成内容")
+                finished = self.store.finish_run(
+                    request.run_id,
+                    "completed",
+                    "answer.completed",
+                    {
+                        "answer_id": secrets.token_urlsafe(18),
+                        "claims": [],
+                        "sources": [],
+                        "limitations": ["生成超时，以上为已生成的部分内容；重新提问可获取完整回答。"],
+                        "terminal_reason": "GENERATION_TIMEOUT_PARTIAL",
+                        "truncated": True,
+                        "stage": "completed",
+                        "conversation_id": request.conversation_id,
+                    },
+                )
+                if finished is None:
+                    self._fail(request.run_id, "UPSTREAM_TIMEOUT", "回答超过时间预算，请重试。")
+            else:
+                self._fail(request.run_id, "UPSTREAM_TIMEOUT", "回答超过时间预算，请重试。")
         except asyncio.CancelledError:
             self._finish_cancelled(request.run_id)
             raise
         except Exception:
+            log.exception("chat run %s 内部错误", request.run_id)
             self._fail(request.run_id, "INTERNAL_ERROR", "处理请求时发生错误，请重试。")
 
     async def _complete(self, job: _Job, bundle: AnswerBundle) -> None:
