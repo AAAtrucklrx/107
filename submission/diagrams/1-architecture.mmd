@@ -1,0 +1,47 @@
+graph TB
+    subgraph FE["浏览器 · React/Vite/TS SPA"]
+        UI["三个用户工作区<br/>/ 问小蜗 · /academic 学业 · /campus 服务<br/>独立管理端 /admin"]
+    end
+
+    subgraph API["FastAPI 模块化单体（/api/v1 同源）"]
+        AUTH["认证层<br/>匿名 / Demo / CAS Provider<br/>CSRF + origin 校验"]
+        SSE["SSE 流式事件<br/>answer.delta 逐 token 正文<br/>Last-Event-ID 续传"]
+        MGR["ChatManager<br/>运行队列 · 超时 · 取消<br/>busy 限制（503 RUN_BUSY）"]
+    end
+
+    subgraph AGENT["智能体层 · LangGraph 统一 QA 图"]
+        RUNNER["LegacyQaRunner（有界线程池）"]
+        GRAPH["run_qa<br/>意图分类 → think ≤4轮 → act → compose"]
+    end
+
+    subgraph TOOLS["工具层 · 30+ 注册表工具"]
+        T1["个人数据（成绩/课表/考试/GPA）<br/>学号由认证上下文强制注入"]
+        T2["选课顾问（推荐/教师对比/冲突检查）"]
+        T3["日程 · 活动 · 空教室 · 官方入口"]
+        T4["生态工具 eco:（学生投稿）"]
+    end
+
+    subgraph SVC["外部服务"]
+        LLM["科大 LLM 平台<br/>deepseek-v4-flash · qwen3-embedding"]
+        JW["综合教务 jw API"]
+        YOUNG["青春科大 young"]
+        SEARCH["博查 Web Search<br/>（SearXNG+Crawl4AI 备用）"]
+    end
+
+    subgraph DATA["数据层"]
+        DB[("SQLite 应用库/审核库/评课库")]
+        KB[("ChromaDB 向量库 + BM25<br/>769 分块 · 80 篇文档<br/>generation 版本化")]
+    end
+
+    WORKER["审核/发布 worker（常驻）<br/>采集→清洗→逐块审核→发布→索引"]
+
+    UI --> AUTH --> MGR --> RUNNER --> GRAPH
+    MGR --> SSE --> UI
+    GRAPH --> TOOLS
+    GRAPH --> LLM
+    T1 --> JW
+    T3 --> YOUNG
+    GRAPH --> KB
+    TOOLS --> DB
+    WORKER --> KB
+    SEARCH --> WORKER

@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    participant U as 浏览器
+    participant S as SSE 事件流
+    participant G as LangGraph 图
+    participant T as 工具
+    participant L as LLM（compose 流式）
+
+    U->>S: POST /chat/runs（问题：我的成绩怎么样）
+    S-->>U: run.created + stage.changed（29ms）
+    S-->>U: answer.segment 占位「小蜗正在为你整理答案…」
+    Note over G,T: 高置信直连路由：跳过 think LLM<br/>（省 20-60s 决策往返）
+    G->>T: query_grade（学号由认证上下文注入）
+    S-->>U: data.table 成绩卡片（208ms）
+    Note over G,L: compose 增量流式启动
+    loop 逐 token（~16 字/批缓冲）
+        L-->>G: 正文 chunk
+        G-->>S: answer.delta
+        S-->>U: answer.delta（首个 3.1s）
+    end
+    G->>T: claim 级校验 + 来源核验
+    S-->>U: thought.step ×N + source.found ×6
+    S-->>U: answer.segment 最终段（替换语义）
+    S-->>U: answer.completed（19.2s · truncated=false）
+    Note over U,S: 降级保障：流中断→保留部分内容收尾；<br/>超时无正文→稳定错误码整体失败

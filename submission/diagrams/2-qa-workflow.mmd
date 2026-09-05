@@ -1,0 +1,35 @@
+flowchart TB
+    Q["用户问题"] --> EP["embedding_parse 前置分流"]
+
+    EP -->|"闲聊/问候"| CHAT["模板直答<br/>（不调 LLM）"]
+    EP -->|"个人信息快答"| PQA["本地档案直答"]
+    EP -->|"通用世界知识"| WK["世界知识快车道<br/>软证据标注"]
+    EP --> MAIN["主流程"]
+
+    MAIN --> CLS["意图分类<br/>本地 embedding + 关键词修正<br/>（LLM 不可用时仍可用）"]
+
+    CLS --> ROUTE{"高置信确定性路由？"}
+    ROUTE -->|"培养方案 / 成绩 / GPA /<br/>考试 / 课表 / 显式推荐 / 日课表"| DIRECT["直连工具<br/>跳过 think LLM<br/>省 20-60s 往返"]
+    ROUTE -->|"否"| THINK
+
+    subgraph LOOP["think 自主决策循环（≤4 轮 · 22 条规则约束）"]
+        THINK["LLM 决策：compose / retrieve /<br/>call_tool / clarify"]
+        THINK -->|"retrieve"| RET["知识库混合检索<br/>向量+BM25 · 查询改写<br/>1-3 并列子查询"]
+        RET --> THINK
+        THINK -->|"call_tool"| PAR["act 工具执行<br/>单轮 1-3 个独立工具并行"]
+        PAR --> THINK
+    end
+
+    DIRECT --> PAR2["act 工具执行"]
+    THINK -->|"clarify"| CLA["追问用户"]
+    THINK -->|"compose"| COMP
+
+    PAR2 --> COMP["compose 统一合成"]
+    COMP --> CARDS["结构化数据卡先推<br/>（data.table 事件）"]
+    CARDS --> STREAM["正文增量流式<br/>answer.delta ~16字/批<br/>首字实测 3.1s"]
+    STREAM --> FINAL["claim 级校验 + 来源标注<br/>answer.completed"]
+
+    STYLE2["降级：LLM 熔断→意图降级/工具摘要直出<br/>流中断→保留部分内容收尾"]
+
+    classDef route fill:#e2ecf7,stroke:#034ea1,color:#1c2430
+    class DIRECT,PAR2 route

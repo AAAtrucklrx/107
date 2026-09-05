@@ -1,0 +1,29 @@
+flowchart TB
+    subgraph DECIDE["联网判定"]
+        NEED{"本地资料不足 / 权威性不足 /<br/>问题要求最新？"}
+    end
+
+    NEED -->|"否"| LOCAL["本地知识库回答<br/>（向量+BM25 混合检索）"]
+
+    NEED -->|"是"| PRE["隐私清洗<br/>不含用户问题/身份/私密上下文"]
+    PRE --> Wx{"科大相关问题？"}
+
+    Wx -->|"是（触发词）"| WX["微信公众号官方号优先<br/>白名单 · OCR · 熔断限频"]
+    Wx -->|"否"| BS["博查 Web Search<br/>（SearXNG 引擎组备用）"]
+
+    WX --> FETCH["抓取公开页面<br/>robots + 速率限制<br/>SSRF 阻断内网/回环/云元数据/重定向"]
+    BS --> FETCH
+
+    FETCH --> EXTRACT["LLM 证据抽取<br/>结构化 claim"]
+    EXTRACT --> GATE{"证据门槛判定"}
+
+    GATE -->|"官方一手来源<br/>（或双独立一致来源）"| CONFIRM["确定结论<br/>附可点击来源"]
+    GATE -->|"不足"| INSUF["如实回答「证据不足」<br/>claim 降级 insufficient"]
+    GATE -->|"冲突"| CONFLICT["说明来源冲突<br/>不让模型自行猜测"]
+
+    subgraph GOVERN["知识治理流水线（旁路 · 常驻 worker）"]
+        COLLECT["官方站点直采 + 教务 RSS 每日进线"] --> CLEAN["LLM 清洗分块"]
+        CLEAN --> REVIEW["逐块人工审核<br/>pending/approved/rejected · TTL"]
+        REVIEW --> GEN["generation 发布<br/>乐观锁 · 不可变快照 · 可回滚"]
+        GEN --> IDX["双索引重建<br/>（进入 LOCAL）"]
+    end
