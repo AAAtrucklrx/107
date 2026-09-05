@@ -165,3 +165,28 @@ def test_tool_to_structured_handles_score_text() -> None:
                                "score": -1, "score_text": "通过", "grade_point": 3.0}]},
     }])
     assert tables[0]["rows"][0][3] == "通过"
+
+
+def test_structured_extension_specs() -> None:
+    """批量扩展：活动/空教室/培养方案/周视图/课程目录均产出卡片。"""
+    cases = {
+        "query_activities": {"activities": [{"name": "机器人讲座", "organizer": "校团委",
+                                              "start": "2026-09-10 14:00", "end": "2026-09-10 16:00",
+                                              "place": "西区3B101", "apply_end": "2026-09-09"}]},
+        "find_empty_room": {"empty_rooms": [{"room": "东区一教101", "free_slots": "08:00-10:00"}]},
+        "get_my_program": {"courses": [{"code": "MATH1001", "name": "数学分析", "required": True,
+                                        "credit": 6, "term": "1秋"}]},
+        "get_program_progress": {"required_remaining": [{"code": "PHYS2001", "name": "力学", "credit": 4, "term": "2秋"}]},
+        "plan_semester": {"terms": [{"term": "2秋", "courses": [{"name": "线性代数", "credit": 4}]}]},
+        "get_day_view": {"events": [{"title": "组会", "start_time": "14:00", "end_time": "16:00", "location": "E2110"}]},
+        "get_week_view": {"daily": {"周一": [{"title": "体育", "start_time": "08:00", "end_time": "09:40", "location": "操场"}]}},
+        "search_courses": {"courses": [{"course_code": "CS1001", "course_name": "程序设计", "dept": "计算机"}]},
+    }
+    for tool, payload in cases.items():
+        tables = nodes._tool_to_structured([{"tool": tool, "status": "done", "result": payload}])
+        assert tables, f"{tool} 未产出卡片"
+        assert tables[0]["title"] and tables[0]["columns"] and tables[0]["rows"]
+    # plan_semester 嵌套拍平验证
+    tables = nodes._tool_to_structured([{"tool": "plan_semester", "status": "done",
+                                         "result": {"terms": [{"term": "2秋", "courses": [{"name": "线性代数", "credit": 4}]}]}}])
+    assert tables[0]["rows"][0] == ["2秋", "线性代数", "4"]

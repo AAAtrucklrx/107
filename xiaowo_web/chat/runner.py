@@ -336,6 +336,7 @@ class LegacyQaRunner:
                     "citation": "缓存", "source_id": "semantic-cache",
                     "title": "语义缓存回答", "source": "本地语义缓存",
                 }],
+                structured=list(cached.get("structured") or []),
                 limitations=[],
                 terminal_reason="cache_hit",
                 thoughts=[{"round": 0, "decision": "cache_hit",
@@ -492,7 +493,11 @@ class LegacyQaRunner:
         ):
             try:
                 source_hashes = sorted({_digest(c.get("content") or "") for c in candidates if c.get("content")})
-                self._semantic_cache.store(request.question, answer, namespace, source_hashes=source_hashes)
+                self._semantic_cache.store(
+                    request.question, answer, namespace,
+                    source_hashes=source_hashes,
+                    structured=list(result.get("structured") or []),
+                )
             except Exception:
                 pass  # 缓存写入失败不影响回答
         return AnswerBundle(

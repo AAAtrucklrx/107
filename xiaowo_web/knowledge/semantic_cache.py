@@ -30,9 +30,21 @@ CREATE TABLE IF NOT EXISTS semantic_cache(
     created_at REAL NOT NULL,
     hit_count INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS semantic_cache_structured(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cache_id INTEGER NOT NULL,
+    structured TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_semantic_cache_ns
     ON semantic_cache(namespace, created_at);
 """
+
+def _ensure_structured_column(conn: "sqlite3.Connection") -> None:
+    """轻量迁移：旧库语义缓存表补 structured 列（SQLite ALTER 幂等容错）。"""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(semantic_cache)").fetchall()]
+    if "structured" not in cols:
+        conn.execute("ALTER TABLE semantic_cache ADD COLUMN structured TEXT NOT NULL DEFAULT '[]'")
+        conn.commit()
 
 
 class SemanticCache:
@@ -58,6 +70,11 @@ class SemanticCache:
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
+        import sqlite3 as _sqlite3
+        try:
+            _ensure_structured_column(conn)
+        except Exception:  # noqa: BLE001 — 迁移失败不阻塞（lookup 侧容错）
+            pass
         return conn
 
     def _ensure(self) -> None:
@@ -102,7 +119,7 @@ class SemanticCache:
             return None  # embedding 不可用时缓存整体旁路，不影响问答主链路
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, question, answer, embedding, created_at FROM semantic_cache "
+                "SELECT id, question, answer, structured, embedding, created_at FROM semantic_cache "
                 "WHERE namespace = ? AND created_at > ? ORDER BY created_at DESC",
                 (namespace, timestamp - self.ttl),
             ).fetchall()
@@ -118,6 +135,7 @@ class SemanticCache:
                 best_score = score
                 best = {
                     "answer": row["answer"],
+                    "structured": json.loads(row["structured"] or "[]") or [],
                     "score": round(score, 4),
                     "created_at": row["created_at"],
                     "cache_id": row["id"],
@@ -138,6 +156,7 @@ class SemanticCache:
         namespace: str,
         *,
         source_hashes: list[str] | None = None,
+        structured: list[dict] | None = None,
         now: float | None = None,
     ) -> bool:
         if not (question or "").strip() or not (answer or "").strip():
@@ -150,12 +169,13 @@ class SemanticCache:
             return False
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO semantic_cache(namespace, question, answer, embedding, source_hashes, created_at) "
-                "VALUES(?,?,?,?,?,?)",
+                "INSERT INTO semantic_cache(namespace, question, answer, structured, embedding, source_hashes, created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
                 (
                     namespace,
                     question.strip(),
                     answer.strip(),
+                    json.dumps(structured or [], ensure_ascii=False),
                     json.dumps(vec),
                     json.dumps(sorted(set(source_hashes or []))),
                     timestamp,

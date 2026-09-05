@@ -637,6 +637,29 @@ def _direct_tool_route(state: QaState) -> dict | None:
     intent = state.get("intent") or ""
     query = state.get("query") or ""
     rounds = state.get("rounds") or 0
+    # 培养方案高置信路由（2026-09-04）：LLM 常被知识库"查询途径"干扰而跳过工具，
+    # 个人方案问题确定性走 get_my_program（LLM 之前）
+    if state.get("student_id") and any(k in query for k in ("我的培养方案", "培养方案", "培养进度", "方案进度", "学期规划", "我的方案")):
+        results = state.get("tool_results") or []
+        for tool in ("get_my_program", "get_program_progress", "plan_semester"):
+            if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
+                return {"decision": "compose", "tool_calls": [],
+                        "thought_log": (state.get("thought_log") or []) + [{
+                            "round": rounds + 1, "decision": "compose",
+                            "reason": f"培养方案工具 {tool} 已有结果，直接合成",
+                        }]}
+        return {
+            "decision": "call_tool",
+            "tool_calls": [{
+                "tool": "get_my_program",
+                "args": {"major": (state.get("user_profile") or {}).get("major", ""),
+                         "grade": (state.get("user_profile") or {}).get("grade", "")},
+            }],
+            "thought_log": (state.get("thought_log") or []) + [{
+                "round": rounds + 1, "decision": "call_tool",
+                "reason": "培养方案个人数据确定性路由（get_my_program）",
+            }],
+        }
     recommendation_request = _is_recommendation_request(query)
     teacher_choice = any(k in query for k in ("哪个老师", "哪位老师", "老师哪个好", "选哪个老师"))
     comparison = any(k in query for k in ("对比", "比较"))
@@ -1638,8 +1661,9 @@ def compose(state: QaState) -> dict:
             "tool_summary": tool_summary,
             "candidates_found": "已达到匹配阈值" if candidates_found else "未达匹配阈值",
             "structured_note": (
-                "注意：工具数据（成绩/课表/考试/选课）已通过下方数据表格呈现，"
-                "请只写 2-4 句要点与结论（如总数、平均绩点、注意点），不要重复罗列表格中的数据。"
+                "重要：工具数据（成绩/课表/考试/选课/活动/培养方案/日程等）已通过下方数据表格呈现，"
+                "正文必须只写 2-4 句要点与结论（如总数、平均绩点、注意点、推荐语）；"
+                "严格禁止在正文中输出任何 Markdown 表格（| 分隔行）或逐条罗列表格数据。"
                 if _tool_to_structured(results) else "本回答无结构化数据卡，请按上述规则生成正文。"
             ),
         })
@@ -1810,6 +1834,86 @@ _STRUCTURE_SPECS: dict[str, dict] = {
             str(r.get("credits", 0) or 0), str(r.get("status", "") or "已选"),
         ],
     },
+    "query_activities": {
+        "title": "活动报名",
+        "items_key": "activities",
+        "columns": ["活动", "组织方", "时间", "地点", "报名截止"],
+        "row": lambda r: [
+            str(r.get("name", "") or ""), str(r.get("organizer", "") or ""),
+            f"{str(r.get('start', '') or '')[:16]}~{str(r.get('end', '') or '')[:16]}",
+            str(r.get("place", "") or ""), str(r.get("apply_end", "") or ""),
+        ],
+    },
+    "find_empty_room": {
+        "title": "当日空闲教室",
+        "items_key": "empty_rooms",
+        "columns": ["教室", "空闲时段"],
+        "row": lambda r: [str(r.get("room", "") or ""), str(r.get("free_slots", "") or "")],
+    },
+    "get_my_program": {
+        "title": "培养方案课程清单",
+        "items_key": "courses",
+        "columns": ["课程码", "课程", "性质", "学分", "学期"],
+        "row": lambda r: [
+            str(r.get("code", "") or ""), str(r.get("name", "") or ""),
+            ("必修" if r.get("required") else "选修"), str(r.get("credit", 0) or 0),
+            str(r.get("term", "") or ""),
+        ],
+    },
+    "get_program_progress": {
+        "title": "培养方案缺口",
+        "items_key": "required_remaining",
+        "columns": ["课程码", "课程", "学分", "学期"],
+        "row": lambda r: [
+            str(r.get("code", "") or ""), str(r.get("name", "") or ""),
+            str(r.get("credit", 0) or 0), str(r.get("term", "") or ""),
+        ],
+    },
+    "plan_semester": {
+        "title": "学期规划",
+        "items": lambda p: [
+            {"term": t.get("term", ""), **c}
+            for t in (p.get("terms") or []) for c in (t.get("courses") or [])
+        ],
+        "columns": ["学期", "课程", "学分"],
+        "row": lambda r: [
+            str(r.get("term", "") or ""), str(r.get("name", "") or ""),
+            str(r.get("credit", r.get("credits", 0)) or 0),
+        ],
+    },
+    "get_day_view": {
+        "title": "当日日程",
+        "items_key": "events",
+        "columns": ["时间", "内容", "地点"],
+        "row": lambda r: [
+            f"{str(r.get('start_time', '') or '')[:5]}-{str(r.get('end_time', '') or '')[:5]}",
+            str(r.get("title", "") or ""), str(r.get("location", "") or ""),
+        ],
+    },
+    "get_week_view": {
+        "title": "本周日程",
+        "items": lambda p: [
+            {"day": day, **ev}
+            for day, evs in (p.get("daily") or {}).items()
+            for ev in (evs or [])
+        ],
+        "columns": ["日期", "时间", "内容", "地点"],
+        "row": lambda r: [
+            str(r.get("day", "") or ""),
+            f"{str(r.get('start_time', '') or '')[:5]}-{str(r.get('end_time', '') or '')[:5]}",
+            str(r.get("title", "") or ""), str(r.get("location", "") or ""),
+        ],
+    },
+    "search_courses": {
+        "title": "课程搜索结果",
+        "items_key": "courses",
+        "columns": ["课程码", "课程", "院系"],
+        "row": lambda r: [
+            str(r.get("course_code", r.get("code", "")) or ""),
+            str(r.get("course_name", r.get("name", "")) or ""),
+            str(r.get("dept", "") or ""),
+        ],
+    },
 }
 
 
@@ -1823,7 +1927,8 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
         if spec is None:
             continue
         payload = item.get("result") or {}
-        rows_raw = payload.get(spec["items_key"]) or []
+        items_fn = spec.get("items")
+        rows_raw = items_fn(payload) if items_fn else payload.get(spec["items_key"])
         if not isinstance(rows_raw, list) or not rows_raw:
             continue
         rows = [spec["row"](r) for r in rows_raw if isinstance(r, dict)]
