@@ -106,11 +106,14 @@ def build(leader_id: str, leader_phone: str, skip_video: bool) -> Path:
             "快速体验路径：登录演示身份 → 问\"我的成绩怎么样\" → 问\"推荐几门通识课\" → "
             "切\"我的学业\"看课表 → 时效类问题（如\"最新的选课通知\"）体验联网证据与来源核验。\n\n"
             "【离线部署】\n"
+            "环境要求：Python 3.12+、Node.js 18+；第 3 步的科大 LLM 平台 API Key 可在\n"
+            "https://llm.ustc.edu.cn 申请（科大师生均可，申请后约 1-2 天生效）。\n"
             "1. pip install -r requirements.txt\n"
             "2. cd frontend && npm ci && npm run build && cd ..\n"
             "3. 复制 .env.example 为 .env 并填入科大 LLM 平台密钥（api.llm.ustc.edu.cn）\n"
             "4. python init_check.py\n"
             "5. python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000\n"
+            "注：不配置联网搜索 Key 时问答/学业功能仍可用，仅联网证据通道降级为如实提示。\n"
             "详细文档见源码包 README.md 与 docs/Web部署与数据迁移.md；"
             "联网抓取依赖 Crawl4AI sidecar（deploy/sidecars/compose.yml）。\n",
         )
