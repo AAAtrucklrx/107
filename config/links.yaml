@@ -138,11 +138,17 @@ links:
 
   # ── 以下为 2026-09-04 新增：官方补充入口与学生第三方工具 ──
 
-  - name: 科大邮件系统（PEMS）
-    url: https://pems.ustc.edu.cn
+  - name: 科大邮件系统（USTC Webmail）
+    url: https://mail.ustc.edu.cn
     description: 校园个人电子邮件系统（@mail.ustc.edu.cn）
     category: 个人事务
-    scene: [邮箱, 邮件, pems, 电子邮箱, 校园邮箱]
+    scene: [邮箱, 邮件, 电子邮箱, 校园邮箱, webmail]
+
+  - name: 物理选课预约系统
+    url: https://pems.ustc.edu.cn
+    description: 物理类课程选课与实验预约（PEMS，统一身份认证登录）
+    category: 个人事务
+    scene: [物理选课, 物理预约, pems, 实验选课, 物理实验, 选课预约]
 
   - name: 科大云盘
     url: https://pan.ustc.edu.cn
