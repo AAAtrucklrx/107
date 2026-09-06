@@ -97,17 +97,22 @@ def build(leader_id: str, leader_phone: str, skip_video: bool) -> Path:
             zf.write(diagram, arcname)
         if video is not None:
             zf.write(video, "演示视频_小蜗.mp4")
-        # 部署说明：指向仓库内 README 与部署文档
+        # 部署说明：在线体验入口前置，离线部署步骤紧随其后
         zf.writestr(
             "部署说明.txt",
-            "小蜗（Xiaowo）部署：\n"
+            "【在线体验（推荐先看）】\n"
+            "打开 http://114.214.241.119:8850 即可直接体验全部功能\n"
+            "（演示身份已预置个人课表/成绩等演示数据；全部个人数据均为合成演示数据）。\n"
+            "快速体验路径：登录演示身份 → 问\"我的成绩怎么样\" → 问\"推荐几门通识课\" → "
+            "切\"我的学业\"看课表 → 时效类问题（如\"最新的选课通知\"）体验联网证据与来源核验。\n\n"
+            "【离线部署】\n"
             "1. pip install -r requirements.txt\n"
             "2. cd frontend && npm ci && npm run build && cd ..\n"
             "3. 复制 .env.example 为 .env 并填入科大 LLM 平台密钥（api.llm.ustc.edu.cn）\n"
             "4. python init_check.py\n"
             "5. python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000\n"
-            "详细文档见源码包 README.md 与 docs/Web部署与数据迁移.md。\n"
-            "公网演示环境：http://114.214.241.119:8850\n",
+            "详细文档见源码包 README.md 与 docs/Web部署与数据迁移.md；"
+            "联网抓取依赖 Crawl4AI sidecar（deploy/sidecars/compose.yml）。\n",
         )
 
     # 终检：压缩包内不得出现密钥文件
