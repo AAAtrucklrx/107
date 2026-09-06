@@ -113,6 +113,7 @@ BRIEF_SECTIONS: list[tuple[str, list]] = [
         "生成超时但已有流式正文时保留部分内容收尾，不整体失败。",
     ]),
     ("七、运行与部署", [
+        "源码仓库：https://github.com/AAAtrucklrx/107（公开可读，main 分支与提交包内源码完全一致）。",
         "公网演示环境（比赛环境）：http://114.214.241.119:8850（competition + demo 模式，合成演示身份）。",
         "本地部署：pip install -r requirements.txt → frontend 内 npm ci && npm run build → "
         "复制 .env.example 为 .env → python init_check.py → uvicorn 启动，详见仓库 README。",
@@ -316,6 +317,8 @@ DESIGN_SECTIONS: list[tuple[str, list]] = [
         "不仅要答得对，还要守得住边界。",
     ]),
     ("七、运行环境与演示", [
+        "源码仓库：https://github.com/AAAtrucklrx/107（公开可读；main 分支与提交包内源码为同一提交，"
+        "提交记录完整反映 37 天开发过程）。",
         "生产部署：Linux 服务器（Ubuntu 24.04）完整运行——Web:8000（公网 8850 转发）/ 审核发布 worker 常驻 / "
         "Streamlit 回退入口；公网地址 http://114.214.241.119:8850 当前可访问，readiness 健康端点四项哨兵"
         "（数据库/审核库/批准索引/检索质量）全绿。",
