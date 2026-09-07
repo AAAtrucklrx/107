@@ -131,6 +131,10 @@ class WebSettings:
     bocha_base_url: str = "https://api.bochaai.com"
     baidu_api_key: str = ""
     baidu_base_url: str = "https://qianfan.baidubce.com"
+    # 百度检索答案模式（2026-09-07）："smart"=智能搜索生成直接答复（提示词工程，无引用）；
+    # "classic"=经典搜索→抓取→提取→置信门（原链路，保留可切回）
+    web_answer_mode: str = "smart"
+    baidu_smart_model: str = "ernie-4.5-turbo-128k"
     # 演示重置保护（2026-09-03 事故加固）：默认关闭端点；开启需额外密钥头
     demo_reset_enabled: bool = False
     demo_reset_key: str = ""
@@ -217,6 +221,8 @@ class WebSettings:
                 bocha_base_url=source.get("XIAOWO_BOCHA_BASE_URL", "https://api.bochaai.com").rstrip("/"),
                 baidu_api_key=source.get("XIAOWO_BAIDU_SEARCH_KEY", "").strip(),
                 baidu_base_url=source.get("XIAOWO_BAIDU_BASE_URL", "https://qianfan.baidubce.com").rstrip("/"),
+                web_answer_mode=source.get("XIAOWO_WEB_ANSWER_MODE", "smart").strip().casefold(),
+                baidu_smart_model=source.get("XIAOWO_BAIDU_SMART_MODEL", "ernie-4.5-turbo-128k").strip(),
                 searxng_url=source.get("XIAOWO_SEARXNG_URL", "http://127.0.0.1:8080").rstrip("/"),
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),

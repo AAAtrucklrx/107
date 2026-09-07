@@ -213,8 +213,9 @@ class WechatClient:
                     ocr_budget -= used
                     article.ocr_spans = spans
                 articles.append(article)
-                if len(articles) >= 2:
+                if len(articles) >= 3:
                     break
+            articles = sort_articles_by_recent(articles)
             self._note(True)
             return WechatBundle(articles=articles, partial=len(articles) < 2)
         except WechatBlocked:
@@ -564,7 +565,22 @@ def build_markdown(article_text: str, ocr_spans: list[str]) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def sort_articles_by_recent(articles: list[WechatArticle]) -> list[WechatArticle]:
+    """2026-09-07：尽量选取近的文章——官方号优先，同组内按发布时间降序（None 置底）。"""
+    official, others = [], []
+    for article in articles:
+        (official if is_official_account(article.author) else others).append(article)
+    official.sort(key=lambda a: a.published_at or "", reverse=True)
+    others.sort(key=lambda a: a.published_at or "", reverse=True)
+    return official + others
+
+
 def _extract_published_at(html_text: str) -> str | None:
+    # 现代页面：createTime = '2023-07-29 12:13'（字符串日期；2026-09-07 实测）
+    m = re.search(r"createTime\s*=\s*['\"](\d{4}-\d{2}-\d{2})", html_text)
+    if m:
+        return m.group(1)
+    # 旧格式：10 位时间戳
     m = re.search(r'(?:var createTime = |"createTime":\s*["\']?)(\d{10})', html_text)
     if m:
         import datetime as _dt

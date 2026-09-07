@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -150,6 +151,20 @@ class EvidencePipeline:
                         self._public_source(record, index + 1) for index, record in enumerate(pages)
                     ]
                     limitations_acc.append("已查看公众号内容，但尚无声明达到确定性证据门槛；继续检索互联网公开页面。")
+
+        # ── 2026-09-07 百度智能搜索生成直达答复（smart 模式）：提示词工程直接返回答案 ──
+        # 覆盖场景：搜索→抓取→提取→置信门链路对时事类常因 robots/渲染失败空手而归；
+        # smart 由百度云端完成检索+生成，一次返回答案（无引用，来源标注提醒）。
+        # 仅 provider=baidu 且 web_answer_mode=smart 时启用；失败自动回退经典链路。
+        if (
+            self.settings.web_answer_mode == "smart"
+            and self.settings.search_provider == "baidu"
+        ):
+            smart = await self._smart_answer(
+                sanitized.text, limitations_acc, wechat_sources, on_stage,
+            )
+            if smart is not None:
+                return smart
 
         queries = await self._candidate_queries(sanitized.text)
         # 2026-09-04 提速：auto 模式本地有兜底 → 单轮（无本地兜底的 web 模式保持 settings 轮数）
@@ -566,6 +581,86 @@ class EvidencePipeline:
         trust_keys = [self._rank_hit(hit)[0] for hit in ranked]
         ordered = sorted(range(len(ranked)), key=lambda i: (trust_keys[i], pos_of[i]))
         return [ranked[i] for i in ordered]
+
+    @staticmethod
+    def _smart_prompt(question: str) -> str:
+        """百度智能搜索生成的提示词工程（2026-09-07）：锁死「只转述检索依据」。"""
+        today = time.strftime("%Y年%m月%d日")
+        prompt = (
+            "你是科大校园助手「小蜗」的联网检索模块，请基于百度智能搜索检索到的信息"
+            "回答用户问题。\n"
+            f"今天是 {today}。\n"
+            "规则：\n"
+            "1. 用简体中文回答，结论先行，使用简洁段落（不超过 3 段、300 字）。\n"
+            "2. **只**依据检索结果回答；答案中每个日期/数字都必须能在检索结果中找到依据。\n"
+            "3. 不要使用往年惯例、内部知识或历法推算来推断日期（例如不要把「中秋节」自行换算成某天）；"
+            "检索结果若包含权威来源（政府/官方机构/主流媒体）的明确表述，直接转述。\n"
+            "4. 若检索结果包含明确的日期/安排表述（即使来自非权威站点），请转述该说法并标注来源；"
+            "多个说法并存时一并列出并说明依据强弱；完全无明确表述时才回答「暂时无法确认」。\n"
+            "5. 若检索结果中能辨识来源站点，在回答末尾用一行「来源：站点名（网址）」列出不超过 3 条。\n"
+            "6. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
+        )
+        if WECHAT_TRIGGER_RE.search(question):
+            prompt += "7. 问题涉及中国科学技术大学校园事务，请优先采用学校官方口径表述。\n"
+        return prompt
+
+    async def _smart_answer(
+        self,
+        question: str,
+        limitations_acc: list[str],
+        wechat_sources: list[dict],
+        on_stage: StageCallback | None,
+    ) -> AnswerBundle | None:
+        """百度智能搜索生成直达答复；返回 None 表示失败（由调用方回退经典链路）。"""
+        self._stage(on_stage, "web_search", "正在使用百度智能搜索生成")
+        timeout = 60.0  # 智能搜索生成（128k 模型）需 5~15s，独立于 8s 搜索超时
+        try:
+            text = await asyncio.wait_for(
+                self.search.generate(
+                    question,
+                    system_prompt=self._smart_prompt(question),
+                    model=self.settings.baidu_smart_model,
+                ),
+                timeout=timeout,
+            )
+        except Exception as exc:  # noqa: BLE001 —— 生成失败即回退经典检索链（含 429）
+            limitations_acc.append("百度智能搜索生成暂不可用，已回退通用检索。")
+            return None
+        sources: list[dict] = [
+            {
+                "source_id": "s-ai-search",
+                "title": "百度智能搜索生成",
+                "display_url": None,
+                "institution": "百度智能云 · AI 搜索",
+                "domain": "qianfan.baidubce.com",
+                "published_at": None,
+                "fetched_at": None,
+                "level": "unverified",
+                "validity": "unverified",
+                "citation": 1,
+                "tags": ["ai_generated"],
+            }
+        ]
+        seen = {str(item.get("source_id") or "") for item in sources}
+        for item in wechat_sources:
+            if str(item.get("source_id") or "") not in seen:
+                sources.append(item)
+        limitations_acc.append(
+            "来自百度智能搜索生成（AI 检索结果自动生成，未附独立引用），仅供快速参考。"
+        )
+        return AnswerBundle(
+            markdown=text,
+            claims=[{
+                "claim_id": "c1",
+                "text": text,
+                "kind": "factual",
+                "status": "generated",
+                "evidence": [],
+            }],
+            sources=sources,
+            limitations=limitations_acc,
+            terminal_reason="AI_GENERATED",
+        )
 
     @staticmethod
     def _public_source(record: _PageRecord, citation: int) -> dict:

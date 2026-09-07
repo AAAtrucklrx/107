@@ -164,12 +164,14 @@ class BaiduSearchClient:
         *,
         base_url: str = "https://qianfan.baidubce.com",
         timeout: float = 8.0,
+        model: str = "ernie-4.5-turbo-128k",
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("Baidu api_key is required")
         self._api_key = api_key
         self.base_url = base_url.rstrip("/")
+        self.model = model
         self._owned_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
@@ -178,6 +180,53 @@ class BaiduSearchClient:
         )
         self._health_ok: bool | None = None
         self._health_at: float = 0.0
+
+    async def generate(
+        self,
+        query: str,
+        *,
+        system_prompt: str = "",
+        model: str | None = None,
+        limit: int = 8,
+        timeout: float = 45.0,
+    ) -> str:
+        """百度智能搜索生成：搜索+生成一体（AI 搜索），直接返回答案文本。
+
+        POST {base}/v2/ai_search/chat/completions（X-Appbuilder-Authorization 头）；
+        响应 choices[0].message.content 为生成答案；**不返回引用列表**（2026-09-07 实测，
+        keys 仅 choices/is_safe/request_id/safe_classification/usage）。
+        注意：该 endpoint 的 messages 仅支持 user 角色（system 会 400，实测），
+        提示词工程文本并入单条 user 消息。
+        """
+        user_content = query
+        if system_prompt:
+            user_content = f"{system_prompt}\n\n用户问题：\n{query}"
+        messages = [{"role": "user", "content": user_content}]
+        response = await self._client.post(
+            f"{self.base_url}/v2/ai_search/chat/completions",
+            headers={"X-Appbuilder-Authorization": f"Bearer {self._api_key}"},
+            timeout=timeout,
+            json={
+                "messages": messages,
+                "search_source": "baidu_search_v2",
+                "resource_type_filter": [{"type": "web", "top_k": max(1, min(limit, 30))}],
+                "stream": False,
+                "search_mode": "required",
+                "model": model or self.model,
+                "enable_reasoning": False,
+                "enable_deep_search": False,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise SidecarContractError("Baidu smart-search response contract is invalid") from exc
+        text = str(content or "").strip()
+        if not text:
+            raise SidecarContractError("Baidu smart-search returned empty content")
+        return text
 
     async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
         response = await self._client.post(

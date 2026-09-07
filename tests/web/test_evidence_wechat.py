@@ -12,11 +12,12 @@ import pytest
 from tests.web.test_evidence_pipeline import FixedExtractor
 from xiaowo_web.evidence.wechat import (
     WechatArticle, WechatClient,
-    WechatClient,
+    _extract_published_at,
     article_content_hash,
     build_markdown,
     extract_pure,
     is_official_account,
+    sort_articles_by_recent,
 )
 
 SEARCH_HTML = """
@@ -416,3 +417,33 @@ def test_wechat_relevant_non_official_article_is_kept(tmp_path) -> None:
     assert answer.terminal_reason == "EVIDENCE_INSUFFICIENT"
     assert "与问题无关的内容" in "\n".join(answer.limitations)
     assert web_search.queries, "应继续通用搜索"
+
+
+def test_wechat_query_window_focus_for_non_dict_terms() -> None:
+    """词典外业务词（月饼/暑假）用 2 字窗口法取焦点词；词典词保持原行为。"""
+    from xiaowo_web.evidence.rewrite import wechat_query
+
+    assert wechat_query("中科大月饼怎么买") == "中国科学技术大学 月饼"
+    assert wechat_query("中科大什么时候放暑假") == "中国科学技术大学 暑假"
+    assert wechat_query("科大选课通知在哪里发布？") == "中国科学技术大学 选课"
+
+
+def test_extract_published_at_supports_string_date() -> None:
+    """现代 mp.weixin 页面 createTime 为字符串日期（非时间戳）。"""
+    html = "<script>window.createTime = '2023-07-29 12:13';</script>"
+    assert _extract_published_at(html) == "2023-07-29"
+    # 旧格式时间戳：1788758000 → 2026-09-07（UTC）
+    ts = "1788758000"
+    html2 = f"var createTime = {ts};"
+    import datetime as dt
+    assert _extract_published_at(html2) == dt.datetime.fromtimestamp(int(ts), tz=dt.timezone.utc).strftime("%Y-%m-%d")
+
+
+def test_sort_articles_by_recent_prefers_official_and_new() -> None:
+    """排序：官方号优先；同组内新文在前；无时间文章置底。"""
+    old = WechatArticle(title="官方旧文", author="中国科学技术大学", url="https://mp.weixin.qq.com/s?src=11&signature=A", markdown="x", published_at="2023-07-29")
+    new = WechatArticle(title="官方新文", author="中国科学技术大学", url="https://mp.weixin.qq.com/s?src=11&signature=B", markdown="x", published_at="2026-09-01")
+    other_new = WechatArticle(title="普通新文", author="安庆天天直播", url="https://mp.weixin.qq.com/s?src=11&signature=C", markdown="x", published_at="2026-08-15")
+    no_time = WechatArticle(title="官方无时间", author="中国科学技术大学", url="https://mp.weixin.qq.com/s?src=11&signature=D", markdown="x")
+    ordered = sort_articles_by_recent([old, no_time, other_new, new])
+    assert [a.title for a in ordered] == ["官方新文", "官方旧文", "官方无时间", "普通新文"]

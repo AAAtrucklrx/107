@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -47,7 +49,9 @@ def test_demo_academic_workspace_is_bound_and_labelled(tmp_path) -> None:
         assert schedule["semester_code"] == "2026-2027-1"
         assert schedule["semester_start"] == "2026-08-31"
         assert schedule["total_weeks"] == 18
-        assert schedule["current_week"] == 1
+        # 当前周由真实时钟计算（学期 2026-08-31 周一起）：随日期推进，不做硬编码
+        expected_week = max(1, ((date.today() - date(2026, 8, 31)).days // 7) + 1)
+        assert schedule["current_week"] == expected_week
         assert schedule["unparsed_courses"] == []
 
         meetings = [

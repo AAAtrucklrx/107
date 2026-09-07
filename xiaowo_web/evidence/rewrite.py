@@ -91,6 +91,29 @@ def _business_words(question: str) -> list[str]:
     return []
 
 
+# 微信业务词窗口过滤：停用字开头（时/么/怎/什…）或含「怎/么」的 2 字窗口丢弃
+# （「时候/饼怎/么买」是疑问词残留，会污染搜狗微信检索）
+_WECHAT_WINDOW_SKIP_FIRST = set("时么怎啥吗呢何哪多久什")
+
+
+def wechat_core_words(question: str) -> list[str]:
+    """微信命中相关性词：去官方名后的中文 2 字窗口（含「月饼」类词典外词）。
+
+    与 _business_words（词典法）互补：词典外问题也能提取业务词。
+    """
+    text = question or ""
+    for name in ("中国科学技术大学", "中科大", "中国科大", "USTC", "科大"):
+        text = text.replace(name, "")
+    words: list[str] = []
+    for seg in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        for i in range(len(seg) - 1):
+            window = seg[i:i + 2]
+            if window[0] in _WECHAT_WINDOW_SKIP_FIRST or "怎" in window or "么" in window:
+                continue
+            words.append(window)
+    return list(dict.fromkeys(words))
+
+
 def official_site_query(question: str) -> str | None:
     """若问题涉及校内事务，返回 site 限定的官方站点查询。
 
@@ -114,12 +137,17 @@ def wechat_query(question: str) -> str:
 
     搜狗微信索引对原文长句匹配差（命中异地学校/泛化噪音），
     改成语义锚定的短查询后，官方号命中率与相关性显著提升。
+    业务词优先词典法；词典外（月饼/暑假…）用 2 字窗口法取焦点词；
     问题不含科大触发词时原样返回（调用侧只在触发时使用）。
     """
     text = " ".join(question.split())
     if not text or not WECHAT_TRIGGER_RE.search(text):
         return text
     words = _business_words(text)
+    if not words:
+        windows = wechat_core_words(text)
+        # 焦点词取窗口最后一项（问题尾部业务词）；“月饼怎么买”窗=月饼/饼怎/么买→滤后仅月饼
+        words = windows[-1:]
     return " ".join([_WECHAT_OFFICIAL_NAME, *words])
 
 
