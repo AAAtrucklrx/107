@@ -1,4 +1,4 @@
-﻿"""重建 FAQ 知识库向量索引（全量重建 ChromaDB）
+"""重建 FAQ 知识库向量索引（全量重建 ChromaDB）
 
 用法：
     py rebuild_kb.py            # 预览：仅提示将执行的操作，不删除任何数据
@@ -14,6 +14,16 @@ from knowledge.vector_store import FAQVectorStore, _nuke_chroma_db
 from knowledge.document_loader import load_faq_documents
 
 
+def _nested_chroma_dirs(persist_dir: str) -> set:
+    """本目录下「自身就是一个 Chroma 实例」的子目录（如审核发布索引 web_approved）。"""
+    out = set()
+    for item in os.listdir(persist_dir):
+        p = os.path.join(persist_dir, item)
+        if os.path.isdir(p) and os.path.exists(os.path.join(p, "chroma.sqlite3")):
+            out.add(item)
+    return out
+
+
 def main() -> int:
     if "--yes" not in sys.argv:
         print("此操作会删除并重建 ChromaDB 向量索引，不可撤销。")
@@ -21,8 +31,18 @@ def main() -> int:
         return 1
 
     try:
-        _nuke_chroma_db(CHROMA_PERSIST_DIR)
-        print("Old index cleared")
+        before = _nested_chroma_dirs(CHROMA_PERSIST_DIR)
+        if before:
+            print(f"检测到嵌套的独立索引（不属本次重建范围）: {', '.join(sorted(before))}")
+
+        # _nuke_chroma_db 会跳过「自带 chroma.sqlite3 的子目录」，因此发布索引不会被误删
+        skipped = _nuke_chroma_db(CHROMA_PERSIST_DIR, keep=sorted(before))
+        print("Old index cleared" + (f"（保留 {', '.join(sorted(skipped))}）" if skipped else ""))
+
+        lost = before - set(skipped)
+        if lost:
+            print(f"⚠️ 本该保留的嵌套索引被删除: {sorted(lost)} —— 请立即从备份恢复，已中止重建")
+            return 1
 
         store = FAQVectorStore(persist_dir=CHROMA_PERSIST_DIR)
         docs = load_faq_documents(KNOWLEDGE_DATA_DIR)

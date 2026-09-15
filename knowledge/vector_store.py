@@ -471,11 +471,28 @@ class _BuiltinBM25:
         return scores
 
 
-def _nuke_chroma_db(persist_dir: str):
-    """彻底清除 ChromaDB 持久化数据"""
+def _nuke_chroma_db(persist_dir: str, keep=None) -> list:
+    """清除 ChromaDB 持久化数据；返回**被保留**的子项名。
+
+    ⚠️ 审核发布索引（`XIAOWO_PUBLISHED_CHROMA_DIR`，如 `knowledge/chroma_db/web_approved`）
+    默认就嵌在本目录下。原先"清空整个目录"会把发布索引一起删掉，readiness 的
+    `approved_index` 随即变红（2026-09-15 实测确认）。
+
+    因此：**子目录里自带 `chroma.sqlite3` 的（即另一个独立 Chroma 实例）一律跳过**——
+    那是另一个库，不是本次要重建的 FAQ 索引。调用方还可用 `keep=` 显式追加保留项。
+    """
     import shutil
+
+    keep_names = {os.path.basename(str(k).rstrip("/\\")) for k in (keep or ()) if str(k).strip()}
+    skipped: list = []
     for item in os.listdir(persist_dir):
         item_path = os.path.join(persist_dir, item)
+        if item in keep_names:
+            skipped.append(item)
+            continue
+        if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "chroma.sqlite3")):
+            skipped.append(item)  # 嵌套的独立 Chroma 实例（如 web_approved）
+            continue
         try:
             if os.path.isfile(item_path) or os.path.islink(item_path):
                 os.unlink(item_path)
@@ -483,6 +500,7 @@ def _nuke_chroma_db(persist_dir: str):
                 shutil.rmtree(item_path)
         except Exception:
             pass
+    return skipped
 
 
 class _APIEmbedder:
