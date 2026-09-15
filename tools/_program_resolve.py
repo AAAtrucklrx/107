@@ -51,29 +51,29 @@ def resolve_program(conn, major: str | None, grade: str | None = None) -> dict |
     公共前缀把「物理学专业培养方案」顶上来（前缀「物理」）；对 `数学科学学院`
     同样能选到「数学与应用数学专业培养方案」（前缀「数学」），不依赖具体学院命名。
 
+    最终排序：年级桶 → 普通方案优先 → 公共前缀长度 → 课程明细数 → 最新年级。
+    课程明细数作最后裁决，既保证结果稳定（不再依赖数据库行序），也避免落到
+    只有几门课的英才班/辅修壳（这些方案在同院内是「增设课程」而非完整方案）。
+
     Returns:
         {"id", "name", "college", "grade", ...} 或 None
     """
     if not major:
         return None
-    rows = conn.execute(
-        "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
-        (f"%{major}%",),
-    ).fetchall()
-    by_college = False
+    # 附带课程明细数：并列时的数据驱动最终裁决，避免落到只有几门课的英オ班/辅修壳
+    _SEL = ("SELECT p.*, (SELECT COUNT(*) FROM program_courses pc WHERE pc.program_id = p.id) "
+            "AS course_count FROM programs p WHERE p.{col} LIKE ? ORDER BY p.grade DESC")
+    rows = conn.execute(_SEL.format(col="name"), (f"%{major}%",)).fetchall()
     if not rows:
-        rows = conn.execute(
-            "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
-            (f"%{major}%",),
-        ).fetchall()
-        by_college = True
+        rows = conn.execute(_SEL.format(col="college"), (f"%{major}%",)).fetchall()
     if not rows:
         return None
 
     target = parse_grade_key(grade)
-    # 学院回退时用「学院名去掉 学院/学部/系」作词干；方案名匹配时直接用查询词
-    stem = (re.sub(r"(学院|学部|系)$", "", str(major)).strip() if by_college
-            else str(major).strip())
+    # 词干 = 查询词去掉「学院/学部/系」后缀与数字前缀。programs.college 形如
+    # "203物理学院"，调用方可能原样传入（LLM、advisor_tools），解析器不能依赖调用方清洗：
+    # 不去数字前缀则 stem="203物理"，公共前缀恒为 0，LCP 排序失效（会退回天文学）。
+    stem = re.sub(r"^\d+", "", re.sub(r"(学院|学部|系)$", "", str(major))).strip()
 
     def _sort_key(r):
         g = parse_grade_key(r["grade"])
@@ -82,8 +82,13 @@ def resolve_program(conn, major: str | None, grade: str | None = None) -> dict |
             bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
         else:
             bucket = 0  # 无年级信息: 不按年级分桶, 普通方案优先 + 最新在前
-        prefix_rank = -_lcp_len(str(r["name"] or ""), stem)
-        return (bucket, prefix_rank, prog_priority(r), -g)
+        # 顺序要点：prog_priority 必须在 prefix_rank 之前——否则「信息科学技术学院」
+        # 会因「信息科技英才班」公共前缀更长而选中只有 5 门课的英オ班壳。
+        # 末位字典序保证完全确定，不依赖数据库行序。
+        return (bucket, prog_priority(r), -_lcp_len(str(r["name"] or ""), stem),
+                -(r["course_count"] or 0), -g, str(r["name"] or ""))
 
     rows = sorted(rows, key=_sort_key)
-    return dict(rows[0])
+    out = dict(rows[0])
+    out.pop("course_count", None)  # 内部排序字段，不外泄
+    return out

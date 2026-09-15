@@ -214,8 +214,12 @@ def _resolver():
 @pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
 @pytest.mark.parametrize("query,expect", [
     ("物理学院", "物理学专业培养方案"),
+    # 带数字前缀的原始 college 值也必须正确——调用方（LLM/advisor_tools）可能原样传入
+    ("203物理学院", "物理学专业培养方案"),
     ("数学科学学院", "数学与应用数学专业培养方案"),
+    ("001数学科学学院", "数学与应用数学专业培养方案"),
     ("计算机科学与技术学院", "计算机科学与技术专业培养方案"),
+    ("215计算机科学与技术学院", "计算机科学与技术专业培养方案"),
 ])
 def test_college_query_picks_the_matching_major(query, expect):
     """回归：`物理学院` 曾命中「天文学专业培养方案」——同级同优先级落到任意一个。
