@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 
 from services.service_container import ServiceContainer
 from utils.logger import get_logger
+from utils.semester_time import semester_today
 
 log = get_logger("xiaowo.tools.schedule")
 
@@ -131,7 +132,7 @@ def get_day_view(student_id: str, date_str: str = None) -> dict:
     Returns:
         {"date": "...", "day_of_week": "...", "events": [...], "count": N}
     """
-    target_date = date_str or date.today().isoformat()
+    target_date = date_str or semester_today().isoformat()
     weekday = date.fromisoformat(target_date).weekday()
     day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
@@ -158,7 +159,7 @@ def get_week_view(student_id: str, start_date: str = None) -> dict:
         {"week_start": "...", "week_end": "...", "daily": {...},
          "total_events": N, "busiest_day": "...", "free_days": [...]}
     """
-    today = date.today()
+    today = semester_today()
     if start_date:
         week_start = date.fromisoformat(start_date)
     else:

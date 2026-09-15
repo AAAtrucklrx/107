@@ -68,13 +68,13 @@ _YEAR_RE = re.compile(r"(20\d{2})\s*年|今年|明年|本学期|下学年", re.I
 
 def temporal_anchor(question: str) -> str | None:
     """提取问题中的年份锚（今年/明年/20XX年），用于把时效信息并入查询词。"""
-    from datetime import date
+    from utils.semester_time import semester_today
 
     text = question.strip()
     if re.search(r"20\d{2}", text):
         match = re.search(r"(20\d{2})", text)
         return match.group(1)
-    now = date.today().year
+    now = semester_today().year
     if "明年" in text:
         return str(now + 1)
     if "今年" in text or "本学期" in text or "下学年" in text:

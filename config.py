@@ -70,8 +70,20 @@ YOUNG_SNAPSHOT_PATH = PROJECT_ROOT / "scripts" / "data" / "young_personal" / "yo
 
 # ── 学期常量（每学期开学前只更新这一处；来源：教务处校历 teach.ustc.edu.cn/calendar）──
 # start_date 必须为该学期第一个周一；schedule_tools.import_schedule 等据此对齐课表星期
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name) or default)
+    except (TypeError, ValueError):
+        return default
+
+
 SEMESTER = {
     "name": "2026-2027-1",
     "start_date": os.getenv("XIAOWO_SEMESTER_START", "2026-08-31"),
     "total_weeks": 18,
+    # 学期时区（相对 UTC 的小时偏移）。服务器 TZ 为 UTC，而学期属于科大
+    # （Asia/Shanghai=+8，中国无夏令时）；不设此项会让「今天」在北京 00:00–08:00 算成昨天，
+    # 连带教学周、日课表、LLM 时间感知、自然语言「明天」全线偏一天。
+    # 统一由 utils.semester_time 读取，勿在别处另取本机时钟。
+    "tz_offset_hours": _env_int("XIAOWO_TZ_OFFSET_HOURS", 8),
 }

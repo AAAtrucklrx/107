@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 
 from config import YOUNG_SNAPSHOT_PATH as SNAPSHOT_FILE  # 快照路径单一来源（crawl_young.py 写入、此处读取）
 from utils.logger import get_logger
+from utils.semester_time import semester_now
 
 log = get_logger("xiaowo.activity_profile")
 
@@ -126,7 +127,7 @@ def record_interaction(db, student_id: str, activity: dict | object, action: str
 
 
 def _window_start() -> str:
-    return (datetime.now() - timedelta(days=_INTERACTION_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    return (semester_now() - timedelta(days=_INTERACTION_WINDOW_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def behavior_weights(db, student_id: str) -> dict[str, float]:

@@ -11,6 +11,7 @@ from datetime import date
 import requests
 
 from utils.logger import get_logger
+from utils.semester_time import semester_today
 
 log = get_logger("xiaowo.api.catalog")
 
@@ -313,7 +314,7 @@ class CatalogAPI:
         if not semesters or (isinstance(semesters[0], dict) and "error" in semesters[0]):
             return None
 
-        today = date.today().isoformat()
+        today = semester_today().isoformat()
         # 找到 start <= today 的最近学期
         for sem in semesters:
             if isinstance(sem, dict) and sem.get("start", "") <= today:

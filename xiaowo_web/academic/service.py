@@ -12,6 +12,8 @@ from xiaowo_web.auth.models import Principal
 from xiaowo_web.errors import ApiError
 from xiaowo_web.settings import DEMO_STUDENT_ID, PROJECT_ROOT
 
+from utils.semester_time import semester_today
+
 
 DEMO_FIXTURE = PROJECT_ROOT / "fixtures" / "demo" / f"{DEMO_STUDENT_ID}.json"
 
@@ -177,8 +179,12 @@ class AcademicService:
             semester_start = Date.fromisoformat(start_text)
         except ValueError:
             semester_start = None
+        # 「今天」一律取**学期时区**（Asia/Shanghai）而非服务器本机时钟：服务器 TZ=UTC 时，
+        # 北京 00:00–08:00 会被算成昨天，而周一 00:00 正是教学周切换点 → 周次落后一周。
+        # 见 utils/semester_time.py。
+        server_today = semester_today()
         current_week = (
-            teaching_week(Date.today(), semester_start, total_weeks)
+            teaching_week(server_today, semester_start, total_weeks)
             if semester_start is not None else None
         )
         day_names = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
@@ -284,6 +290,10 @@ class AcademicService:
             "semester_start": start_text,
             "total_weeks": total_weeks,
             "current_week": current_week,
+            # 服务端权威「今天」——前端据此判断星期，不必再依赖浏览器时钟
+            # （浏览器时区/时钟偏离北京时间会让「今日课程」整列错一天）。
+            "server_date": server_today.isoformat(),
+            "server_weekday": server_today.isoweekday(),  # 1=周一 … 7=周日
             "courses": structured_courses,
             "unparsed_courses": unparsed_courses,
         }

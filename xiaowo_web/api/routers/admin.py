@@ -15,6 +15,7 @@ from xiaowo_web.api.schemas import CampusToolApproval, CampusToolRejection, Camp
 from xiaowo_web.auth.models import Principal
 from xiaowo_web.campus.tool_store import CampusToolError
 from xiaowo_web.errors import ApiError
+from utils.semester_time import semester_today
 from xiaowo_web.review.trust_proposals import build_source_trust_diff
 from xiaowo_web.settings import PROJECT_ROOT
 
@@ -264,7 +265,7 @@ async def export_source_trust_proposals(
     )
     return {
         "namespace": namespace,
-        "filename": f"source-trust-{namespace}-{date.today().isoformat()}.diff",
+        "filename": f"source-trust-{namespace}-{semester_today().isoformat()}.diff",
         "proposal_ids": proposal_ids,
         "diff": diff,
     }

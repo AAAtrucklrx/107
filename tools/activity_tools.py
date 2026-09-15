@@ -13,6 +13,7 @@ from langchain_core.tools import tool
 
 from config import YOUNG_SNAPSHOT_PATH, YOUNG_TOKEN
 from utils.logger import get_logger
+from utils.semester_time import semester_now
 
 log = get_logger("xiaowo.tools.activities")
 
@@ -178,7 +179,7 @@ def query_activities(keyword: str = "", category: str = "",
     source = ("实时数据（青春科大 young.ustc.edu.cn）" if not err
               else f"本地缓存（青春科大快照）——{err}")
 
-    now = datetime.now()
+    now = semester_now()
     kw = (keyword or "").strip().lower()
     cat = (category or "").strip()
     out = []

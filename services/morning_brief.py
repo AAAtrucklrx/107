@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from utils.logger import get_logger
+from utils.semester_time import semester_today
 
 log = get_logger("xiaowo.morning_brief")
 
@@ -71,7 +72,7 @@ def _build_exam_today(student_id: str) -> dict | None:
         log.warning(f"晨报·今日考试失败: {e}")
         return None
     exams = res.get("exams") or []
-    today = date.today().isoformat()
+    today = semester_today().isoformat()
     today_exams = [e for e in exams if str(e.get("date", ""))[:10] == today]
     if not today_exams:
         return None
@@ -91,7 +92,7 @@ def _build_exam_today(student_id: str) -> dict | None:
 
 def _build_ddl(student_id: str) -> dict | None:
     """未来 DDL_WINDOW_DAYS 天内 events 手动事件（排除循环课表），按 start_time 升序。"""
-    today = date.today()
+    today = semester_today()
     end = today + timedelta(days=DDL_WINDOW_DAYS - 1)
     try:
         db = _db()
@@ -136,6 +137,6 @@ def build_morning_brief(student_id: str) -> dict:
             if sec:
                 sections.append(sec)
                 sources[sec["key"]] = sec.get("source", "local")
-        return {"date": date.today().isoformat(), "sections": sections, "sources": sources}
+        return {"date": semester_today().isoformat(), "sections": sections, "sources": sources}
     finally:
         reset_student(token)

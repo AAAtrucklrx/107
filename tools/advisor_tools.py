@@ -16,6 +16,7 @@ import json
 import re
 import sqlite3
 from datetime import date
+from utils.semester_time import semester_today
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -470,7 +471,7 @@ def _term_urgency(term: str, current_yi: int | None,
         if y > current_yi:
             return 3
         # 当前学年：区分春秋——「下学期」优先（8 月前面向秋季选课, 9 月起面向春季选课）
-        next_is_autumn = date.today().month <= 8
+        next_is_autumn = semester_today().month <= 8
         season = "秋" if "秋" in segment else "春"
         return 1 if (season == "秋") == next_is_autumn else 2
 
@@ -492,7 +493,7 @@ def _infer_current_year_index(grade: str | None, selection: bool = True) -> int 
     g = _parse_grade_key(grade)
     if not g:
         return None
-    today = date.today()
+    today = semester_today()
     if selection:
         ay = today.year  # 选课永远面向今年 9 月开学的新学年（1-8 月为下学期选课, 9-12 月已在新学年）
     else:
@@ -502,13 +503,13 @@ def _infer_current_year_index(grade: str | None, selection: bool = True) -> int 
 
 def _infer_current_term() -> str:
     """由当前日期推断当前学期："2026秋"（9 月起）/"2025春"（2-8 月）。"""
-    today = date.today()
+    today = semester_today()
     return f"{today.year}秋" if today.month >= 9 else f"{today.year - 1}春"
 
 
 def _infer_next_selection_term() -> str:
     """下一选课学期：1-8 月面向当年秋、9-12 月面向次年春（与 _term_urgency 口径一致）。"""
-    today = date.today()
+    today = semester_today()
     return f"{today.year}秋" if today.month <= 8 else f"{today.year + 1}春"
 
 
@@ -518,7 +519,7 @@ def _canonical_target_term(value: str | None, current_yi: int | None) -> str | N
     if not text:
         return None
     if text in {"next", "下学期", "下个学期"} and current_yi is not None:
-        return f"{current_yi}{'秋' if date.today().month <= 8 else '春'}"
+        return f"{current_yi}{'秋' if semester_today().month <= 8 else '春'}"
     m = re.search(r"([1-6])\s*(秋|春|夏)", text)
     if m:
         return f"{m.group(1)}{m.group(2)}"

@@ -16,6 +16,7 @@ import math
 import re
 from datetime import datetime, timedelta
 from typing import Callable, Optional
+from utils.semester_time import semester_now
 
 
 try:
@@ -201,7 +202,7 @@ def recommend(activities: list["YoungActivity"],
     Returns:
         [{"activity": YoungActivity, "score": float, "reason": str}, ...]（按推荐序）
     """
-    now = now or datetime.now()
+    now = now or semester_now()
 
     # 1. 过滤：报名已截止 / 活动已结束
     candidates = []
@@ -305,6 +306,6 @@ class RuleRanker(BaseRanker):
             personal_profile = context.get("personal_profile", personal_profile)
             personal_weights = context.get("personal_weights", personal_weights)
         return recommend(activities, matcher or self.matcher,
-                         self.now or datetime.now(),
+                         self.now or semester_now(),
                          personal_profile=personal_profile,
                          personal_weights=personal_weights)

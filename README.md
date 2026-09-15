@@ -109,7 +109,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 | `python scripts/verify_time_parser.py` | 17/17（自然语言时间与 GPA 表） |
 | `python scripts/verify_security_ui.py` | 20/20（认证绑定、多用户方案隔离与 UI 安全） |
 | `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
-| `python -m pytest tests/web -q` | 238 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
+| `python -m pytest tests/web -q` | 243 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
 | `npm test` / `npm run build`（`frontend/`） | 23/23；生产构建成功，主入口 325.84 kB（gzip 104.25 kB）、Markdown 按需块 327.10 kB（gzip 99.28 kB），无 chunk 警告 |
 | `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、Chat 3/2/2/1 与 Campus 4/3/2/1 流式响应方块（auto-fill 自适应）、1440/1024/390/320 浅深主题、三态分块审核；需先起两个实例：8766=`XIAOWO_AUTH_MODE=anonymous`，8765=`XIAOWO_AUTH_MODE=demo XIAOWO_PUBLIC_ORIGIN=http://127.0.0.1:8765 XIAOWO_ADMIN_IDS=PB25111691`（origin 必须与实例端口一致，否则写操作被 CSRF 来源校验拒绝） |
 | `python scripts/verify_web_load.py` | 100 条真实消费中的 SSE、30 个并发回答、有界队列、`503 RUN_BUSY` 与 100 条完整终态 |

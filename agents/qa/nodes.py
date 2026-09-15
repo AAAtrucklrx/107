@@ -1633,16 +1633,20 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 
 
 def _current_date_text() -> str:
-    """当前日期（LLM 时间感知注入）：回答涉及今天/本周/年份时以此为唯一依据。"""
-    from datetime import datetime
+    """当前日期（LLM 时间感知注入）：回答涉及今天/本周/年份时以此为唯一依据。
 
-    return datetime.now().strftime("%Y年%m月%d日")
+    取**学期时区**（Asia/Shanghai）而非服务器本机时钟：服务器 TZ=UTC 时，
+    北京 00:00–08:00 会注入「昨天」，时间感知类回答随之出错。见 utils/semester_time.py。
+    """
+    from utils.semester_time import semester_date_text
+
+    return semester_date_text()
 
 
 def _current_weekday_text() -> str:
-    from datetime import datetime
+    from utils.semester_time import semester_weekday_text
 
-    return "星期" + "一二三四五六日"[datetime.now().weekday()]
+    return semester_weekday_text()
 
 
 # ── world_knowledge: 世界知识快速通道（2026-09-04 新增） ────────────

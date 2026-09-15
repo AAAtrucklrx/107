@@ -13,6 +13,7 @@ from pathlib import Path
 from langchain_core.tools import tool
 
 from services.service_container import ServiceContainer
+from utils.semester_time import semester_today
 from utils import course_name as _norm
 from utils.course_periods import parse_periods, periods_to_range
 from utils.logger import get_logger
@@ -523,7 +524,7 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
     if date:
         parsed = parse_natural_time(date)
     else:
-        parsed = {"date": Date.today(), "day_of_week": ""}
+        parsed = {"date": semester_today(), "day_of_week": ""}
     target_date = parsed["date"]
     weekday = _DAY_MAP.get(str(target_date.isoweekday()), "")
 
@@ -642,7 +643,7 @@ def find_empty_room(building: str, time_desc: str) -> dict:
     period = parsed.get("period", "全天")
     period_start = parsed.get("period_start", "08:00")
     period_end = parsed.get("period_end", "18:00")
-    target_date = parsed.get("date", Date.today())
+    target_date = parsed.get("date", semester_today())
 
     building_code = resolve_building(building)
     building_display = building  # 默认使用用户输入
@@ -1080,7 +1081,7 @@ def get_semester_list() -> dict:
         api = _catalog()
         semesters = api.get_semesters()
         if isinstance(semesters, list) and semesters and "error" not in semesters[0]:
-            today = Date.today().isoformat()
+            today = semester_today().isoformat()
             result = []
             current = None
             for s in semesters[-10:]:  # 最近 10 个学期

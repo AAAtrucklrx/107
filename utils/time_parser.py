@@ -5,6 +5,7 @@
 
 import re
 from datetime import date, datetime, time, timedelta
+from utils.semester_time import semester_today
 
 
 # 星期的中文映射
@@ -47,7 +48,7 @@ def parse_natural_time(text: str, reference_date: date = None) -> dict:
             "sections": "3-4节",               # 节次（如有）
         }
     """
-    ref = reference_date or date.today()
+    ref = reference_date or semester_today()
 
     result = {
         "date": ref,
