@@ -2139,13 +2139,23 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"说明：下一选课学期为 {term}（面向9月开学的新学年）；方案学期「2秋」指大二上学期（以此类推），"
                              f"不要用近3次开课学期代替方案学期。")
         elif tool == "analyze_teacher" and res.get("teachers") and "course" in res:
-            lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 位老师（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
+            # 单位是「班」：courses 每行=一个班, 合教组合整体展示, 不拆单人（勿写成"位老师"）。
+            # 样本条数已由工具侧按「保底 1 条/班 + 轮转补足」限好，此处不再二次截断。
+            lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 个班（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
             for t in res["teachers"]:
                 lines.append(f"- {t['name']} | {t['rating_avg']}分·{t['rate_count']}条 | 维度 {t.get('dims_mode', {})}")
-            lines.append(f"  评论样本（每条已标注老师, 引用时必须与老师对应, 不得编造）:")
-            for rv in (res.get("reviews_sample") or [])[:6]:
-                tname = rv.get("teacher") or "未知老师"
+            sample = res.get("reviews_sample") or []
+            lines.append(f"  评论样本（共 {len(sample)} 条, 每条已标注老师, 引用时必须与老师对应, 不得编造）:")
+            for rv in sample:
+                tname = rv.get("teacher") or "（未标注老师）"  # 与班块标签保持一致，避免同一班两种叫法
                 lines.append(f"  > [{tname}] “{rv.get('content', '')[:240]}”——{rv.get('author', '')}({rv.get('term', '')})")
+            total_units = res.get("reviews_units_total") or 0
+            covered_units = res.get("reviews_units_covered") or 0
+            if total_units > covered_units:
+                lines.append(
+                    f"  （该课程共 {total_units} 个班, 本次评论样本只覆盖了评分靠前的 {covered_units} 个班; "
+                    f"未被覆盖的班**不得声称「没有评论」**, 只能说本次未取到样本）"
+                )
         elif tool == "analyze_teacher" and res.get("teacher"):
             # 教师模式（teacher_name 或 teacher_name+course）：完整呈现各课程评分，防止
             # 通用兜底 json.dumps[:800] 截断导致 B1/B2 等课程数据丢失（2026-08 修复）
@@ -2157,9 +2167,16 @@ def _build_tool_summary(results: list[dict]) -> str:
             sample = res.get("reviews_sample") or []
             if sample:
                 lines.append(f"  评论样本（{len(sample)} 条, 每条已标注课程与老师, 引用时必须对应）:")
-                for rv in sample[:6]:
+                for rv in sample:
                     tname = rv.get("teacher") or res.get("teacher") or "未知老师"
                     lines.append(f"  > [{tname}] “{rv.get('content', '')[:240]}”——{rv.get('author', '')}({rv.get('term', '')})")
+                total_units = res.get("reviews_units_total") or 0
+                covered_units = res.get("reviews_units_covered") or 0
+                if total_units > covered_units:
+                    lines.append(
+                        f"  （该教师共 {total_units} 门课, 本次评论样本只覆盖了评分靠前的 {covered_units} 门; "
+                        f"未被覆盖的课**不得声称「没有评论」**, 只能说本次未取到样本）"
+                    )
         elif tool == "query_grade" and isinstance(res.get("grades"), list):
             grades = res["grades"]
             lines.append(f"[{tool}] 共 {len(grades)} 门成绩（{_src(res)}）:")

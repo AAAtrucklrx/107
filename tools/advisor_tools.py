@@ -1616,6 +1616,38 @@ def compare_courses(course_a: str, course_b: str) -> dict:
     }
 
 
+_NO_TEACHER_LABEL = "（未标注老师）"
+_SAMPLE_UNITS_CAP = 12   # 最多覆盖多少个单元（课程模式=班, 教师模式=课）
+_SAMPLE_TOTAL_CAP = 12   # 评论样本总条数上限
+_SAMPLE_PER_UNIT = 6     # 单个单元最多取几条（供轮转补足）
+
+
+def _sample_reviews(units: list[dict], fetch) -> tuple[list[dict], int, int]:
+    """评论取样：**每单元先保底 1 条**，再轮转补足到总上限。
+
+    设计约束（2026-09-15）：
+    - 单元 = 课程模式的「班」（courses 每行=一个班, 合教组合整体展示, 不拆单人）；
+      教师模式 = 该教师的一门课。单元顺序即展示顺序（调用方已按评分降序排好）。
+    - 旧实现按样本量降序遍历、每单元 2 条、全局封顶 6，导致**样本量小的班一条都拿不到**，
+      摘要层再截一次 6，LLM 只能如实回「暂无评论样本」——实为喂给它的数据不全。
+    - 单元数超过 _SAMPLE_UNITS_CAP 时只覆盖评分靠前的单元，并由调用方披露覆盖范围。
+
+    返回 (样本列表, 单元总数, 实际有样本的单元数)。
+    """
+    covered = units[:_SAMPLE_UNITS_CAP]
+    pools = [(u, fetch(u) or []) for u in covered]
+    reviews: list[dict] = [revs[0] for _, revs in pools if revs]
+    idx = 1
+    while len(reviews) < _SAMPLE_TOTAL_CAP and any(len(revs) > idx for _, revs in pools):
+        for _, revs in pools:
+            if len(reviews) >= _SAMPLE_TOTAL_CAP:
+                break
+            if len(revs) > idx:
+                reviews.append(revs[idx])
+        idx += 1
+    return reviews[:_SAMPLE_TOTAL_CAP], len(units), sum(1 for _, revs in pools if revs)
+
+
 @tool
 def analyze_teacher(teacher_name: str | None = None, course: str | None = None) -> dict:
     """
@@ -1682,22 +1714,25 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             "WHERE c.name = ? GROUP BY c.id ORDER BY c.rate_count DESC",
             (c["name"],),
         ).fetchall()
-        teachers: list[dict] = []
+        # 单位是「班」：courses 每行=一个班, 合教组合整体展示（不拆单人）。
+        # 取样与展示同序（评分降序），且每班保底 1 条 —— 见 _sample_reviews 的设计约束。
+        entries: list[dict] = []
         for row in class_rows:
-            teachers.append({
-                "name": row["teacher_names"] or "",
+            entries.append({
+                "name": row["teacher_names"] or _NO_TEACHER_LABEL,
                 "code": row["code"] or "",
                 "dept": row["dept"] or "",
                 "credit": row["credit"],
                 "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
                 "rate_count": row["rate_count"] or 0,
+                "_cid": row["id"],
             })
-        teachers.sort(key=lambda t: (-(t["rating_avg"] or 0), -(t["rate_count"] or 0)))
-        reviews: list[dict] = []
-        for row in class_rows:
-            reviews.extend(_top_reviews(conn, row["id"], limit=2))
-            if len(reviews) >= 6:
-                break
+        entries.sort(key=lambda t: (-(t["rating_avg"] or 0), -(t["rate_count"] or 0)))
+        teachers = [{k: v for k, v in e.items() if k != "_cid"} for e in entries]
+        reviews, units_total, units_covered = _sample_reviews(
+            entries,
+            lambda e: _top_reviews(conn, e["_cid"], limit=_SAMPLE_PER_UNIT, content_limit=700),
+        )
         agg = conn.execute(
             "SELECT COALESCE(SUM(rate_count),0), COALESCE(SUM(rating_avg*rate_count),0) "
             "FROM courses WHERE name = ?",
@@ -1714,7 +1749,9 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             "teachers": teachers,
             "rating_avg": rating_avg,
             "rate_count": rate_count,
-            "reviews_sample": reviews[:6],
+            "reviews_sample": reviews,
+            "reviews_units_total": units_total,
+            "reviews_units_covered": units_covered,
         }
 
     # 老师模式: 教师名模糊匹配 course_teachers（含合教组合, 如"魏海明, 计永胜"）, 同课多组合取样本量大者
@@ -1754,23 +1791,26 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
                 "name": r["name"],
                 "rating_avg": round(r["rating_avg"], 1),
                 "rate_count": r["rating_count"],
-                "top_reviews": _top_reviews(conn, r["id"], teacher_name, limit=2),
+                "top_reviews": _top_reviews(conn, r["id"], teacher_name, limit=_SAMPLE_PER_UNIT),
             }
     courses = list(seen.values())
     courses.sort(key=lambda x: (-x["rating_avg"], -x["rate_count"]))
 
     n_reviews = sum(c["rate_count"] for c in courses)
     avg = round(sum(c["rating_avg"] * c["rate_count"] for c in courses) / max(n_reviews, 1), 1)
-    sample = []
-    for c in courses[:3]:
-        sample.extend(c["top_reviews"])
+    # 单元=该教师的一门课；保底 1 条/课再轮转补足（旧实现只取前 3 门课, 其余课无样本）
+    sample, units_total, units_covered = _sample_reviews(
+        courses, lambda c: c.get("top_reviews") or []
+    )
     conn.close()
     return {
         "teacher": teacher_name,
         "courses": courses,
         "avg_rating": avg,
         "review_count": n_reviews,
-        "reviews_sample": sample[:6],
+        "reviews_sample": sample,
+        "reviews_units_total": units_total,
+        "reviews_units_covered": units_covered,
     }
 
 
