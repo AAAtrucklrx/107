@@ -1744,7 +1744,9 @@ def compose(state: QaState) -> dict:
             finish_reason = ""
             try:
                 for chunk in chain.stream(invoke_vars):
-                    delta = llm_content(chunk)
+                    # strip=False：流式增量**不得**逐块 strip，否则块边界的换行被吃掉，
+                    # Markdown 表格/列表/引用会塌成一行（2026-09-15 定位）
+                    delta = llm_content(chunk, strip=False)
                     if delta:
                         parts.append(delta)
                         buf.append(delta)
