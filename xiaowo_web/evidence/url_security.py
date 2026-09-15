@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 from xiaowo_web.evidence.models import ValidatedUrl
+from xiaowo_web.privacy_patterns import STUDENT_ID_PATTERN
 
 
 Resolver = Callable[[str, int], Iterable[str]]
@@ -18,7 +19,7 @@ _SENSITIVE_NAME = re.compile(
     re.IGNORECASE,
 )
 _SENSITIVE_VALUE = re.compile(
-    r"(?:\b(?:PB|SA|BA|BE|MG|UG)\d{8}\b|\bST-[A-Za-z0-9._~-]{6,}\b|Bearer\s+\S+)",
+    r"(?:%s|\bST-[A-Za-z0-9._~-]{6,}\b|Bearer\s+\S+)" % STUDENT_ID_PATTERN,
     re.IGNORECASE,
 )
 _TRACKING_NAMES = frozenset({"gclid", "fbclid", "yclid", "mc_cid", "mc_eid"})

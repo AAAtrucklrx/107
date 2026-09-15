@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from xiaowo_web.chat.privacy import is_personal_query
+from xiaowo_web.privacy_patterns import STUDENT_ID_RE
 
 
-_STUDENT_ID = re.compile(r"\b(?:PB|SA|BA|BE|MG|UG)\d{8}\b", re.IGNORECASE)
+_STUDENT_ID = STUDENT_ID_RE  # 名单与边界统一到 privacy_patterns（与个人问题识别同源）
 _CREDENTIAL = re.compile(
     r"(?:\bST-[A-Za-z0-9._~-]{6,}\b|\b(?:CASTGC|JSESSIONID)\s*=|"
     r"\b(?:authorization|cookie|token|ticket|session)\s*[:=]\s*\S+)",
