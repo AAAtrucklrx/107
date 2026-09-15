@@ -836,19 +836,19 @@ def _parse_first_icourse_id(icourse_ids) -> int | None:
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     """由课程行构建完整推荐条目（字段与旧实现一致）。
     row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。
-    评论数：每课 3 条（多师时每师 1 条、跨师封顶 3）；追问详情用 get_course_reviews。"""
+    评论数：单师 6 条；多师时每师最多 3 条、跨师封顶 6；追问详情用 get_course_reviews。"""
     row = _row_dict(row)
     cid = row["id"]
     dims = _dims_info(conn, cid)
     teachers = _teacher_cells(conn, cid)
     multi = len(teachers) > 1
-    if multi:  # 同课多师: 每师 1 条, 跨师封顶 3（评课详情追问走 get_course_reviews）
+    if multi:  # 同课多师: 每师最多 3 条, 总量封顶 6（评课详情追问走 get_course_reviews）
         reviews = []
         for t in teachers:
-            reviews.extend(_top_reviews(conn, cid, t["name"], limit=1, content_limit=700))
-        reviews = reviews[:3]
+            reviews.extend(_top_reviews(conn, cid, t["name"], limit=3, content_limit=700))
+        reviews = reviews[:6]
     else:
-        reviews = _top_reviews(conn, cid, limit=3, content_limit=700)
+        reviews = _top_reviews(conn, cid, limit=6, content_limit=700)
     if row.get("program_name"):
         program_hint = {
             "required": row.get("program_required") or "",

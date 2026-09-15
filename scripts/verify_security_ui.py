@@ -198,10 +198,17 @@ def verify_profile_and_program_isolation() -> None:
     client_b.inject_program_tree(tree_b)
     pulled_b = nodes._load_personal_tree("PB-B")
     reset_student(token_b)
+    # 缓存自 2026-09-02（a56ba824）起为 (tree, cached_at) 元组 + TTL=1800s：
+    # 断言必须按元组取值比对，否则会把"结构变更"误报成"隔离失效"。
     check(
         "双用户个人方案树与缓存按学号隔离",
         client_a is not client_b and pulled_a == tree_a and pulled_b == tree_b
-        and nodes._PERSONAL_TREE_CACHE == {"PB-A": tree_a, "PB-B": tree_b},
+        and {k: v[0] for k, v in nodes._PERSONAL_TREE_CACHE.items()}
+        == {"PB-A": tree_a, "PB-B": tree_b}
+        and all(
+            isinstance(v, tuple) and len(v) == 2 and isinstance(v[1], float)
+            for v in nodes._PERSONAL_TREE_CACHE.values()
+        ),
         str(nodes._PERSONAL_TREE_CACHE),
     )
     ServiceContainer.reset()
