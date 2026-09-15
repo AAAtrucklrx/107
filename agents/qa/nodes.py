@@ -215,7 +215,9 @@ def _enrich_program_args(args: dict, state: QaState, sid: str, include_taken: bo
         taken = _load_taken_courses(sid)
         if taken:
             args["taken_courses"] = taken
-    if not args.get("personal_tree"):
+    # 个人方案树只代表本人专业：问「别的学院」时注入会顶掉目标专业
+    # （program_tools._resolve_courses 里 personal_tree 无条件优先于 major）。
+    if not args.get("personal_tree") and _same_major(args.get("major"), up.get("major")):
         tree = _load_personal_tree(sid)
         if tree is not None:
             args["personal_tree"] = tree
@@ -634,6 +636,48 @@ _PROGRAM_ROUTE_KW = ("我的培养方案", "培养方案", "培养进度", "方�
 # 差额；只走 get_my_program 时正文只剩课程清单，模型会误答「无法算出你的已修学分」。
 _PROGRAM_PROGRESS_KW = ("完成", "进度", "还差", "还缺", "缺多少", "差多少", "够不够",
                         "修了多少", "已修", "已经修", "多少学分", "学分够", "达标", "够毕业")
+# 跨专业对比/转专业：问句里提到「另一个学院」时，目标是**别人专业**的方案，
+# 必须查目标专业而不是本人专业——否则卡片给的是自己方案，且模型会误答「没有该专业数据」。
+_PROGRAM_COMPARE_KW = ("转专业", "转系", "转去", "转入", "转到", "换专业", "跨专业",
+                       "对比", "比较", "对照", "差距", "相差", "另一个专业", "其他学院")
+_KNOWN_COLLEGE_CACHE: list[str] = []
+
+
+def _same_major(a: object, b: object) -> bool:
+    """两个专业名是否指向同一专业（含简写包含关系）；任一为空返回 True（保持既有行为）。"""
+    x, y = str(a or "").strip(), str(b or "").strip()
+    if not x or not y:
+        return True
+    return x == y or x in y or y in x
+
+
+def _known_colleges() -> list[str]:
+    """方案库里的学院名（去掉数字前缀）：'203物理学院' → '物理学院'。
+
+    只读一次并缓存——`_direct_tool_route` 每轮 think 都会调用，不能反复查库。"""
+    if not _KNOWN_COLLEGE_CACHE:
+        try:
+            from tools.program_tools import _cdb
+
+            conn = _cdb()
+            try:
+                rows = conn.execute("SELECT DISTINCT college FROM programs").fetchall()
+            finally:
+                conn.close()
+            names = {re.sub(r"^\d+", "", str(c or "")).strip() for (c,) in rows}
+            # 长名优先；同级按字典序——保证跨进程稳定（set 迭代序受哈希随机化影响）
+            _KNOWN_COLLEGE_CACHE.extend(sorted((n for n in names if n), key=lambda s: (-len(s), s)))
+        except Exception as e:  # noqa: BLE001 — 取不到名单时退化为不做跨专业路由
+            log.warning(f"读取学院名单失败，跨专业对比将交 LLM 决策: {e}")
+    return _KNOWN_COLLEGE_CACHE
+
+
+def _detect_target_college(query: str, own_major: str) -> str | None:
+    """识别问句里「本人之外」的学院名；识别不到返回 None（交 LLM 决策）。"""
+    for name in _known_colleges():
+        if name in query and not _same_major(name, own_major):
+            return name
+    return None
 
 
 def _direct_tool_route(state: QaState) -> dict | None:
@@ -651,28 +695,37 @@ def _direct_tool_route(state: QaState) -> dict | None:
     # 培养方案高置信路由（2026-09-04）：LLM 常被知识库"查询途径"干扰而跳过工具，
     # 个人方案问题确定性走方案工具（LLM 之前）。
     # 2026-09-15 按意图细分：含「完成/进度/还差…」的问句走 get_program_progress
-    # （act 阶段注入已修课程并算出差额），否则只走 get_my_program（课程清单）。
+    # （act 阶段注入已修课程并算出差额），否则只走 get_my_program（课程清单）；
+    # 另加「跨专业对比/转专业」分支——此时要查**目标专业**的方案，而非本人方案。
     if state.get("student_id") and any(k in query for k in _PROGRAM_ROUTE_KW):
-        target = ("get_program_progress"
-                  if any(k in query for k in _PROGRAM_PROGRESS_KW)
-                  else "get_my_program")
+        profile = state.get("user_profile") or {}
+        own_major = str(profile.get("major") or "")
+        own_grade = str(profile.get("grade") or "")
+        target_college = (_detect_target_college(query, own_major)
+                          if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
+        if target_college:
+            # 目标专业必须走进度工具：已修课程由 act 注入，才能算出「哪些能抵、还差哪些」
+            tool_name = "get_program_progress"
+            args = {"major": target_college, "grade": own_grade}
+            reason = f"跨专业方案对比确定性路由（{tool_name} → {target_college}）"
+        else:
+            tool_name = ("get_program_progress"
+                         if any(k in query for k in _PROGRAM_PROGRESS_KW)
+                         else "get_my_program")
+            args = {"major": own_major, "grade": own_grade}
+            reason = f"培养方案个人数据确定性路由（{tool_name}）"
         results = state.get("tool_results") or []
-        if any(r.get("tool") == target and r.get("status") == "done" for r in results):
+        if any(r.get("tool") == tool_name and r.get("status") == "done" for r in results):
             return {"decision": "compose", "tool_calls": [],
                     "thought_log": (state.get("thought_log") or []) + [{
                         "round": rounds + 1, "decision": "compose",
-                        "reason": f"培养方案工具 {target} 已有结果，直接合成",
+                        "reason": f"培养方案工具 {tool_name} 已有结果，直接合成",
                     }]}
         return {
             "decision": "call_tool",
-            "tool_calls": [{
-                "tool": target,
-                "args": {"major": (state.get("user_profile") or {}).get("major", ""),
-                         "grade": (state.get("user_profile") or {}).get("grade", "")},
-            }],
+            "tool_calls": [{"tool": tool_name, "args": args}],
             "thought_log": (state.get("thought_log") or []) + [{
-                "round": rounds + 1, "decision": "call_tool",
-                "reason": f"培养方案个人数据确定性路由（{target}）",
+                "round": rounds + 1, "decision": "call_tool", "reason": reason,
             }],
         }
     # 活动推荐确定性路由（2026-09-04）：优先于推荐课程（LLM 常误判"推荐活动"为课程推荐）
@@ -1628,6 +1681,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
 - 培养进度（get_program_progress）：taken_courses_known=true 时可如实陈述已修门数/学分/完成度与缺口，并说明依据是本地成绩表按课程名匹配（不是教务官方结算）；taken_courses_known=false 时「已修 0」只是缺省占位，必须说明尚未取得已修记录，不得断言完成度为 0、不得称之为「未修缺口」
+- 跨专业对比/转专业：当工具返回的是**本人专业之外**的方案（例如问「转去物理学院」而返回「物理学专业培养方案」）时，这就是你需要的目标专业方案，必须如实使用——给出目标专业的必修总数、已对应上的课程（required_taken_list）、缺口清单（required_remaining）与完成度百分比；**严禁声称「没有该专业数据」「我并未查询到」**；同时说明方案是按专业+年级定位的通用方案、已修匹配按课程名完成，最终认定以教务系统为准；不得把目标专业的数字说成本人已修进度
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
 - 培养方案工具返回 source=personal 时可称“教务系统个人培养方案”；source=generic 时必须醒目说明“专业通用参考，不是个人培养方案”；source=unavailable 时不得猜测专业方案
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
@@ -2343,6 +2397,10 @@ def _build_tool_summary(results: list[dict]) -> str:
                          f"{res.get('credits_required')}（{res.get('percent')}%，{_src(res)}）")
             if known:
                 lines.append("  已修判定依据：本地成绩表已修课程名与方案课程名匹配（已取得已修记录）")
+                hit = res.get("required_taken_list") or []
+                if hit:
+                    lines.append(f"  已对应上的方案必修 {len(hit)} 门: "
+                                 + "、".join(str(c.get("name", "")) for c in hit[:30]))
             else:
                 lines.append("  ⚠️ 未取得已修记录：上面的「已修 0」是缺省占位，不代表实际未修；"
                              "不得据此断言完成度为 0，也不得称下列课程为「缺口」")

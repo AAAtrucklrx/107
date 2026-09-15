@@ -29,11 +29,27 @@ def prog_priority(r) -> int:
     return 0
 
 
+def _lcp_len(a: str, b: str) -> int:
+    """两串的最长公共前缀长度。"""
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
 def resolve_program(conn, major: str | None, grade: str | None = None) -> dict | None:
     """全量库方案定位：同年级 → 最近低年级 → 最新；同年级内普通专业方案优先。
 
     匹配顺序：方案名 LIKE 精确优先（college LIKE 会误伤，如 major="人工智能" 命中
     人工智能与数据科学学院的数据科学方案），无命中才回退 college。
+
+    并列时再按「方案名与查询词的公共前缀长度」排序：一个学院下常并列多个专业
+    （203物理学院 有 物理学/应用物理学/天文学/光电信息科学与工程），只按年级+优先级
+    会在同级同优先级里落到任意一个——实测 `物理学院` 命中了「天文学专业培养方案」。
+    公共前缀把「物理学专业培养方案」顶上来（前缀「物理」）；对 `数学科学学院`
+    同样能选到「数学与应用数学专业培养方案」（前缀「数学」），不依赖具体学院命名。
 
     Returns:
         {"id", "name", "college", "grade", ...} 或 None
@@ -44,15 +60,20 @@ def resolve_program(conn, major: str | None, grade: str | None = None) -> dict |
         "SELECT * FROM programs WHERE name LIKE ? ORDER BY grade DESC",
         (f"%{major}%",),
     ).fetchall()
+    by_college = False
     if not rows:
         rows = conn.execute(
             "SELECT * FROM programs WHERE college LIKE ? ORDER BY grade DESC",
             (f"%{major}%",),
         ).fetchall()
+        by_college = True
     if not rows:
         return None
 
     target = parse_grade_key(grade)
+    # 学院回退时用「学院名去掉 学院/学部/系」作词干；方案名匹配时直接用查询词
+    stem = (re.sub(r"(学院|学部|系)$", "", str(major)).strip() if by_college
+            else str(major).strip())
 
     def _sort_key(r):
         g = parse_grade_key(r["grade"])
@@ -61,7 +82,8 @@ def resolve_program(conn, major: str | None, grade: str | None = None) -> dict |
             bucket = 0 if diff == 0 else (1 if diff < 0 else 2)
         else:
             bucket = 0  # 无年级信息: 不按年级分桶, 普通方案优先 + 最新在前
-        return (bucket, prog_priority(r), -g)
+        prefix_rank = -_lcp_len(str(r["name"] or ""), stem)
+        return (bucket, prefix_rank, prog_priority(r), -g)
 
     rows = sorted(rows, key=_sort_key)
     return dict(rows[0])

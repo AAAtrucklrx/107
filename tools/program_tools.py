@@ -280,6 +280,7 @@ def get_program_progress(major: str, grade: Optional[str] = None,
     Returns:
         {"program_id", "name", "required_total", "required_taken",
          "required_remaining": [{"code","name","credit","term","category"}],
+         "required_taken_list": [同结构，已对应上的必修],
          "credits_taken", "credits_required", "percent",
          "taken_courses_known", "modules_progress": [{"category", "taken", "total"}]}
 
@@ -341,6 +342,11 @@ def get_program_progress(major: str, grade: Optional[str] = None,
             "code": c["code"], "name": c["name"], "credit": c["credit"],
             "term": c["term"], "category": c["category"],
         } for c in remaining],
+        # 已修匹配清单：跨专业对比时用来回答「我的哪些课能对应上目标专业」
+        "required_taken_list": [{
+            "code": c["code"], "name": c["name"], "credit": c["credit"],
+            "term": c["term"], "category": c["category"],
+        } for c in taken],
         "credits_taken": credits_taken,
         "credits_required": credits_required,
         "percent": percent,

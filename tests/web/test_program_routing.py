@@ -15,7 +15,13 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from agents.qa.nodes import _PROGRAM_PROGRESS_KW, _PROGRAM_ROUTE_KW, _direct_tool_route
+
+_DB = Path(__file__).resolve().parents[2] / "data" / "course_data.db"
 
 _PROFILE = {"major": "计算机科学与技术", "grade": "2025级"}
 
@@ -94,3 +100,145 @@ def test_route_kw_and_progress_kw_are_disjoint():
     """守卫：进度词表不得包含方案路由词，否则细分恒真。"""
     assert _PROGRAM_PROGRESS_KW
     assert not (set(_PROGRAM_PROGRESS_KW) & set(_PROGRAM_ROUTE_KW))
+
+
+# ── 跨专业对比 / 转专业（2026-09-15 新增）──
+#
+# 背景：用户问「我是计算机系的，大三想转去物理学院，帮我对比下我目前选的课和物理学院的
+# 培养方案」。旧路由一律按本人专业查 get_my_program，卡片给的是**自己**的方案，模型拿不到
+# 物理方案只能如实说「没有物理学院数据」——而方案库里其实有（物理学 2025级 70 门）。
+
+_COLLEGES = ["计算机科学与技术学院", "物理学院", "数学科学学院", "人工智能与数据科学学院"]
+
+
+@pytest.fixture
+def colleges(monkeypatch):
+    """固定学院名单，使路由测试不依赖方案库。"""
+    import agents.qa.nodes as nodes
+
+    monkeypatch.setattr(nodes, "_KNOWN_COLLEGE_CACHE", list(_COLLEGES))
+    return _COLLEGES
+
+
+def _st(query: str, done: tuple[str, ...] = ()) -> dict:
+    return {
+        "student_id": "PB25111691", "query": query, "intent": "知识问答", "rounds": 0,
+        "user_profile": {"major": "计算机科学与技术", "grade": "2025级"},
+        "tool_results": [{"tool": t, "status": "done"} for t in done],
+    }
+
+
+def test_same_major_handles_containment():
+    from agents.qa.nodes import _same_major
+
+    assert _same_major("计算机科学与技术", "计算机科学与技术")
+    assert _same_major("计算机", "计算机科学与技术")
+    assert _same_major("", "物理")  # 任一为空 → 视为同一（保持既有行为）
+    assert not _same_major("物理学院", "计算机科学与技术")
+
+
+def test_detect_target_college_skips_own_college(colleges):
+    from agents.qa.nodes import _detect_target_college
+
+    q = "我是计算机系的，大三想转去物理学院，帮我对比下我目前选的课和物理学院的培养方案"
+    assert _detect_target_college(q, "计算机科学与技术") == "物理学院"
+    # 只提到本人学院时，不得把自己当成目标
+    assert _detect_target_college("计算机科学与技术学院的培养方案", "计算机科学与技术") is None
+
+
+def test_cross_major_question_routes_to_target_program(colleges):
+    """核心回归：跨专业对比必须查目标专业，且走进度工具（才能算「哪些能抵、还差哪些」）。"""
+    q = ("我是计算机系的，大三想转去物理学院，帮我对比下我目前选的课和物理学院的培养方案，"
+         "我下个学期应该选哪些课来拉近差距和过度呢？")
+    d = _direct_tool_route(_st(q))
+    calls = d["tool_calls"]
+    assert len(calls) == 1
+    assert calls[0]["tool"] == "get_program_progress"
+    assert calls[0]["args"]["major"] == "物理学院"
+    assert "跨专业方案对比" in d["thought_log"][-1]["reason"]
+
+
+def test_comparison_without_target_college_falls_back_to_own_major(colleges):
+    """提了「对比」但没说别的学院 → 不瞎猜目标，退回本人专业既有行为。"""
+    d = _direct_tool_route(_st("帮我对比一下培养方案，我该选哪些课？"))
+    assert d["tool_calls"][0]["args"]["major"] == "计算机科学与技术"
+
+
+def test_other_college_without_compare_keyword_keeps_own_major(colleges):
+    """没提对比/转专业时，即使点了别的学院也不改变既有行为。"""
+    d = _direct_tool_route(_st("我的培养方案完成得怎么样了"))
+    assert d["tool_calls"][0]["args"]["major"] == "计算机科学与技术"
+
+
+def test_cross_major_result_short_circuits_to_compose(colleges):
+    """目标专业进度已有结果时不再重复调用。"""
+    q = "我想转去物理学院，对比一下物理学院的培养方案"
+    d = _direct_tool_route(_st(q, done=("get_program_progress",)))
+    assert d["decision"] == "compose"
+
+
+def test_personal_tree_only_injected_for_own_major(monkeypatch):
+    """个人方案树只代表本人专业；问别人学院时注入会顶掉目标专业。
+
+    `program_tools._resolve_courses` 里 personal_tree 无条件优先于 major，
+    所以必须在注入侧挡住，否则真实 CAS 用户的跨专业对比会拿到自己的方案。
+    """
+    import agents.qa.nodes as nodes
+
+    monkeypatch.setattr(nodes, "_load_personal_tree", lambda sid=None: {"type": {"nameZh": "个人"}})
+    monkeypatch.setattr(nodes, "_load_taken_courses", lambda sid: ["热学B"])
+    state = {"user_profile": {"major": "计算机科学与技术", "grade": "2025级"}}
+
+    mine = {"major": "计算机科学与技术", "grade": "2025级"}
+    nodes._enrich_program_args(mine, state, "PB25111691", include_taken=True)
+    assert mine.get("personal_tree") is not None, "本人专业应当注入个人方案树"
+
+    other = {"major": "物理学院", "grade": "2025级"}
+    nodes._enrich_program_args(other, state, "PB25111691", include_taken=True)
+    assert "personal_tree" not in other, "目标专业不得注入个人方案树"
+    assert other.get("taken_courses") == ["热学B"], "已修课程仍须注入（对比需要）"
+
+
+# ── 方案定位：一个学院下并列多个专业，不得落到任意一个 ──
+
+def _resolver():
+    import sqlite3
+
+    from tools._program_resolve import resolve_program
+
+    conn = sqlite3.connect(f"file:{_DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn, resolve_program
+
+
+@pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
+@pytest.mark.parametrize("query,expect", [
+    ("物理学院", "物理学专业培养方案"),
+    ("数学科学学院", "数学与应用数学专业培养方案"),
+    ("计算机科学与技术学院", "计算机科学与技术专业培养方案"),
+])
+def test_college_query_picks_the_matching_major(query, expect):
+    """回归：`物理学院` 曾命中「天文学专业培养方案」——同级同优先级落到任意一个。
+
+    修法：并列时按「方案名与学院词干的公共前缀长度」排序，不依赖具体学院命名。
+    """
+    conn, resolve_program = _resolver()
+    try:
+        got = resolve_program(conn, query, "2025级")
+    finally:
+        conn.close()
+    assert got is not None, f"{query} 未定位到方案"
+    assert got["name"] == expect, f"{query} 定位到 {got['name']!r}，期望 {expect!r}"
+
+
+@pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
+@pytest.mark.parametrize("grade", ["2025级", "2026级"])
+def test_major_query_prefers_prefix_match_over_longer_sibling(grade):
+    """`物理学` 不应落到「应用物理学专业培养方案」。"""
+    conn, resolve_program = _resolver()
+    try:
+        got = resolve_program(conn, "物理学", grade)
+    finally:
+        conn.close()
+    assert got is not None
+    assert got["name"] == "物理学专业培养方案", f"{grade} 定位到 {got['name']!r}"

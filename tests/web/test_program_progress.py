@@ -85,6 +85,21 @@ def test_tool_reports_unknown_and_zero_placeholder_without_records():
     assert res["percent"] == 0.0
 
 
+@pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
+def test_tool_exposes_matched_required_list():
+    """跨专业对比要回答「我的哪些课对应上了目标专业」，工具必须透出匹配清单。"""
+    from tools.program_tools import get_program_progress
+
+    res = get_program_progress.invoke({
+        "major": "计算机科学与技术", "grade": "2025级",
+        "taken_courses": ["数学分析(B1)", "线性代数(B1)", "热学B", "散打I"],
+    })
+    matched = res.get("required_taken_list") or []
+    assert res["required_taken"] == len(matched)
+    assert matched, "至少应有课程匹配上方案必修"
+    assert all("name" in c and "credit" in c for c in matched)
+
+
 # ── 摘要措辞 ──
 
 def test_summary_states_basis_when_records_known():
