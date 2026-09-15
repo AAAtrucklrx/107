@@ -161,3 +161,41 @@ test("structured cards dedupe by content: identical pushes collapse, same-shape 
   expect(screen.getByText("甲课")).toBeInTheDocument();
   expect(screen.getByText("乙课")).toBeInTheDocument();
 });
+
+test("structured table scores and give-scores carry semantic cell levels", async () => {
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    options.onEvent({
+      id: 1, run_id: "run-fixture", type: "data.table", at: "2026-08-27T00:00:00Z",
+      data: {
+        title: "评课对比", source_tool: "analyze_teacher",
+        columns: ["班级/教师", "评分", "给分"],
+        rows: [["邵帅", "9.3", "超好"], ["姜晓枫", "6.4", "杀手"], ["吕敏", "6.5", "一般"]],
+      },
+    });
+    options.onEvent({
+      id: 2, run_id: "run-fixture", type: "answer.segment", at: "2026-08-27T00:00:01Z",
+      data: { segment_id: "seg-level", markdown: "看表。", claim_ids: [] },
+    });
+    options.onEvent({
+      id: 3, run_id: "run-fixture", type: "answer.completed", at: "2026-08-27T00:00:02Z",
+      data: { answer_id: "a", claims: [], sources: [], limitations: [], terminal_reason: "local_answer" },
+    });
+  });
+
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  await user.type(screen.getByRole("textbox", { name: "向小蜗提问" }), "离散数学各班老师");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(screen.getByText("看表。")).toBeInTheDocument());
+
+  // 高分层：9.3 评分 + 超好给分
+  expect(document.querySelectorAll('.structured-table td[data-level="high"]')).toHaveLength(2);
+  // 低分层：杀手给分（6.4 / 6.5 评分与「一般」属中档，CSS 不着色）
+  expect(document.querySelectorAll('.structured-table td[data-level="low"]')).toHaveLength(1);
+  // 只有评分/给分两列带分级：2 列 × 3 行 = 6；其余列不参与
+  expect(document.querySelectorAll(".structured-table td[data-level]")).toHaveLength(6);
+  expect(document.querySelectorAll('.structured-table td[data-level="mid"]')).toHaveLength(3);
+  // 内容不得被改写
+  expect(screen.getByText("9.3")).toBeInTheDocument();
+  expect(screen.getByText("杀手")).toBeInTheDocument();
+});

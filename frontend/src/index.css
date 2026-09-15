@@ -1256,6 +1256,135 @@ button:disabled {
   text-align: left;
 }
 
+/* ── 语义提示块（GitHub Alerts 语法 > [!NOTE] 等）──────────────────────
+   颜色只作辅助：每块都有图标与文字标签，不依赖颜色也能读懂（WCAG 1.4.1）。
+   类型→令牌映射遵循 DESIGN.md「一色一义」：
+   NOTE=证据青 · TIP=确认绿 · IMPORTANT=主操作蓝 · WARNING=演示琥珀 · CAUTION=风险红 */
+.markdown-body blockquote.callout {
+  margin: 0 0 12px;
+  padding: 9px 12px 9px 13px;
+  border-left: 3px solid var(--retrieval);
+  border-radius: 4px;
+  background: var(--retrieval-soft);
+}
+
+.markdown-body blockquote.callout > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body blockquote.callout::before {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--retrieval);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  content: "ℹ 注意";
+}
+
+.markdown-body blockquote.callout[data-callout="TIP"] {
+  border-left-color: var(--success);
+  background: var(--success-soft);
+}
+
+.markdown-body blockquote.callout[data-callout="TIP"]::before {
+  color: var(--success);
+  content: "✦ 提示";
+}
+
+.markdown-body blockquote.callout[data-callout="IMPORTANT"] {
+  border-left-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.markdown-body blockquote.callout[data-callout="IMPORTANT"]::before {
+  color: var(--primary);
+  content: "❗ 重要";
+}
+
+.markdown-body blockquote.callout[data-callout="WARNING"] {
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.markdown-body blockquote.callout[data-callout="WARNING"]::before {
+  color: var(--warning);
+  content: "△ 警告";
+}
+
+.markdown-body blockquote.callout[data-callout="CAUTION"] {
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.markdown-body blockquote.callout[data-callout="CAUTION"]::before {
+  color: var(--danger);
+  content: "⛔ 风险";
+}
+
+/* ── 结构化数据卡 ────────────────────────────────────────────────────
+   2026-09-15 补：此前 .structured-table 只有类名、**没有任何样式**，
+   15 类工具卡按浏览器默认表格渲染（无边框/无内边距）。 */
+.structured-table {
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
+
+.structured-table-title {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.structured-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.structured-table th,
+.structured-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.structured-table th {
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.structured-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.structured-table tbody tr:hover td {
+  background: var(--surface-muted);
+}
+
+/* 单元格语义分级：颜色只作辅助，数值/文字本身仍是主要线索 */
+.structured-table td[data-level="high"] {
+  background: var(--success-soft);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.structured-table td[data-level="low"] {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .message-render-loading {
   display: grid;
   width: min(420px, 72vw);

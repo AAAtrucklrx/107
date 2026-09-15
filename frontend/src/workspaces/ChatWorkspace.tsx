@@ -401,6 +401,31 @@ function TypewrittenAnswer({ message }: { message: ChatMessage }) {
   );
 }
 
+/** 给分档位的文字取值（用于语义分级）。 */
+const GIVE_SCORE_HIGH = new Set(["超好", "很好", "好"]);
+const GIVE_SCORE_LOW = new Set(["杀手", "很差", "差"]);
+
+/** 数据卡单元格的语义分级：评分/给分列按档位返回 high|mid|low。
+ *  颜色只作辅助——单元格里的**数字或文字本身**仍是主要线索（WCAG 1.4.1），
+ *  所以 mid 不着色，且不做任何数值改写。 */
+function cellLevel(column: string, cell: string): "high" | "mid" | "low" | undefined {
+  const value = cell.trim();
+  if (!value || value === "—") return undefined;
+  if (/评分|均分/.test(column)) {
+    const score = Number.parseFloat(value);
+    if (!Number.isFinite(score) || score <= 0) return undefined;
+    if (score >= 9) return "high";
+    if (score < 6) return "low";
+    return "mid";
+  }
+  if (column.includes("给分")) {
+    if (GIVE_SCORE_HIGH.has(value)) return "high";
+    if (GIVE_SCORE_LOW.has(value)) return "low";
+    return "mid";
+  }
+  return undefined;
+}
+
 function DataTable({ table }: { table: StructuredBlock }) {
   return (
     <div className="structured-table" role="table" aria-label={table.title}>
@@ -411,7 +436,11 @@ function DataTable({ table }: { table: StructuredBlock }) {
         </thead>
         <tbody>
           {table.rows.map((row, ri) => (
-            <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{cell}</td>)}</tr>
+            <tr key={ri}>
+              {row.map((cell, ci) => (
+                <td key={ci} data-level={cellLevel(table.columns[ci] ?? "", cell)}>{cell}</td>
+              ))}
+            </tr>
           ))}
         </tbody>
       </table>
