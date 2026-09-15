@@ -680,6 +680,18 @@ def _detect_target_college(query: str, own_major: str) -> str | None:
     return None
 
 
+# 方案名含这些词时不是完整主修方案（辅修/英才班只列增设或辅修课程），正文必须说明性质
+_PROGRAM_NATURE_KW = ("辅修", "英才班", "强基计划", "同主修", "贯通")
+
+
+def _program_nature_note(name: object) -> str:
+    """方案名带特殊性质时返回提醒串；否则空串。"""
+    hits = [k for k in _PROGRAM_NATURE_KW if k in str(name or "")]
+    if not hits:
+        return ""
+    return f"  ⚠️ 该方案含「{'、'.join(hits)}」性质，不是完整主修方案，回答必须说明这一点"
+
+
 def _direct_tool_route(state: QaState) -> dict | None:
     """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
 
@@ -1682,6 +1694,9 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
 - 培养进度（get_program_progress）：taken_courses_known=true 时可如实陈述已修门数/学分/完成度与缺口，并说明依据是本地成绩表按课程名匹配（不是教务官方结算）；taken_courses_known=false 时「已修 0」只是缺省占位，必须说明尚未取得已修记录，不得断言完成度为 0、不得称之为「未修缺口」
 - 跨专业对比/转专业：当工具返回的是**本人专业之外**的方案（例如问「转去物理学院」而返回「物理学专业培养方案」）时，这就是你需要的目标专业方案，必须如实使用——给出目标专业的必修总数、已对应上的课程（required_taken_list）、缺口清单（required_remaining）与完成度百分比；**严禁声称「没有该专业数据」「我并未查询到」**；同时说明方案是按专业+年级定位的通用方案、已修匹配按课程名完成，最终认定以教务系统为准；不得把目标专业的数字说成本人已修进度
+- 联系人身份：引用通讯录时必须区分身份——《第二课堂通讯录》里的院系联系人是**第二课堂（校团委）**对接人，负责二课学时/社团/志愿服务，**不是教学秘书**；转专业、学籍异动、培养方案认定、选课异常、缓考补考等**教务事务只能引用《教学秘书联系方式》里的本学院教学秘书**。严禁把团委/行政联系人称为「教学秘书」「教学办」「教务」，也不得把教务处工作人员当成学院教学秘书
+- 年级与专业冲突：问题里自称的年级或专业与登录画像不一致时，**以画像为准并明确点出差异**（如「你画像上是 2025 级（大二）」），提示用户确认；严禁同时用两个年级分别给建议
+- 方案性质：方案名含「辅修」「英才班」「强基计划」「同主修」「贯通」时，必须说明该方案的性质（如「这是辅修方案，只含辅修课程」）以及**它不是完整主修方案**，不得按完整专业方案给出毕业学分等结论
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
 - 培养方案工具返回 source=personal 时可称“教务系统个人培养方案”；source=generic 时必须醒目说明“专业通用参考，不是个人培养方案”；source=unavailable 时不得猜测专业方案
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
@@ -2395,6 +2410,9 @@ def _build_tool_summary(results: list[dict]) -> str:
             lines.append(f"[{tool}] {res.get('name', '')} 必修已修 {res.get('required_taken')}/"
                          f"{res.get('required_total')} 门，学分 {res.get('credits_taken')}/"
                          f"{res.get('credits_required')}（{res.get('percent')}%，{_src(res)}）")
+            nature = _program_nature_note(res.get("name"))
+            if nature:
+                lines.append(nature)
             if known:
                 lines.append("  已修判定依据：本地成绩表已修课程名与方案课程名匹配（已取得已修记录）")
                 hit = res.get("required_taken_list") or []
@@ -2416,6 +2434,9 @@ def _build_tool_summary(results: list[dict]) -> str:
         elif tool == "get_my_program" and isinstance(res.get("courses"), list):
             courses = res["courses"]
             lines.append(f"[{tool}] {res.get('name', '')}（{res.get('grade', '')}）共 {len(courses)} 门课程（{_src(res)}）:")
+            nature = _program_nature_note(res.get("name"))
+            if nature:
+                lines.append(nature)
             for c in courses[:80]:
                 lines.append(f"- {c.get('name', '?')} {c.get('code', '')} {c.get('credit', '')}学分 "
                              f"{c.get('required', '')} {c.get('term', '')} [{c.get('category', '')}]")

@@ -53,6 +53,75 @@ def load_raw() -> list[dict]:
     return out
 
 
+_SAME_MAJOR_MARK = "同主修"
+# 方案名里的通用词/性质词：去掉后剩下的才是学科核心词，用于同院内配对主修方案
+_NAME_NOISE = (
+    "专业培养方案", "培养方案", "科技培养方案", "科技英才班", "英才班",
+    "（同主修，单独设置以下课程要求）", "（同主修，增设课程如下）",
+    "（同主修）（单独开班课程如下）", "（同主修）以下单独开班课程",
+    "（同主修，增设以下课程）", "-同主修", "（同主修）", "（强基计划）",
+)
+
+
+def _name_core(name: str) -> str:
+    """方案名去掉通用/性质词后的学科核心词。"""
+    s = str(name or "")
+    for bit in _NAME_NOISE:
+        s = s.replace(bit, "")
+    return s.strip()
+
+
+def _lcs_len(a: str, b: str) -> int:
+    """最长公共子串长度（方案名很短，O(n*m) 足够）。"""
+    best = 0
+    prev = [0] * (len(b) + 1)
+    for ca in a:
+        cur = [0] * (len(b) + 1)
+        for j, cb in enumerate(b, 1):
+            if ca == cb:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best:
+                    best = cur[j]
+        prev = cur
+    return best
+
+
+def fill_same_major_programs(programs: list[dict]) -> int:
+    """给课表为空的「同主修」方案派生主修课程，返回补齐数。
+
+    jw 学校级树对「（同主修）」类英才班方案不单列课程（语义即"沿用主修专业方案"），
+    所以 王绶琯天文科技英才班 等方案 courses 为空——用户查它会得到"没有方案数据"。
+    此处按「同院 + 同年级 + 学科核心词最相似的主修方案」派生一份，并在 category 标注来源。
+    只补**课表为空**的：有课程的同主修方案列的是"增设课程"，不能覆盖。
+    """
+    by_key: dict[tuple, list[dict]] = {}
+    for p in programs:
+        by_key.setdefault((str(p.get("college") or ""), str(p.get("grade") or "")), []).append(p)
+    filled = 0
+    for p in programs:
+        if p.get("courses") or _SAME_MAJOR_MARK not in str(p.get("name") or ""):
+            continue
+        core = _name_core(str(p.get("name") or ""))
+        peers = by_key.get((str(p.get("college") or ""), str(p.get("grade") or "")), [])
+        scored = [
+            (_lcs_len(core, _name_core(str(q.get("name") or ""))), q)
+            for q in peers
+            if q is not p and q.get("courses") and _SAME_MAJOR_MARK not in str(q.get("name") or "")
+        ]
+        scored = [(n, q) for n, q in scored if n >= 2]  # 至少共享 2 字才算同一个学科
+        if not scored:
+            print(f"  [同主修] 跳过（同院同年级无足够相似的主修方案）: {p.get('name')}")
+            continue
+        _, src = max(scored, key=lambda t: (t[0], -len(str(t[1].get("name") or ""))))
+        p["courses"] = [
+            {**c, "category": f"{c.get('category', '')}（同主修·沿用{src.get('name', '')}）"}
+            for c in src["courses"]
+        ]
+        filled += 1
+        print(f"  [同主修] {p.get('name')} ← {src.get('name')}（{len(p['courses'])} 门）")
+    return filled
+
+
 def load_programs() -> list[dict]:
     """加载 jw 培养方案 JSON（scripts/data/programs_jw/*.json）。
 
@@ -75,6 +144,7 @@ def load_programs() -> list[dict]:
     out = [p for p in out
            if int(str(p.get("grade", "")).rstrip("级")[:4]) >= MIN_PROGRAM_GRADE]
     print(f"过滤掉 {before - len(out)} 个旧方案（{MIN_PROGRAM_GRADE} 级以下），保留 {len(out)} 个")
+    fill_same_major_programs(out)
     return out
 
 
