@@ -4,7 +4,7 @@
 
 ## 项目一句话
 
-小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/空教室/培养方案三件/日周视图/课程搜索等 12 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
+小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/空教室/培养方案三件/日周视图/课程搜索、推荐、评课、对比等 15 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
 
 ## ⚠️ 当前状态（2026-09-15 复测）——动手前必看
 
@@ -59,7 +59,7 @@ $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 250 passed（2026-09-15 实测）
+$PY -m pytest tests/web -q          # 269 passed（2026-09-15 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build

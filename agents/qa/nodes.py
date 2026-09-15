@@ -1609,10 +1609,10 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 有工具结果时以结果为准；没有结果或全部失败时如实说明并给出建议
 - 工具结果含"第三方工具 · XX 提供"（eco: 前缀生态工具）时：回答必须保留该提供者署名并注明"仅供参考"，不得表述为小蜗或官方数据
 - 选课结果（query_course_selection）含上课时间与地点时：必须逐项列出并基于数据判断；若两门课上课时间重叠（同一天同一节次），明确指出"疑似时间冲突"并给出退改建议；不得在已有时间数据的情况下声称"无法判断冲突"
-- 数据表格用 Markdown 展示，回答简洁有条理
+- 数据表格**必须用标准 GFM 表格**（`| 表头 |` 一行 + `| --- |` 分隔行 + 每行数据各自换行）；**禁止用「名称|数值」这种纯文本竖线冒充表格**（竖线不会渲染成表格，只会变成一行带竖线的文字）。已由结构化数据卡呈现的表格，正文只做解读、不要整表重复
 - {structured_note}
-- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用文字流展示：每门课标题行（课程名|老师|学分|学期）+ 评分行（均分·样本量+分维度）+ 5-6 条真实评论原文引用（引号块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有分组时依次展示「必修」「方案内选修」「方向补充」，方向补充必须明确说明不在当前定位到的培养方案清单中；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
-- **指定课程直查**（recommend_courses 返回 source=exact_course）：结果即该课程的全部班级（每班一行：教师组合|评分|样本|评论），**不是培养方案推荐**；必须逐班**列全所有班级**（不得遗漏、合并或只挑高分班），班级多时每班最多引用 1 条评论；**每个班级只列一次**，已在前面列出的班级不得再次出现（禁止「已在上方列出」这类重复段）；禁止使用「必修/选修/方案学期/培养方案要求」等方案措辞；program_hint 为空时不得编造方案学期或开课学期
+- 选课推荐（recommend_courses/compare_courses/analyze_teacher 结果）用**标准 GFM 表格**逐门列出（列：课程 | 教师 | 学分 | 方案学期 | 均分·样本量），表格之后逐门给出一段解读并附 5-6 条真实评论原文引用（`>` 引用块，同一作者只引一条）；同课多师用对比小节并列各老师均分与代表评论；评论引用必须是工具返回原文；工具返回了几门课就完整展示几门；严格按工具返回顺序展示，不得重排、增删或自行补充工具结果之外的课程；有分组时依次展示「必修」「方案内选修」「方向补充」，方向补充必须明确说明不在当前定位到的培养方案清单中；每门课的方案学期必须如实转述标注（「2秋」= 大二上学期，「3春」= 大三下学期），不得臆造学期，也不得把评课库历史开课学期当作方案学期
+- **指定课程直查**（recommend_courses 返回 source=exact_course）：结果即该课程的全部班级（用**标准 GFM 表格**逐班列出：教师组合 | 评分 | 样本，评论另起 `>` 引用块），**不是培养方案推荐**；必须逐班**列全所有班级**（不得遗漏、合并或只挑高分班），班级多时每班最多引用 1 条评论；**每个班级只列一次**，已在前面列出的班级不得再次出现（禁止「已在上方列出」这类重复段）；禁止使用「必修/选修/方案学期/培养方案要求」等方案措辞；program_hint 为空时不得编造方案学期或开课学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
@@ -2014,6 +2014,48 @@ _STRUCTURE_SPECS: dict[str, dict] = {
             str(r.get("dept", "") or ""),
         ],
     },
+    # ── 2026-09-15 新增：推荐 / 评课 / 对比三类此前无卡，用户看不到表格 ──
+    "recommend_courses": {
+        "title": "课程推荐",
+        "items_key": "recommendations",
+        "columns": ["课程", "教师", "学分", "方案学期", "评分·样本", "推荐依据"],
+        "row": lambda r: [
+            str(r.get("name", "") or ""),
+            "、".join(str(x.get("name", "")) for x in (r.get("teachers") or [])[:3]) or "未知",
+            str(r.get("credit", "") if r.get("credit") is not None else ""),
+            str((r.get("program_hint") or {}).get("term", "") or ""),
+            f"{r.get('rating_avg') if r.get('rating_avg') is not None else '—'}分·{r.get('rate_count', 0) or 0}条",
+            "；".join(str(x) for x in (r.get("reasons") or [])[:2]),
+        ],
+    },
+    "analyze_teacher": {
+        # 课程模式给 teachers（各班，含合教组合）；教师模式给 courses（该教师各课）
+        "title": "评课对比",
+        "items": lambda p: list(p.get("teachers") or p.get("courses") or []),
+        "columns": ["班级/教师", "院系", "评分", "样本", "难度", "作业", "给分", "收获"],
+        "row": lambda r: [
+            str(r.get("name", "") or "（未标注老师）"),
+            str(r.get("dept", "") or ""),
+            str(r.get("rating_avg") if r.get("rating_avg") is not None else "—"),
+            str(r.get("rate_count", 0) or 0),
+            str((r.get("dims_mode") or {}).get("难度", "") or ""),
+            str((r.get("dims_mode") or {}).get("作业", "") or ""),
+            str((r.get("dims_mode") or {}).get("给分", "") or ""),
+            str((r.get("dims_mode") or {}).get("收获", "") or ""),
+        ],
+    },
+    "compare_courses": {
+        "title": "课程对比",
+        "items": lambda p: [x for x in (p.get("course_a"), p.get("course_b")) if isinstance(x, dict)],
+        "columns": ["课程", "均分", "样本", "难度", "作业", "给分", "收获"],
+        "row": lambda r: [
+            str(r.get("name", "") or ""),
+            str(r.get("rating_avg") if r.get("rating_avg") is not None else "—"),
+            str(r.get("rate_count", 0) or 0),
+            *[str(((r.get("dims") or {}).get("avg") or {}).get(k, "") or "")
+              for k in ("难度", "作业", "给分", "收获")],
+        ],
+    },
 }
 
 
@@ -2028,10 +2070,20 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
             continue
         payload = item.get("result") or {}
         items_fn = spec.get("items")
-        rows_raw = items_fn(payload) if items_fn else payload.get(spec["items_key"])
+        try:
+            rows_raw = items_fn(payload) if items_fn else payload.get(spec["items_key"])
+        except Exception:  # noqa: BLE001 — 取行异常不得连累工具状态
+            continue
         if not isinstance(rows_raw, list) or not rows_raw:
             continue
-        rows = [spec["row"](r) for r in rows_raw if isinstance(r, dict)]
+        rows = []
+        for r in rows_raw:
+            if not isinstance(r, dict):
+                continue
+            try:
+                rows.append(spec["row"](r))
+            except Exception:  # noqa: BLE001 — 单行异常只跳过该行，整卡仍可用
+                continue
         if rows:
             tables.append({
                 "title": spec["title"],

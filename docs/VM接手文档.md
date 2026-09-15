@@ -60,7 +60,7 @@
 | `verify_security_ui.py` | ✅ 20/20 | 含认证绑定、双用户方案树/缓存隔离、匿名状态清理 |
 | `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-30 已重跑 |
 | `e2e_program_identity.py` | ✅ 通过 | 桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与横向溢出 |
-| `pytest tests/web -q` | ✅ 250 passed | 认证/权限、通知驱动 SSE、终态竞态补读、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
+| `pytest tests/web -q` | ✅ 269 passed | 认证/权限、通知驱动 SSE、终态竞态补读、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
 | `frontend: npm test / npm run build` | ✅ 11/11 / 成功 | Markdown/来源按需块 158.57 kB，主入口 332.03 kB，无 500 kB chunk 警告 |
 | `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、能力感知常见问题、精选校园入口、查询隔离、个人方案、审核治理与三态分块；1440 / 1024 / 390 / 320px 浅深主题 |
 | `verify_web_load.py` | ✅ 通过 | 100 条真实消费中的 SSE、回答并发峰值 30、超限 503、100 条完整结束；事件 URL 按 `/api/v1` 相对契约解析 |
@@ -69,7 +69,7 @@
 
 > **2026-09-01 Linux 服务器实测**（代码已推进至 `980feb6`）：`pytest tests/web` **108/108**（100 旧 + 8 校园工具/学术新测试）；`verify_tools.py` 44/44 · `test_fixes.py` 49/49 · `verify_nodes.py` 57/57 · `check_course_db` 9/9；`verify_web_load` 通过（SSE=100 / 峰值并发 30 / 超限 503 / 完成 100）；init_check 通过（评课库 5667 门、向量 1000 条、检索命中）。
 >
-> **2026-09-15 复测**（HEAD `debef74`）：`pytest tests/web` **250 passed**；`verify_tools` 44/44 · `test_fixes` 49/49 · `verify_nodes` 66/66 · `verify_security_ui` 20/20 · `check_course_db` 9/9；前端 `npm test` **23/23**；线上 readiness 六项全绿。
+> **2026-09-15 复测**（HEAD `debef74`）：`pytest tests/web` **269 passed**；`verify_tools` 44/44 · `test_fixes` 49/49 · `verify_nodes` 66/66 · `verify_security_ui` 20/20 · `check_course_db` 9/9；前端 `npm test` **23/23**；线上 readiness 六项全绿。
 
 ### 2.3 Web vNext 已落地边界
 

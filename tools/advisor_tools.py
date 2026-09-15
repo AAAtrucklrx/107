@@ -1776,7 +1776,7 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
 
     # 老师模式: 教师名模糊匹配 course_teachers（含合教组合, 如"魏海明, 计永胜"）, 同课多组合取样本量大者
     rows = conn.execute(
-        "SELECT c.id, c.name, ct.rating_avg, ct.rating_count "
+        "SELECT c.id, c.name, c.dept, ct.rating_avg, ct.rating_count, ct.dims_dist "
         "FROM course_teachers ct JOIN courses c ON c.id = ct.course_id "
         "WHERE ct.teacher_id IN (SELECT id FROM teachers WHERE name LIKE ?) "
         "ORDER BY ct.rating_count DESC",
@@ -1809,8 +1809,10 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         if r["id"] not in seen or r["rating_count"] > seen[r["id"]]["rate_count"]:
             seen[r["id"]] = {
                 "name": r["name"],
+                "dept": r["dept"] or "",
                 "rating_avg": round(r["rating_avg"], 1),
                 "rate_count": r["rating_count"],
+                "dims_mode": _dims_mode(r["dims_dist"]),
                 "top_reviews": _top_reviews(conn, r["id"], teacher_name, limit=_SAMPLE_PER_UNIT),
             }
     courses = list(seen.values())
