@@ -6,7 +6,7 @@
 
 > ⚠️ **2026-09-01 更新（本机现状，优先于下文 Windows 描述）**：本主机已 Linux 化并完成部署——
 > Ubuntu 24.04（8C/16G），DSH 运行于 bwrap 沙箱（/etc、/root 只读，无 systemd），工作区 `/root/Desktop/小蜗`；
-> **部署已完成**（competition+demo @ `http://114.214.241.119:8850`，origin 单值校验），HEAD `980feb6`，数据资产（评课库/主库/审核库/chroma/young 快照）全部就位；
+> **部署已完成**（competition+demo @ `http://114.214.241.119:8850`，origin 单值校验），HEAD `9c2a536`，数据资产（评课库/主库/审核库/chroma/young 快照）全部就位；
 > 运维用 `deploy/server/{start_all,stop_all,status}.sh`；GitHub 走 Watt Toolkit 加速（**根证书 2026-08-31 轮换**，CA=`scripts/data/steamtools_ca_latest.pem`；Linux git 为 GnuTLS 后端、无 `http.sslBackend=openssl`）；
 > 完整部署契约与调优记录见 `docs/部署规格与记录_2026-09-01.md`。下文 §6 Windows 表与 §8 清单仅作历史参考。
 
@@ -18,7 +18,7 @@
 
 - 主 Web：React + Vite + TypeScript 四工作区前端，FastAPI `/api/v1` 后端与 SSE；Streamlit 只在迁移后一个版本内作为回退入口
 - 智能体：LangGraph 统一 QA——`embedding_parse → think（≤4 轮，THINK 规则 1-22）→ act（工具执行）→ compose（合成回答）`，含确定性路由兜底与双层熔断（P3-2）
-- 知识库：ChromaDB 混合检索（向量 + BM25 降级），80 篇权威文档 → 769 分块
+- 知识库：ChromaDB 混合检索（向量 + BM25 降级），95 篇权威文档 → 1000 分块
 - 数据：SQLite 双库（`database/xiaowo.db` 主库 + `data/course_data.db` 评课库）+ 青春科大个人快照
 - 工具：28 内置（课业/选课/日程/方案/活动/官方入口…）+ 生态工具 `eco:` 前缀（Spec 驱动）
 - 外部服务：教务 CAS（`jw.ustc.edu.cn`）、青春科大 young、科大 LLM 平台
@@ -53,14 +53,14 @@
 | 套件 | 结果 | 备注 |
 |---|---|---|
 | py_compile 全量 | ✅ 0 | |
-| `verify_tools.py` | ✅ 40/40 | 含硬课程范围零命中不放宽 |
-| `test_fixes.py` | ✅ 50/50 | 含软偏好回退、硬条件、方向补充和方案来源 |
-| `verify_nodes.py` | ✅ 53/53 | 含复合推荐/独立冲突边界与工具签名 |
+| `verify_tools.py` | ✅ 44/44 | 含硬课程范围零命中不放宽 |
+| `test_fixes.py` | ✅ 49/49 | 含软偏好回退、硬条件、方向补充和方案来源 |
+| `verify_nodes.py` | ✅ 66/66 | 含复合推荐/独立冲突边界与工具签名 |
 | `verify_profile.py` | ✅ 11/11 | |
 | `verify_security_ui.py` | ✅ 20/20 | 含认证绑定、双用户方案树/缓存隔离、匿名状态清理 |
 | `check_course_db / verify_ecosystem / verify_links / verify_activities / verify_time_parser` | ✅ 9/9 · 10/10 · 12/12 · 8/8 · 17/17 | 2026-08-30 已重跑 |
 | `e2e_program_identity.py` | ✅ 通过 | 桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与横向溢出 |
-| `pytest tests/web -q` | ✅ 100 passed | 认证/权限、通知驱动 SSE、终态竞态补读、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
+| `pytest tests/web -q` | ✅ 238 passed | 认证/权限、通知驱动 SSE、终态竞态补读、SSRF、结构化证据、韧性、worker、审核与 generation 完整性 |
 | `frontend: npm test / npm run build` | ✅ 11/11 / 成功 | Markdown/来源按需块 158.57 kB，主入口 332.03 kB，无 500 kB chunk 警告 |
 | `e2e_web_workbench.py` | ✅ 通过 | anonymous、competition demo/admin、能力感知常见问题、精选校园入口、查询隔离、个人方案、审核治理与三态分块；1440 / 1024 / 390 / 320px 浅深主题 |
 | `verify_web_load.py` | ✅ 通过 | 100 条真实消费中的 SSE、回答并发峰值 30、超限 503、100 条完整结束；事件 URL 按 `/api/v1` 相对契约解析 |
@@ -68,6 +68,8 @@
 | 需 LLM：`qa_consistency` 12/12 · `qa_new_docs` 10/10 | 本轮未运行 | 脚本会向外部 LLM 发送学号/画像，未获明确授权；左侧为最近一次基线 |
 
 > **2026-09-01 Linux 服务器实测**（代码已推进至 `980feb6`）：`pytest tests/web` **108/108**（100 旧 + 8 校园工具/学术新测试）；`verify_tools.py` 44/44 · `test_fixes.py` 49/49 · `verify_nodes.py` 57/57 · `check_course_db` 9/9；`verify_web_load` 通过（SSE=100 / 峰值并发 30 / 超限 503 / 完成 100）；init_check 通过（评课库 5667 门、向量 1000 条、检索命中）。
+>
+> **2026-09-15 复测**（HEAD `9c2a536`）：`pytest tests/web` **238 passed**；`verify_tools` 44/44 · `test_fixes` 49/49 · `verify_nodes` 66/66 · `verify_security_ui` 20/20 · `check_course_db` 9/9；前端 `npm test` **23/23**；线上 readiness 六项全绿。
 
 ### 2.3 Web vNext 已落地边界
 
@@ -104,7 +106,7 @@ tests/web/       Web API、安全、权限、发布与集成回归
 deploy/          SearXNG/Crawl4AI sidecar 安全模板
 tools/           课程/选课顾问/方案/日程/官方入口/活动/生态 ecosystem/
 services/        young/活动推荐/画像/CAS/LLM 熔断/容器
-knowledge/       data/ 80 篇 md + chroma_db（向量库，不入 git）
+knowledge/       data/ 95 篇 md + chroma_db（向量库，不入 git）
 database/        schema.sql + xiaowo.db（不入 git）
 ui/              chat/links_page/program_page/activity_dialog 等
 config/          links.yaml（19 官方链接）；config.py（SEMESTER 等运行时配置）
@@ -116,14 +118,14 @@ docs/            会话交接摘要（人用）/接手日志/总纲方案/tool-s
 
 | 资产 | 位置 | 大小 | 说明 |
 |---|---|---|---|
-| 评课库 | `data/course_data.db` | 55.5MB | 5667 课程页/44418 评论/2982 教师/632 方案 |
+| 评课库 | `data/course_data.db` | 49MB | 5667 课程页/44418 评论/2982 教师/**633** 方案 |
 | 主库 | `database/xiaowo.db` | 0.1MB | 测试账号 PB25111691：26 成绩/14 选课 + 日程/活动偏好表 |
-| 向量库 | `knowledge/chroma_db/` | 39MB | 769 分块（80 篇 md） |
+| 向量库 | `knowledge/chroma_db/` | 29MB | 1000 分块（95 篇 md） |
 | young 快照 | `scripts/data/young_personal/young_snapshot.json` | 716KB | 报名中 19 + 已结束 1000 + 档案 + 标签 17 + 模块学时（德16/智17.5/体24/美17.5/劳40，总115） |
 | 部署数据包 | `scripts/data/xiaowo_deploy_data.zip` | 40.9MB | 上 4 项的打包件（本机已生成） |
 | 依赖锁 | `requirements.lock.txt` | 3.2KB | 163 个锁定版本（仓库根，未入库，单独迁移） |
 
-知识库文档（80 篇 md）与 `config/links.yaml` 在 git 内。`config.py` 全部路径由 `PROJECT_ROOT` 派生；`SEMESTER = 2026-2027-1 / 2026-08-31`（校历核实，env `XIAOWO_SEMESTER_START` 可覆盖）。
+知识库文档（95 篇 md）与 `config/links.yaml` 在 git 内。`config.py` 全部路径由 `PROJECT_ROOT` 派生；`SEMESTER = 2026-2027-1 / 2026-08-31`（校历核实，env `XIAOWO_SEMESTER_START` 可覆盖）。
 
 ### 5.1 云盘迁移通道（2026-09-02 定案：数据走云盘，不走 git）
 

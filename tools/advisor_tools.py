@@ -213,6 +213,22 @@ def _norm_teacher(name: str) -> list[str]:
     return parts or [name]
 
 
+def _dims_mode(dims_dist: str | None) -> dict[str, str]:
+    """维度分布 JSON → 每维众数，如 {'难度': '困难', '作业': '很多'}。
+
+    与 `_teacher_cells` 的 dims_mode **同算法**（各维取出现次数最多的取值）。
+    供 analyze_teacher 摘要展示班级的难度/作业/给分/收获画像——
+    此前摘要读 `dims_mode` 但工具不返回该键，导致恒为 `维度 {}`。
+    """
+    try:
+        dist = json.loads(dims_dist or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(dist, dict):
+        return {}
+    return {k: max(v, key=v.get) for k, v in dist.items() if isinstance(v, dict) and v}
+
+
 def _teacher_cells(conn: sqlite3.Connection, course_id: int) -> list[dict]:
     """同课多师: 各老师均分/样本量/维度分布（合教名拆分为单人后按名聚合）。"""
     agg: dict[str, dict] = {}
@@ -1708,9 +1724,11 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         # (如"许胤龙, 吕敏, 李永坤"为一组, 不拆成单个老师)
         class_rows = conn.execute(
             "SELECT c.id, c.code, c.credit, c.dept, c.rating_avg, c.rate_count, "
+            "cr.dims_dist, "
             "GROUP_CONCAT(t.name, ', ') AS teacher_names "
             "FROM courses c LEFT JOIN course_teachers ct ON ct.course_id = c.id "
             "LEFT JOIN teachers t ON t.id = ct.teacher_id "
+            "LEFT JOIN course_rates cr ON cr.course_id = c.id "
             "WHERE c.name = ? GROUP BY c.id ORDER BY c.rate_count DESC",
             (c["name"],),
         ).fetchall()
@@ -1725,6 +1743,7 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
                 "credit": row["credit"],
                 "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
                 "rate_count": row["rate_count"] or 0,
+                "dims_mode": _dims_mode(row["dims_dist"]),
                 "_cid": row["id"],
             })
         entries.sort(key=lambda t: (-(t["rating_avg"] or 0), -(t["rate_count"] or 0)))

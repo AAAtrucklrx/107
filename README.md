@@ -8,7 +8,7 @@
 
 | 模块 | 能力 |
 |------|------|
-| 📚 智能问答 | 基于 80 篇校园知识库文档（769 条向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
+| 📚 智能问答 | 基于 95 篇校园知识库文档（1000 个向量分块）的 RAG 问答（办事、教务、生活、就业、科研与升学），回答可附官方来源网址；平台故障时自动降级 BM25 关键词检索 |
 | 🌐 联网证据 | 本地不足/权威不足/问题含时效词（最新·今天·最近…）时，经隐私清洗后使用 **百度千帆搜索（自带权威分排序）+ Crawl4AI 抓取** 保底（bocha/SearXNG 为可切换备用）；达到官方一手来源或"可靠来源+独立佐证"门槛后才输出确定结论；不足时展示提取内容并注明「仅供参考」，不编造 |
 | 📊 课业助手 | 成绩查询、GPA、空教室与周课表；课表保留 1–13 小节、周次、星期、教室和真实起止时间，支持前周/本周/后周、当前时间线、重叠并排与待确认数据；CAS 登录后经 jw API 拉取**当前用户真实教务数据**，失败时明确标注本地缓存 |
 | 🔍 选课顾问 | 基于 icourse.club 真实评课数据（5667 个课程页 / 4.4 万条评论）与培养方案，按“必修 / 方案内选修 / 方向补充”推荐；本轮需求优先，课程范围和“只要/必须”是硬条件，其余偏好默认软排序；独立提供节次/周次级课表冲突检查与退补选压力评估 |
@@ -65,7 +65,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 ├── agents/          # 智能体（qa/ 统一问答图 + tool_registry 28 内置工具注册表）
 ├── tools/           # 工具层（课程/成绩/课表/日程/选课/官方入口/活动查询 + ecosystem/ 生态工具）
 ├── services/        # 外部服务（CAS、jw、青春科大 young 客户端、活动推荐与偏好画像、LLM 熔断）
-├── knowledge/       # 知识库文档（data/ 80 篇 md）与混合检索向量库
+├── knowledge/       # 知识库文档（data/ 95 篇 md）与混合检索向量库
 ├── database/        # 应用/审核 SQLite Schema 与种子数据
 ├── frontend/        # React/Vite/TypeScript 用户工作区与独立管理后台
 ├── xiaowo_web/      # FastAPI、认证、SSE、证据、审核发布与 worker
@@ -99,9 +99,9 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 | 命令 | 结果 |
 |------|------|
 | `python scripts/check_course_db.py` | 9/9（评课库完整性） |
-| `python scripts/verify_tools.py` | 40/40（工具层断言） |
-| `python scripts/test_fixes.py` | 50/50（历史修复与推荐语义回归） |
-| `python scripts/verify_nodes.py` | 53/53（节点/路由/身份隔离校验） |
+| `python scripts/verify_tools.py` | 44/44（工具层断言） |
+| `python scripts/test_fixes.py` | 49/49（历史修复与推荐语义回归） |
+| `python scripts/verify_nodes.py` | 66/66（节点/路由/身份隔离校验） |
 | `python scripts/verify_ecosystem.py` | 10/10（生态协议） |
 | `python scripts/verify_links.py` | 12/12（官方链接/入口跳转） |
 | `python scripts/verify_activities.py` | 8/8（活动查询；实时或快照降级） |
@@ -109,8 +109,8 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 | `python scripts/verify_time_parser.py` | 17/17（自然语言时间与 GPA 表） |
 | `python scripts/verify_security_ui.py` | 20/20（认证绑定、多用户方案隔离与 UI 安全） |
 | `python scripts/e2e_program_identity.py` | 通过（桌面 1440×1000 / 移动 390×844；身份、来源、三标签、按钮与溢出） |
-| `python -m pytest tests/web -q` | 132 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
-| `npm test` / `npm run build`（`frontend/`） | 22/22；生产构建成功，主入口 136.8 kB + react-vendor 185.2 kB（框架层长效缓存），Markdown 按需块 152.7 kB，无 chunk 警告 |
+| `python -m pytest tests/web -q` | 238 passed（Web API、认证/权限、通知驱动 SSE、SSRF、结构化证据、审核队列与 generation） |
+| `npm test` / `npm run build`（`frontend/`） | 23/23；生产构建成功，主入口 325.84 kB（gzip 104.25 kB）、Markdown 按需块 327.10 kB（gzip 99.28 kB），无 chunk 警告 |
 | `python scripts/e2e_web_workbench.py` | anonymous/demo/admin、Chat 3/2/2/1 与 Campus 4/3/2/1 流式响应方块（auto-fill 自适应）、1440/1024/390/320 浅深主题、三态分块审核；需先起两个实例：8766=`XIAOWO_AUTH_MODE=anonymous`，8765=`XIAOWO_AUTH_MODE=demo XIAOWO_PUBLIC_ORIGIN=http://127.0.0.1:8765 XIAOWO_ADMIN_IDS=PB25111691`（origin 必须与实例端口一致，否则写操作被 CSRF 来源校验拒绝） |
 | `python scripts/verify_web_load.py` | 100 条真实消费中的 SSE、30 个并发回答、有界队列、`503 RUN_BUSY` 与 100 条完整终态 |
 | `python scripts/qa_consistency.py` / `qa_new_docs.py` | 需 LLM；最近一次已确认基线 12/12 · 10/10 |

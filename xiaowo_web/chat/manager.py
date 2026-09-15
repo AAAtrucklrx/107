@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import secrets
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,6 +21,18 @@ from utils.logger import get_logger
 
 
 log = get_logger(__name__)
+
+
+def _table_key(table: dict[str, Any]) -> str:
+    """结构化卡的**内容指纹**：内容相同即视为同一张卡（用于抑制重复推送）。
+
+    刻意不用 `title|source_tool|行数` 这类弱键——不同内容但同形的卡会被误判为重复。
+    """
+    try:
+        blob = json.dumps(table, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        blob = repr(table)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 @dataclass(slots=True)
@@ -44,6 +58,8 @@ class ChatManager:
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_runs)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._ingestion_tasks: set[asyncio.Task[None]] = set()
+        # 每个 run 已实时推送过的结构化卡内容指纹（run 结束重推时据此跳过，避免同卡两条事件）
+        self._emitted_table_keys: dict[str, set[str]] = {}
 
     async def create_run(
         self,
@@ -85,6 +101,12 @@ class ChatManager:
 
         run = self.store.create_run(principal.session_key, mode)
         streamed: dict[str, str] = {"text": ""}
+        emitted_keys = self._emitted_table_keys.setdefault(run.run_id, set())
+
+        def _emit_table(table: dict) -> None:
+            # 记录内容指纹后实时推卡；run 结束时的重推会跳过已推过的卡
+            emitted_keys.add(_table_key(table))
+            self.store.append_event(run.run_id, "data.table", table)
 
         def _emit_delta(delta: str) -> None:
             streamed["text"] += delta
@@ -99,7 +121,7 @@ class ChatManager:
             conversation_id=conversation_id,
             chat_history=history,
             emit_stage=lambda stage, message: self._stage(run.run_id, stage, message),
-            emit_table=lambda table: self.store.append_event(run.run_id, "data.table", table),
+            emit_table=_emit_table,
             emit_delta=_emit_delta,
         )
         self.store.append_event(
@@ -227,8 +249,13 @@ class ChatManager:
                     )
                 },
             )
-        # 阶段1 结构化数据卡：工具表格以独立事件先于正文推流（前端先渲染卡片）
+        # 阶段1 结构化数据卡：工具表格以独立事件先于正文推流（前端先渲染卡片）。
+        # act 节点已实时推过的卡在此跳过——旧实现两处都推，导致同一张卡发两条事件
+        # （前端虽按 key 覆盖不可见，但浪费 SSE 带宽并在 web_chat_events 里多存一行）。
+        emitted_keys = self._emitted_table_keys.get(request.run_id) or set()
         for table in list(getattr(bundle, "structured", None) or []):
+            if _table_key(table) in emitted_keys:
+                continue
             self.store.append_event(request.run_id, "data.table", table)
         segment_id = secrets.token_urlsafe(10)
         self.store.append_event(
@@ -313,6 +340,7 @@ class ChatManager:
 
     def _task_done(self, run_id: str, task: asyncio.Task[None]) -> None:
         self._tasks.pop(run_id, None)
+        self._emitted_table_keys.pop(run_id, None)  # 去重账本随 run 结束释放，避免泄漏
         if task.cancelled():
             self._finish_cancelled(run_id)
 

@@ -6,9 +6,9 @@
 
 小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/空教室/培养方案三件/日周视图/课程搜索等 12 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
 
-## ⚠️ 当前状态（2026-09-01 实测）——动手前必看
+## ⚠️ 当前状态（2026-09-15 复测）——动手前必看
 
-- HEAD：`c0e7fdb`（docs: sync 2026-09-04/05 state… 2026-09-05），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`9c2a536`（fix(advisor+qa): 评论样本按「班」保底取样… 2026-09-15），main 分支，远端 `github.com/AAAtrucklrx/107`。
 - **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
@@ -59,7 +59,7 @@ $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 225 passed（2026-09-05 实测）
+$PY -m pytest tests/web -q          # 238 passed（2026-09-15 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build

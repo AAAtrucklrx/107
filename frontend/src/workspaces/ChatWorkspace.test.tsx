@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChatWorkspace } from "./ChatWorkspace";
+import { streamRunEvents } from "../lib/api";
 import type { PublicConfig, SessionPayload, SseEnvelope } from "../types";
 
 const putLocalConversation = vi.fn((_value: unknown) => Promise.resolve());
@@ -122,4 +123,41 @@ test("seeded academic question suppresses starters until a new conversation", as
   await user.click(screen.getByRole("button", { name: "新建对话" }));
   expect(screen.getByRole("heading", { name: "常见问题" })).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("");
+});
+
+test("structured cards dedupe by content: identical pushes collapse, same-shape distinct cards both survive", async () => {
+  const cardA = {
+    title: "课程搜索结果", source_tool: "search_courses",
+    columns: ["课程码", "课程"], rows: [["A1", "甲课"]],
+  };
+  // 同标题 / 同工具 / 同行数，但内容不同 —— 不能被去重键误删
+  const cardB = {
+    title: "课程搜索结果", source_tool: "search_courses",
+    columns: ["课程码", "课程"], rows: [["B1", "乙课"]],
+  };
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    // 同一张卡推两次：模拟「act 节点实时推 + run 结束重推」
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "data.table", at: "2026-08-27T00:00:00Z", data: cardA });
+    options.onEvent({ id: 2, run_id: "run-fixture", type: "data.table", at: "2026-08-27T00:00:01Z", data: cardA });
+    options.onEvent({ id: 3, run_id: "run-fixture", type: "data.table", at: "2026-08-27T00:00:02Z", data: cardB });
+    options.onEvent({
+      id: 4, run_id: "run-fixture", type: "answer.segment", at: "2026-08-27T00:00:03Z",
+      data: { segment_id: "seg-cards", markdown: "两张卡的回答。", claim_ids: [] },
+    });
+    options.onEvent({
+      id: 5, run_id: "run-fixture", type: "answer.completed", at: "2026-08-27T00:00:04Z",
+      data: { answer_id: "answer-cards", claims: [], sources: [], limitations: [], terminal_reason: "local_answer" },
+    });
+  });
+
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  await user.type(screen.getByRole("textbox", { name: "向小蜗提问" }), "组合数学");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  await waitFor(() => expect(screen.getByText(/两张卡的回答/)).toBeInTheDocument());
+  // 三张卡里第一张重复 → 折叠为 2 张（甲课 + 乙课），且乙课未被同形去重键误删
+  expect(document.querySelectorAll(".structured-table")).toHaveLength(2);
+  expect(screen.getByText("甲课")).toBeInTheDocument();
+  expect(screen.getByText("乙课")).toBeInTheDocument();
 });

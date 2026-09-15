@@ -672,7 +672,10 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     if (event.type === "data.table") {
       const table = data as unknown as StructuredBlock;
       updateAssistant(assistantId, (message) => {
-        const key = (t: StructuredBlock) => `${t.title}|${t.source_tool ?? ""}|${t.rows.length}`;
+        // 同一张卡服务端可能推两次（act 节点实时推 + run 结束重推），按内容指纹覆盖去重。
+        // 键必须含内容指纹：只用 title|source_tool|行数 会把「内容不同但同形」的卡误删。
+        const key = (t: StructuredBlock) =>
+          `${t.title}|${t.source_tool ?? ""}|${JSON.stringify(t.rows ?? [])}`;
         const existing = (message.structured ?? []).filter((t) => key(t) !== key(table));
         return { ...message, structured: [...existing, table] };
       });
