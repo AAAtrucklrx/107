@@ -629,6 +629,13 @@ def _is_dayview_query(query: str) -> bool:
     return has_topic and has_ask
 
 
+_PROGRAM_ROUTE_KW = ("我的培养方案", "培养方案", "培养进度", "方案进度", "学期规划", "我的方案")
+# 「完成度」类问句必须走 get_program_progress：act 阶段会注入已修课程并算出
+# 差额；只走 get_my_program 时正文只剩课程清单，模型会误答「无法算出你的已修学分」。
+_PROGRAM_PROGRESS_KW = ("完成", "进度", "还差", "还缺", "缺多少", "差多少", "够不够",
+                        "修了多少", "已修", "已经修", "多少学分", "学分够", "达标", "够毕业")
+
+
 def _direct_tool_route(state: QaState) -> dict | None:
     """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
 
@@ -642,26 +649,30 @@ def _direct_tool_route(state: QaState) -> dict | None:
     query = state.get("query") or ""
     rounds = state.get("rounds") or 0
     # 培养方案高置信路由（2026-09-04）：LLM 常被知识库"查询途径"干扰而跳过工具，
-    # 个人方案问题确定性走 get_my_program（LLM 之前）
-    if state.get("student_id") and any(k in query for k in ("我的培养方案", "培养方案", "培养进度", "方案进度", "学期规划", "我的方案")):
+    # 个人方案问题确定性走方案工具（LLM 之前）。
+    # 2026-09-15 按意图细分：含「完成/进度/还差…」的问句走 get_program_progress
+    # （act 阶段注入已修课程并算出差额），否则只走 get_my_program（课程清单）。
+    if state.get("student_id") and any(k in query for k in _PROGRAM_ROUTE_KW):
+        target = ("get_program_progress"
+                  if any(k in query for k in _PROGRAM_PROGRESS_KW)
+                  else "get_my_program")
         results = state.get("tool_results") or []
-        for tool in ("get_my_program", "get_program_progress", "plan_semester"):
-            if any(r.get("tool") == tool and r.get("status") == "done" for r in results):
-                return {"decision": "compose", "tool_calls": [],
-                        "thought_log": (state.get("thought_log") or []) + [{
-                            "round": rounds + 1, "decision": "compose",
-                            "reason": f"培养方案工具 {tool} 已有结果，直接合成",
-                        }]}
+        if any(r.get("tool") == target and r.get("status") == "done" for r in results):
+            return {"decision": "compose", "tool_calls": [],
+                    "thought_log": (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "compose",
+                        "reason": f"培养方案工具 {target} 已有结果，直接合成",
+                    }]}
         return {
             "decision": "call_tool",
             "tool_calls": [{
-                "tool": "get_my_program",
+                "tool": target,
                 "args": {"major": (state.get("user_profile") or {}).get("major", ""),
                          "grade": (state.get("user_profile") or {}).get("grade", "")},
             }],
             "thought_log": (state.get("thought_log") or []) + [{
                 "round": rounds + 1, "decision": "call_tool",
-                "reason": "培养方案个人数据确定性路由（get_my_program）",
+                "reason": f"培养方案个人数据确定性路由（{target}）",
             }],
         }
     # 活动推荐确定性路由（2026-09-04）：优先于推荐课程（LLM 常误判"推荐活动"为课程推荐）
@@ -1616,6 +1627,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - **指定课程直查**（recommend_courses 返回 source=exact_course）：结果即该课程的全部班级（用**标准 GFM 表格**逐班列出：教师组合 | 评分 | 样本，评论另起 `>` 引用块），**不是培养方案推荐**；必须逐班**列全所有班级**（不得遗漏、合并或只挑高分班），班级多时每班最多引用 1 条评论；**每个班级只列一次**，已在前面列出的班级不得再次出现（禁止「已在上方列出」这类重复段）；禁止使用「必修/选修/方案学期/培养方案要求」等方案措辞；program_hint 为空时不得编造方案学期或开课学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
+- 培养进度（get_program_progress）：taken_courses_known=true 时可如实陈述已修门数/学分/完成度与缺口，并说明依据是本地成绩表按课程名匹配（不是教务官方结算）；taken_courses_known=false 时「已修 0」只是缺省占位，必须说明尚未取得已修记录，不得断言完成度为 0、不得称之为「未修缺口」
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
 - 培养方案工具返回 source=personal 时可称“教务系统个人培养方案”；source=generic 时必须醒目说明“专业通用参考，不是个人培养方案”；source=unavailable 时不得猜测专业方案
 - 课程学分、均分、样本量、学期等数值必须取自工具返回结果，不得猜测、修改或补充；工具未提供学分的不得臆造学分
@@ -1962,7 +1974,9 @@ _STRUCTURE_SPECS: dict[str, dict] = {
         ],
     },
     "get_program_progress": {
-        "title": "培养方案缺口",
+        # 未取得已修记录时不能叫「缺口」：此时 remaining 是全部必修课
+        "title": lambda p: ("培养方案缺口" if p.get("taken_courses_known")
+                            else "培养方案必修课程（已修记录未知）"),
         "items_key": "required_remaining",
         "columns": ["课程码", "课程", "学分", "学期"],
         "row": lambda r: [
@@ -2086,8 +2100,14 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
             except Exception:  # noqa: BLE001 — 单行异常只跳过该行，整卡仍可用
                 continue
         if rows:
+            title = spec["title"]
+            if callable(title):  # 动态标题：如「缺口」仅在已修记录已知时才成立
+                try:
+                    title = title(payload)
+                except Exception:  # noqa: BLE001 — 标题失败退回中性名，不影响整卡
+                    title = "数据卡"
             tables.append({
-                "title": spec["title"],
+                "title": title,
                 "columns": list(spec["columns"]),
                 "rows": rows,
                 "source_tool": item.get("tool"),
@@ -2316,11 +2336,18 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(f"- {e.get('course', '?')} {e.get('date', '')} {e.get('time', '')} "
                              f"{e.get('location', '')} {e.get('type', '')}")
         elif tool == "get_program_progress":
+            # 缺省占位与「真的没修」必须区分；未取得已修记录时不得称「缺口」（与 advisor_tools 同口径）
+            known = bool(res.get("taken_courses_known"))
             lines.append(f"[{tool}] {res.get('name', '')} 必修已修 {res.get('required_taken')}/"
                          f"{res.get('required_total')} 门，学分 {res.get('credits_taken')}/"
                          f"{res.get('credits_required')}（{res.get('percent')}%，{_src(res)}）")
+            if known:
+                lines.append("  已修判定依据：本地成绩表已修课程名与方案课程名匹配（已取得已修记录）")
+            else:
+                lines.append("  ⚠️ 未取得已修记录：上面的「已修 0」是缺省占位，不代表实际未修；"
+                             "不得据此断言完成度为 0，也不得称下列课程为「缺口」")
             rem = res.get("required_remaining") or []
-            lines.append(f"  必修缺口 {len(rem)} 门:")
+            lines.append(f"  {'必修缺口' if known else '必修待确认（未取得已修记录，不等于未修）'} {len(rem)} 门:")
             for c in rem[:80]:
                 lines.append(f"- {c.get('name', '?')} {c.get('credit', '')}学分 "
                              f"{c.get('term', '')} [{c.get('category', '')}]")

@@ -281,7 +281,10 @@ def get_program_progress(major: str, grade: Optional[str] = None,
         {"program_id", "name", "required_total", "required_taken",
          "required_remaining": [{"code","name","credit","term","category"}],
          "credits_taken", "credits_required", "percent",
-         "modules_progress": [{"category", "taken", "total"}]}
+         "taken_courses_known", "modules_progress": [{"category", "taken", "total"}]}
+
+    taken_courses_known=False 时 taken/credits/percent 的 0 只是缺省占位，
+    不代表学生实际未修；调用方不得据此断言完成度，也不得称 remaining 为「缺口」。
     """
     prog, courses = _resolve_courses(major, grade, personal_tree)
 
@@ -332,6 +335,8 @@ def get_program_progress(major: str, grade: Optional[str] = None,
         "name": prog["name"],
         "required_total": len(required),
         "required_taken": len(taken),
+        # 缺省占位与「真的没修」必须可区分：上层据此决定能否称「缺口」
+        "taken_courses_known": bool(taken_courses),
         "required_remaining": [{
             "code": c["code"], "name": c["name"], "credit": c["credit"],
             "term": c["term"], "category": c["category"],
