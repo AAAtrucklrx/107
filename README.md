@@ -91,7 +91,6 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 - [docs/课表校园工具与管理后台重构.md](docs/课表校园工具与管理后台重构.md) — 本轮开源调研、范围、数据流与安全边界
 - [DESIGN.md](DESIGN.md) — “冷色数字编目台”设计系统与组件约束
 - [docs/dev-log/](docs/dev-log/) — 开发过程记录（finding 修复日志）
-- [docs/team/](docs/team/) — 团队协作材料（备赛计划、协作指南、智能体配置）
 - [docs/学习报告.md](docs/学习报告.md) — 项目学习基线
 
 ## ✅ 回归验证
