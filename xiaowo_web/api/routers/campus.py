@@ -51,7 +51,9 @@ async def activities(
     request: Request,
     query: Annotated[str, Query(max_length=100)] = "",
     category: Annotated[str, Query(max_length=40)] = "",
-    limit: Annotated[int, Query(ge=1, le=20)] = 12,
+    # limit=0 表示返回全部（活动界面用全量）；上限由 20 放宽到 500，
+    # 原 20 会把大部分报名中活动挡在界面外（实测平台有 86 条）。
+    limit: Annotated[int, Query(ge=0, le=500)] = 12,
     time_window: Annotated[str, Query(max_length=20)] = "",
     principal: Annotated[Principal | None, Depends(optional_principal)] = None,
 ) -> dict:

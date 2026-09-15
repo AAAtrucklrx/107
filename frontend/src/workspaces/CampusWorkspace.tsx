@@ -188,7 +188,13 @@ export function CampusWorkspace({ session }: { session: SessionPayload }) {
     setActivityError(null);
     setActivityLoading(true);
     try {
-      const result = await apiGet<CampusActivities>(`/campus/activities${requestSuffix(cleanSearch, category)}`);
+      // limit=0 = 全量：活动界面展示**全部**报名中活动。
+      // 后端默认 12、且旧实现硬顶 20，导致平台上 86 条活动只露出十几条。
+      const parameters = new URLSearchParams();
+      if (cleanSearch) parameters.set("query", cleanSearch);
+      if (category) parameters.set("category", category);
+      parameters.set("limit", "0");
+      const result = await apiGet<CampusActivities>(`/campus/activities?${parameters.toString()}`);
       setActivities(result);
       const discovered = result.items
         .map((item) => String(item.category || "").trim())

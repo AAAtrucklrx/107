@@ -155,9 +155,31 @@ def _in_window(act, window: str, now: datetime) -> bool | None:
     return None
 
 
+# 活动返回条数安全上限。limit<=0 视为「全部」——实际条数受平台活动总量约束。
+# 旧实现硬编码 min(limit, 20)：活动界面因此最多只能看到 20 条（2026-09-15 修）。
+_ACTIVITY_LIMIT_CEILING = 500
+_ACTIVITY_DEFAULT_LIMIT = 8
+
+
+def _resolve_activity_limit(limit, total: int) -> int:
+    """把 limit 解析为实际取用条数：**<=0 表示全部**，否则上限 _ACTIVITY_LIMIT_CEILING。
+
+    返回 >=1 的整数，可直接用于切片与推荐器 top_n（切片对超出长度自动截断）。
+    """
+    if limit is None:
+        limit = _ACTIVITY_DEFAULT_LIMIT  # 与函数签名默认值保持一致，避免显式 None 被当成「全部」
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = _ACTIVITY_DEFAULT_LIMIT
+    if n <= 0:
+        return max(1, int(total))
+    return max(1, min(n, _ACTIVITY_LIMIT_CEILING))
+
+
 @tool
 def query_activities(keyword: str = "", category: str = "",
-                     time_window: str = "", limit: int = 8,
+                     time_window: str = "", limit: int = _ACTIVITY_DEFAULT_LIMIT,
                      student_id: str = None) -> dict:
     """查询青春科大（第二课堂）当前可报名的活动列表（实时数据）。
 
@@ -165,7 +187,7 @@ def query_activities(keyword: str = "", category: str = "",
         keyword: 关键词，匹配活动名/简介/主办方（如 "讲座"、"辩论"、"志愿服务"）
         category: 分类过滤（如 "单次项目"、"系列项目"）
         time_window: 时间窗（"即将截止"/"周末"/"本周"）
-        limit: 返回条数上限（默认 8）
+        limit: 返回条数上限（默认 8；**传 0 或负数表示返回全部**）
         student_id: 学号（登录用户自动注入）
 
     Returns:
@@ -220,7 +242,7 @@ def query_activities(keyword: str = "", category: str = "",
             out,
             matcher=matcher,
             now=now,
-            top_n=max(1, min(int(limit or 8), 20)),
+            top_n=_resolve_activity_limit(limit, len(out)),
             personal_profile=personal_profile,
         )
         if ranked:
@@ -229,7 +251,7 @@ def query_activities(keyword: str = "", category: str = "",
     except Exception as e:  # noqa: BLE001
         log.warning(f"活动推荐引擎异常，回退原始顺序: {e}")
 
-    out = out[: max(1, min(int(limit or 8), 20))]
+    out = out[: _resolve_activity_limit(limit, len(out))]
 
     # 2026-09-02：展示集补全地点/联系人（仅实时模式；快照回退时 token 多已失效，详情接口同样不可用）
     if not err:

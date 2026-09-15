@@ -8,7 +8,7 @@
 
 ## ⚠️ 当前状态（2026-09-15 复测）——动手前必看
 
-- HEAD：`9c2a536`（fix(advisor+qa): 评论样本按「班」保底取样… 2026-09-15），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`debef74`（fix(advisor+qa): 评论样本按「班」保底取样… 2026-09-15），main 分支，远端 `github.com/AAAtrucklrx/107`。
 - **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
@@ -59,7 +59,7 @@ $PY scripts/verify_ecosystem.py; $PY scripts/verify_links.py
 $PY scripts/verify_profile.py; $PY scripts/verify_time_parser.py
 $PY scripts/verify_security_ui.py   # 20/20
 $PY scripts/verify_activities.py    # 需 YOUNG_TOKEN，失效自动 SKIP
-$PY -m pytest tests/web -q          # 243 passed（2026-09-15 实测）
+$PY -m pytest tests/web -q          # 250 passed（2026-09-15 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build

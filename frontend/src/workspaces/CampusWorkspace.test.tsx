@@ -191,7 +191,8 @@ test("service and activity searches keep independent requests and state", async 
   await user.click(screen.getByRole("button", { name: "搜索" }));
 
   await waitFor(() => expect(apiGetMock).toHaveBeenCalledTimes(1));
-  expect(decodeURIComponent(String(apiGetMock.mock.calls[0][0]))).toBe("/campus/activities?query=讲座");
+  // 活动界面显式请求全量（limit=0 = 全部）：后端原先默认 12，只露出平台活动的一小部分
+  expect(decodeURIComponent(String(apiGetMock.mock.calls[0][0]))).toBe("/campus/activities?query=讲座&limit=0");
 });
 
 test("campus tools allow public browsing but require identity for submission", async () => {

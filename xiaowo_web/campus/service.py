@@ -100,6 +100,9 @@ class CampusService:
             })
         return {
             "items": items,
+            "count": len(items),
+            # 平台报名中活动总数（本次返回可能是其子集，limit=0 时为全量）
+            "total": int(result.get("total_enrolment") or len(items)),
             "fetched_at": result.get("fetched_at"),
             "source": {
                 "kind": "young_snapshot" if stale else "young_live",
