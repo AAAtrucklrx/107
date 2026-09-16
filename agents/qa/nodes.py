@@ -12,6 +12,7 @@ import json
 import re
 import threading
 import time
+from pathlib import Path
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -151,10 +152,33 @@ def clear_personal_tree_cache(student_id: str | None = None) -> None:
     _PERSONAL_TREE_CACHE.pop(student_id or "", None)
 
 
-def _load_personal_tree(student_id: str | None = None):
-    """从 CAS 客户端拉取个人方案树（登录态注入，测试模式已替换为备份数据）。
+_DEMO_TREE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "demo"
 
-    带 per-student 缓存：命中直接返回；拉取成功后校验归属（cas_client.student_id
+
+def _load_demo_personal_tree(student_id: str):
+    """演示身份的离线个人方案树（fixtures/demo/<学号>_tree.json）。
+
+    演示身份没有 CAS 登录态（has_cas() 恒为 False），拉不到个人方案树，只能落回
+    全量库方案 —— 而全量库装的是学校级数据，答出来会被标成"专业通用参考"。这里
+    读本人方案树的离线留存，让演示链路也能走通 source=personal 的正解。
+
+    文件以自带的 student_id 自证归属，不匹配一律不采用（防串他人数据）。"""
+    try:
+        raw = (_DEMO_TREE_DIR / f"{student_id}_tree.json").read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except (OSError, ValueError):
+        return None
+    if str(payload.get("student_id") or "") != student_id:
+        log.warning(f"演示方案树归属不符，已忽略: {student_id}")
+        return None
+    tree = payload.get("tree")
+    return tree if isinstance(tree, (dict, list)) and tree else None
+
+
+def _load_personal_tree(student_id: str | None = None):
+    """取个人方案树：优先 CAS 登录态实时拉取，其次演示身份的离线留存。
+
+    带 per-student 缓存：命中直接返回；CAS 拉取成功后校验归属（cas_client.student_id
     与当前学生一致，防进程级共享 CAS 客户端在多用户下串数据），不一致返回 None 且不缓存。"""
     if not student_id:
         return None
@@ -164,20 +188,24 @@ def _load_personal_tree(student_id: str | None = None):
         if time.time() - cached_at <= _PERSONAL_TREE_TTL_SECONDS:
             return tree
         _PERSONAL_TREE_CACHE.pop(student_id, None)
+    tree = None
     try:
         from services.service_container import ServiceContainer
         sc = ServiceContainer()
-        if not sc.has_cas():
-            return None
-        tree = sc.cas_client.get_my_program_tree()
-        if isinstance(tree, dict) and "error" in tree:
-            return None
-        if sc.cas_client.student_id != student_id:
-            return None
-        _PERSONAL_TREE_CACHE[student_id] = (tree, time.time())
-        return tree
+        if sc.has_cas():
+            tree = sc.cas_client.get_my_program_tree()
+            if isinstance(tree, dict) and "error" in tree:
+                return None
+            if sc.cas_client.student_id != student_id:
+                return None
     except Exception:
+        tree = None
+    if tree is None:
+        tree = _load_demo_personal_tree(student_id)
+    if tree is None:
         return None
+    _PERSONAL_TREE_CACHE[student_id] = (tree, time.time())
+    return tree
 
 
 def _enrich_add_event_args(args: dict, state: QaState) -> None:

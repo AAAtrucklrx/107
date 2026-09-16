@@ -309,8 +309,8 @@
   "name": "计算机科学与技术专业培养方案",
   "college": "215计算机科学与技术学院",
   "grade": "2025级",
-  "personal": false,
-  "source": "generic",
+  "personal": true,
+  "source": "personal",
   "fallback_from_personal": false,
   "totalCredits": 167,
   "modules": [
