@@ -208,3 +208,31 @@ def test_inline_junk_mentions_are_redacted() -> None:
     assert "十一选五" not in out
     assert "无关站点" in out
     assert "未涉及奖项" in out
+
+
+def test_smart_answer_replaced_when_all_sources_are_junk(tmp_path) -> None:
+    """B3（收窄）：检索结果全是无关/低质站点 → 整篇替换，不复述垃圾。"""
+    refs = [
+        {"url": "https://www.docin.com/a", "title": "高三语文试卷"},
+        {"url": "https://x.example.com/b", "title": "贵州十一选五走势图"},
+    ]
+    search = SmartSearch(
+        text="检索到一些应用下载页面，如“贵州十一选五开奖结果”“问鼎国际APP下载”等。",
+        references=refs,
+    )
+    bundle = asyncio.run(_pipeline(tmp_path, search).answer("最新的转专业政策是什么？"))
+    assert "十一选五" not in bundle.markdown
+    assert "问鼎国际" not in bundle.markdown
+    assert "暂时无法确认" in bundle.markdown
+    assert bundle.sources == []
+    assert bundle.terminal_reason == "EVIDENCE_INSUFFICIENT"
+    assert any("改为固定答复" in item for item in bundle.limitations)
+
+
+def test_smart_answer_keeps_text_when_only_third_party(tmp_path) -> None:
+    """只有第三方（无垃圾站）时**不替换**——那种情况仍可能有可用内容。"""
+    refs = [{"url": "https://zhuanlan.zhihu.com/a", "title": "转专业体验"}]
+    search = SmartSearch(text="据知乎网友经验，转专业流程大致如下。", references=refs)
+    bundle = asyncio.run(_pipeline(tmp_path, search).answer("最新的转专业政策是什么？"))
+    assert bundle.markdown == "据知乎网友经验，转专业流程大致如下。"
+    assert bundle.terminal_reason == "AI_GENERATED"

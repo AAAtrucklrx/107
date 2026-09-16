@@ -132,6 +132,16 @@ def _scrub_unreliable_sources(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+# 检索结果**全是无关/低质站点**时的固定答复（B3 收窄版）。
+# 为什么不靠提示词/关键词表：即便加了"不得引用无关站点"并清理了「来源：」行，模型仍会在
+# 正文里**举例复述**垃圾站（实测"问鼎国际(登录入口)APP下载"漏网），站名表永远清不干净。
+_NO_RELIABLE_SOURCE_ANSWER = (
+    "本次联网检索没有找到与这个问题相关的可靠来源（检索结果均为无关或低质站点），"
+    "小蜗暂时无法确认。\n\n"
+    "建议换个更具体的问法，或通过官方渠道核实（学校官网、教务处，或学院教学秘书）。"
+)
+
+
 def _smart_source_tier(host: str, title: str) -> str:
     """smart 来源准入分层：official / authoritative / third_party / blocked。"""
     host = (host or "").lower()
@@ -744,6 +754,25 @@ class EvidencePipeline:
         # B1/B2：接住**真实返回的 references** 并按域名分层。
         # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
         sources, official_n, dropped = self._smart_sources(references)
+        # B3（收窄版，2026-09-16）：**没有任何合格来源、且确实过滤掉了 blocked 站**
+        # → 说明本轮检索结果全是无关/低质站点，整篇替换为固定诚实答复，不复述检索垃圾。
+        # 收窄在 `dropped["blocked"]`：只有第三方（如知乎/百家号）而不含垃圾时**不替换**，
+        # 那种情况仍可能有可用内容。
+        if not sources and dropped["blocked"]:
+            limitations_acc.append(
+                f"本次检索到 {dropped['blocked']} 条无关或不良站点、无可采信来源，"
+                "已改为固定答复，不复述检索内容。"
+            )
+            return AnswerBundle(
+                markdown=_NO_RELIABLE_SOURCE_ANSWER,
+                claims=[{
+                    "claim_id": "c1", "text": _NO_RELIABLE_SOURCE_ANSWER,
+                    "kind": "factual", "status": "insufficient", "evidence": [],
+                }],
+                sources=[],
+                limitations=limitations_acc,
+                terminal_reason="EVIDENCE_INSUFFICIENT",
+            )
         if not sources:
             # references 为空时的兜底来源（仍标未核实，绝不伪装成官方）
             sources.append({
