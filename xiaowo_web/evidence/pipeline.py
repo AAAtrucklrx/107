@@ -69,6 +69,67 @@ class _PageRecord:
     citation: int
 
 
+# ── smart 来源准入（2026-09-16）─────────────────────────────────
+# 实测百度智能搜索对长尾查询会返回**软件下载站、文库聚合站**，甚至**彩票/赌博/成人
+# 内容站**，而它们会被当作「来源」展示给用户。故只让够格的域名进入 sources：
+#   official      `*.ustc.edu.cn`              → official_primary（官方一手）
+#   authoritative 政府/国家级媒体白名单          → reliable_independent（独立可靠）
+#   third_party   自媒体/聚合（百家号/知乎/CSDN/微信…） → 不展示
+#   blocked       明显无关或不良                → 不展示
+_AUTHORITATIVE_HOSTS = (
+    "moe.gov.cn", "gov.cn", "xinhuanet.com", "news.cn", "people.com.cn",
+    "cctv.com", "thepaper.cn", "chinadaily.com.cn", "gmw.cn", "china.com.cn",
+    "chsi.com.cn",
+)
+_BLOCKED_DOMAIN_RE = re.compile(
+    r"(?:2265\.com|docin\.com|doc88\.com|book118\.com|renrendoc|onlinedown|"
+    r"downcc|cr173|ddooo|pc6\.com|xiazai|caipiao|liuhecai|11xuan5|shuangseqiu|"
+    r"casino|bet365|porn|ero)", re.IGNORECASE,
+)
+_BLOCKED_TITLE_RE = re.compile(
+    r"(?:十一选五|双色球|大乐透|彩票|开奖|走势图|棋牌|真人视讯|老虎机|"
+    r"エロ|成人|色情|porn|casino)", re.IGNORECASE,
+)
+
+
+# 正文里"看起来像引用"的不合格站名。提示词拦不住——模型会照着自己搜到的网页写
+# "来源：2265下载网、豆丁下载网"（实测两次都写了），所以必须**确定性删除**（2026-09-16）。
+_UNRELIABLE_SOURCE_TEXT_RE = re.compile(
+    r"(?:2265|豆丁|道客|文库|下载网|下载站|开奖|彩票|十一选五|双色球|大乐透|"
+    r"走势图|棋牌|真人视讯|老虎机|成人|色情|エロ|docin|doc88|book118|caipiao)",
+    re.IGNORECASE,
+)
+_ANSWER_SOURCE_LINE_RE = re.compile(
+    r"^[ \t]*(?:来源|资料来源|信息来源|参考来源)[：:].*$", re.MULTILINE,
+)
+
+
+def _scrub_unreliable_source_lines(text: str) -> str:
+    """删掉正文中列举**不合格站点**的「来源：」行。
+
+    这些站点已被 `_smart_source_tier` 判为 blocked/third_party，出现在正文里会看着像
+    正式引用；只删"来源"行，不动正文其余表述（模型解释"检索结果与问题无关"是合理的）。
+    """
+    def _drop(match: "re.Match[str]") -> str:
+        return "" if _UNRELIABLE_SOURCE_TEXT_RE.search(match.group(0)) else match.group(0)
+
+    cleaned = _ANSWER_SOURCE_LINE_RE.sub(_drop, text or "")
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def _smart_source_tier(host: str, title: str) -> str:
+    """smart 来源准入分层：official / authoritative / third_party / blocked。"""
+    host = (host or "").lower()
+    if host == "ustc.edu.cn" or host.endswith(".ustc.edu.cn"):
+        return "official"
+    if _BLOCKED_DOMAIN_RE.search(host) or _BLOCKED_TITLE_RE.search(title or ""):
+        return "blocked"
+    for allowed in _AUTHORITATIVE_HOSTS:
+        if host == allowed or host.endswith("." + allowed):
+            return "authoritative"
+    return "third_party"
+
+
 class EvidencePipeline:
     def __init__(
         self,
@@ -622,8 +683,13 @@ class EvidencePipeline:
                 "**直接回答「未找到本校相关信息」**，严禁改用其他学校的信息作答。\n"
                 "6. 若没有任何中国科学技术大学的官方来源，明确说明「未找到本校官方信息，"
                 "以下仅为互联网传闻，请以教务系统为准」。\n"
-                "7. 能辨识来源站点时，在回答末尾用一行「来源：站点名（网址）」列出不超过 3 条。\n"
-                "8. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
+                "7. 能辨识来源站点时，在回答末尾用一行「来源：站点名（网址）」列出不超过 3 条；"
+                "**软件下载站、文库聚合站、彩票/赌博/成人内容等无关站点一律不得引用**，"
+                "也不得把它们的内容写进回答。\n"
+                "8. 若检索结果与问题无关（未命中），只说明「检索结果与问题无关、未找到相关信息」，"
+                "**不要列举无关站点的名称**，也不要为它们输出「来源：」行——"
+                "如实说明「没查到」即可，不要向用户复述检索垃圾。\n"
+                "9. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
             )
         else:
             parts.append(
@@ -659,9 +725,10 @@ class EvidencePipeline:
         except Exception as exc:  # noqa: BLE001 —— 生成失败即回退经典检索链（含 429）
             limitations_acc.append("百度智能搜索生成暂不可用，已回退通用检索。")
             return None
+        text = _scrub_unreliable_source_lines(text)
         # B1/B2：接住**真实返回的 references** 并按域名分层。
         # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
-        sources, official_n = self._smart_sources(references)
+        sources, official_n, dropped = self._smart_sources(references)
         if not sources:
             # references 为空时的兜底来源（仍标未核实，绝不伪装成官方）
             sources.append({
@@ -679,6 +746,16 @@ class EvidencePipeline:
             f"来自百度智能搜索生成（AI 检索）；本次命中本校官方来源 {official_n} 条，"
             "未附独立引用，请以教务系统为准。"
         )
+        if dropped["blocked"]:
+            limitations_acc.append(
+                f"本次检索到 {dropped['blocked']} 条无关或不良站点，"
+                "已过滤、未作为来源展示。"
+            )
+        if dropped["third_party"]:
+            limitations_acc.append(
+                f"另有 {dropped['third_party']} 条自媒体/聚合类站点，"
+                "未达到来源标准，未作为来源展示。"
+            )
         # B4：校内事务问句若一条官方来源都没有，必须显式示警
         if official_n == 0 and campus_search_keywords(question):
             limitations_acc.append(
@@ -700,41 +777,46 @@ class EvidencePipeline:
         )
 
     @staticmethod
-    def _smart_sources(references: list[dict]) -> tuple[list[dict], int]:
-        """智能搜索的 `references` → 来源列表，并按域名分层（B1/B2）。
+    def _smart_sources(references: list[dict]) -> tuple[list[dict], int, dict[str, int]]:
+        """智能搜索的 `references` → **只保留够格的来源**（B1/B2 + 来源准入）。
 
-        - `*.ustc.edu.cn` → `official_primary`（本校官方）
-        - 其余（百家号/知乎/CSDN/gk100/搜狐…）→ `unverified`（第三方）
-        - `references` 为空时返回空列表，由调用方兜底
+        不够格的**不进 `sources`**，只计数，由调用方在 limitations 里如实说明——
+        把下载站/赌博站当来源展示既误导也不安全（2026-09-16 实测踩到）。
 
         Returns:
-            (sources, 官方来源条数)
+            (sources, 官方来源条数, {"third_party": n, "blocked": n})
         """
         sources: list[dict] = []
         official_n = 0
+        dropped = {"third_party": 0, "blocked": 0}
         for index, ref in enumerate(references[:8], start=1):
             url = str(ref.get("url") or "").strip()
             if not url:
                 continue
             host = urlsplit(url).netloc.lower()
-            is_official = host == "ustc.edu.cn" or host.endswith(".ustc.edu.cn")
+            title = str(ref.get("title") or "").strip()
+            tier = _smart_source_tier(host, title)
+            if tier in dropped:
+                dropped[tier] += 1
+                continue
+            is_official = tier == "official"
             if is_official:
                 official_n += 1
             sources.append({
                 "source_id": f"s-smart-{index}",
-                "title": str(ref.get("title") or host or "网页")[:120],
+                "title": title[:120] or host or "网页",
                 "display_url": url,
                 "institution": ("中国科学技术大学" if is_official
                                 else (str(ref.get("website") or "").strip() or host)),
                 "domain": host or None,
                 "published_at": str(ref.get("date") or "").strip() or None,
                 "fetched_at": None,
-                "level": "official_primary" if is_official else "unverified",
-                "validity": "active" if is_official else "unverified",
+                "level": "official_primary" if is_official else "reliable_independent",
+                "validity": "active",
                 "citation": index,
-                "tags": ["ai_generated", "official" if is_official else "third_party"],
+                "tags": ["ai_generated", "official" if is_official else "authoritative"],
             })
-        return sources, official_n
+        return sources, official_n, dropped
 
     @staticmethod
     def _public_source(record: _PageRecord, citation: int) -> dict:

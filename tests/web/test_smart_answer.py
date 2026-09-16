@@ -105,15 +105,49 @@ def test_smart_answer_uses_real_references_as_sources(tmp_path) -> None:
     """B1/B2：references 变真实来源并按域名分层（原先被丢弃、用假来源顶替）。"""
     refs = [
         {"url": "https://www.teach.ustc.edu.cn/n1", "title": "教务处通知", "date": "2026-09-15"},
+        {"url": "https://www.gov.cn/n2", "title": "国务院办公厅通知"},
         {"url": "https://baijiahao.baidu.com/x", "title": "转专业自由吗", "website": "百家号"},
+        {"url": "https://www.docin.com/y", "title": "高三语文试卷"},
     ]
     search = SmartSearch(text="答复", references=refs)
     bundle = asyncio.run(_pipeline(tmp_path, search).answer("最新的转专业政策是什么？"))
-    assert [s["level"] for s in bundle.sources[:2]] == ["official_primary", "unverified"]
+    # 只有够格的来源进入 sources：本校官方 + 政府白名单
+    assert [s["level"] for s in bundle.sources] == ["official_primary", "reliable_independent"]
     assert bundle.sources[0]["display_url"] == "https://www.teach.ustc.edu.cn/n1"
     assert bundle.sources[0]["domain"] == "www.teach.ustc.edu.cn"
-    assert bundle.sources[1]["domain"] == "baijiahao.baidu.com"
+    assert bundle.sources[1]["domain"] == "www.gov.cn"
     assert "命中本校官方来源 1 条" in " ".join(bundle.limitations)
+    # 自媒体与下载站**不展示**，但要如实交代
+    assert all("baijiahao" not in (s["domain"] or "") for s in bundle.sources)
+    assert all("docin" not in (s["domain"] or "") for s in bundle.sources)
+    assert any("自媒体" in item for item in bundle.limitations)
+    assert any("不良站点" in item for item in bundle.limitations)
+
+
+def test_smart_sources_admission_drops_junk() -> None:
+    """来源准入：下载站/文库/彩票赌博/成人内容一律不进 sources，只计数。"""
+    sources, official_n, dropped = EvidencePipeline._smart_sources([
+        {"url": "https://www.teach.ustc.edu.cn/a", "title": "教务处"},
+        {"url": "https://www.docin.com/b", "title": "高三语文试卷"},
+        {"url": "https://x.example.com/c", "title": "贵州十一选五走势图"},
+        {"url": "https://zhuanlan.zhihu.com/d", "title": "转专业体验"},
+    ])
+    assert [s["domain"] for s in sources] == ["www.teach.ustc.edu.cn"]
+    assert official_n == 1
+    assert dropped == {"third_party": 1, "blocked": 2}
+
+
+def test_smart_sources_keeps_government_whitelist() -> None:
+    """政府/国家级媒体属于"独立可靠"，仍可作为来源。"""
+    sources, official_n, dropped = EvidencePipeline._smart_sources([
+        {"url": "https://www.moe.gov.cn/z", "title": "教育部通知"},
+        {"url": "https://www.xinhuanet.com/z", "title": "新华社报道"},
+        {"url": "https://www.someuni.edu.cn/z", "title": "某高校通知"},
+    ])
+    assert [s["level"] for s in sources] == ["reliable_independent", "reliable_independent"]
+    assert official_n == 0
+    # 其他高校的 edu.cn **不算权威**（正是"答成天津科技大学"那类来源）
+    assert dropped == {"third_party": 1, "blocked": 0}
 
 
 def test_smart_answer_warns_when_no_official_source(tmp_path) -> None:
@@ -150,3 +184,15 @@ def test_classic_mode_skips_smart(tmp_path) -> None:
 
     assert bundle.terminal_reason == "EVIDENCE_INSUFFICIENT"
     assert search.calls == []
+
+
+def test_unreliable_source_lines_are_scrubbed() -> None:
+    """正文里的「来源：垃圾站」必须确定性删除——提示词拦不住（实测两次都照写）。"""
+    from xiaowo_web.evidence.pipeline import _scrub_unreliable_source_lines
+
+    dirty = "暂时无法确认。\n\n来源：2265下载网、豆丁下载网"
+    assert "2265" not in _scrub_unreliable_source_lines(dirty)
+    assert "暂时无法确认" in _scrub_unreliable_source_lines(dirty)
+
+    clean = "按教务处通知执行。\n\n来源：中国科学技术大学教务处（https://www.teach.ustc.edu.cn）"
+    assert _scrub_unreliable_source_lines(clean) == clean, "合格来源行不得被删"
