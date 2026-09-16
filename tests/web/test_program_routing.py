@@ -19,7 +19,12 @@ from pathlib import Path
 
 import pytest
 
-from agents.qa.nodes import _PROGRAM_PROGRESS_KW, _PROGRAM_ROUTE_KW, _direct_tool_route
+from agents.qa.nodes import (
+    _PROGRAM_PROGRESS_KW,
+    _PROGRAM_ROUTE_KW,
+    _direct_tool_route,
+    _next_term_year_index,
+)
 
 _DB = Path(__file__).resolve().parents[2] / "data" / "course_data.db"
 
@@ -152,10 +157,18 @@ def test_cross_major_question_routes_to_target_program(colleges):
          "我下个学期应该选哪些课来拉近差距和过度呢？")
     d = _direct_tool_route(_st(q))
     calls = d["tool_calls"]
-    assert len(calls) == 1
-    assert calls[0]["tool"] == "get_program_progress"
+    # 问句同时要「下个学期选哪些课」→ 额外并行调 plan_semester，按真实学期分组
+    assert [c["tool"] for c in calls] == ["get_program_progress", "plan_semester"]
     assert calls[0]["args"]["major"] == "物理学院"
+    assert calls[1]["args"]["major"] == "物理学院", "排课也必须查目标专业，不得混入本人方案"
+    assert calls[1]["args"]["year_index"] == _next_term_year_index("2025级")
     assert "跨专业方案对比" in d["thought_log"][-1]["reason"]
+
+
+def test_cross_major_without_course_pick_skips_plan_semester(colleges):
+    """只是对比/转专业、没问「下个学期选什么」时，不额外排课。"""
+    d = _direct_tool_route(_st("我想转去物理学院，对比一下物理学院的培养方案"))
+    assert [c["tool"] for c in d["tool_calls"]] == ["get_program_progress"]
 
 
 def test_comparison_without_target_college_falls_back_to_own_major(colleges):

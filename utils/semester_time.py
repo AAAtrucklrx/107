@@ -73,3 +73,63 @@ def semester_date_text() -> str:
 def semester_weekday_text() -> str:
     """注入 LLM 的中文星期，如 `星期二`。"""
     return "星期" + _WEEKDAY_ZH[semester_weekday() - 1]
+
+
+def semester_label_text() -> str:
+    """当前学期标签，如 `2026-2027-1（2026秋）`；配置缺失返回空串。
+
+    学期名 `2026-2027-1` 末位 1=秋季、2=春季；学年取 start_date 的年份。
+    """
+    try:
+        from config import SEMESTER
+
+        name = str(SEMESTER.get("name") or "").strip()
+        start_text = str(SEMESTER.get("start_date") or "").strip()
+    except Exception:  # noqa: BLE001 — 配置缺失不应让调用方崩溃
+        return ""
+    if not name:
+        return ""
+    term = {"1": "秋", "2": "春"}.get(name.rsplit("-", 1)[-1], "")
+    year = start_text[:4] if len(start_text) >= 4 else ""
+    return f"{name}（{year}{term}）" if term and year else name
+
+
+def semester_context_text() -> str:
+    """注入 LLM 的学期上下文：当前学期 + 教学周 + 教学周→起始日对照。
+
+    **为什么必须注入**（2026-09-16）：此前只注入「日期 + 星期」，模型知道今天是
+    几号，却不知道这是哪个学期、第几教学周。后果是"下个学期应该选什么课"这类
+    问句无法落到具体学期，模型会把**当前学期当成下学期**（实测把 2秋 的课答成
+    "下个学期"）；政策类问句（"转专业申请时间：春季第14~16教学周"）也无法换算
+    成日期。这里把教学周→日期的对照一并给出，**避免让模型自行做日期加法**。
+    """
+    try:
+        from config import SEMESTER
+
+        start_text = str(SEMESTER.get("start_date") or "")
+        total = int(SEMESTER.get("total_weeks") or 0)
+    except Exception:  # noqa: BLE001
+        return ""
+    if not start_text or total < 1:
+        return ""
+    try:
+        start = date.fromisoformat(start_text)
+    except ValueError:
+        return ""
+
+    lines: list[str] = []
+    label = semester_label_text()
+    if label:
+        days = (semester_today() - start).days
+        week = (days // 7 + 1) if days >= 0 else None
+        if week is not None and week > total:
+            week = None
+        lines.append(f"当前学期: {label}，"
+                     + (f"第 {week} 教学周 / 共 {total} 周" if week
+                        else f"当前不在教学周内（共 {total} 周）"))
+    pairs = []
+    for n in range(1, total + 1):
+        d = start + timedelta(days=(n - 1) * 7)
+        pairs.append(f"第{n}周 {d.strftime('%m-%d')}")
+    lines.append("教学周起始日: " + "、".join(pairs))
+    return "\n".join(lines)

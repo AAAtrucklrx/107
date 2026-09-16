@@ -422,6 +422,34 @@ def embedding_parse(state: QaState) -> dict:
     except Exception as e:
         log.warning(f"候选召回失败: {e}")
 
+    # 转专业类问句的定向补检索（2026-09-16）：主检索会被"培养方案/选课/对比"语义
+    # 主导，实测原问题 12 条候选里**一条政策文档都没有**，而「二年级可全校申请、
+    # 三年级只能本院内转」与申请窗口条款恰恰只在《转专业政策》里。这里用固定口径
+    # 补一次检索并合并（不写死文档名，避免改名即失效）。
+    if any(k in query for k in _POLICY_RETRIEVAL_KW):
+        try:
+            extra = _get_faq_store().search(_POLICY_RETRIEVAL_QUERY, top_k=3)
+            seen2 = {
+                str(c.get("id") or c.get("chunk_id") or "")
+                for c in candidates
+            }
+            added = 0
+            for candidate in extra.get("results") or []:
+                identity = str(candidate.get("id") or candidate.get("chunk_id") or "")
+                if identity and identity in seen2:
+                    continue
+                candidates.append(candidate)
+                if identity:
+                    seen2.add(identity)
+                added += 1
+            if added:
+                retrieval_log.append({
+                    "round": 0, "decision": "retrieve",
+                    "reason": f"转专业政策定向补检索: 新增 {added} 条候选",
+                })
+        except Exception as e:  # noqa: BLE001 — 补检索失败不影响主流程
+            log.warning(f"转专业政策定向补检索失败: {e}")
+
     log.info(f"意图识别: {intent} (method={result.get('method')}, module={module_signal}, 候选 {len(candidates)} 条)")
     _emit_action(state, f"已理解问题：意图「{intent}」")
     # 世界知识快速通道（2026-09-04）：非校内话题（无科大触发词）+ 知识库 0 命中
@@ -442,6 +470,7 @@ THINK_PROMPT = """你是小蜗的决策引擎。根据用户问题与已有信�
 
 ## 当前时间
 今天是 {current_date}（{current_weekday}）。涉及"今天/本周/这周/下周/最近"的问题必须以此时间与工具返回的周次/日期为准，不得自行推测。
+{semester_context}
 
 ## 可用工具
 {tools}
@@ -670,6 +699,52 @@ _PROGRAM_COMPARE_KW = ("转专业", "转系", "转去", "转入", "转到", "换
                        "对比", "比较", "对照", "差距", "相差", "另一个专业", "其他学院")
 _KNOWN_COLLEGE_CACHE: list[str] = []
 
+# 转专业问句的定向检索口径（命中任一关键词即补检索政策文档）
+# 必须覆盖「转去/转到/转入」这类**动宾式**说法——原题就是「大三想转去物理学院」，
+# 只列"转专业/转系"会漏掉它，补检索形同虚设（2026-09-16 自查发现）。
+_POLICY_RETRIEVAL_KW = ("转专业", "转系", "转院系", "换专业", "跨专业",
+                        "转去", "转入", "转到")
+_POLICY_RETRIEVAL_QUERY = "转专业 申请时间 教学周 二年级 三年级 修读专业 资格"
+
+# 「下个学期选什么课」：只靠 get_program_progress 给的缺口清单，学期归属要模型自己
+# 从 term（"2秋"）里挑，实测会把当前学期当下学期；这里追加 plan_semester 直接按
+# 真实的下一个学期所属学年分组。
+_PLAN_SEMESTER_KW = ("下个学期", "下学期", "選課", "选哪些课", "选什么课",
+                     "应该选哪", "该选哪", "怎么选课", "选课建议", "选课计划")
+
+
+def _next_term_year_index(grade: str) -> int | None:
+    """推算「下一个学期」所属学年序号（1=大一…），推算不出返回 None。
+
+    依据：年级（"2025级"→2025 入学）+ 当前学期（`2026-2027-1` = 2026 学年秋季）。
+    秋季的下个学期仍属同一学年，春季的下个学期进入下一学年。
+    """
+    try:
+        from config import SEMESTER
+
+        name = str(SEMESTER.get("name") or "")
+    except Exception:  # noqa: BLE001 — 配置缺失时不做学年规划，退回原行为
+        return None
+    m = re.match(r"(\d{4})-(\d{4})-([12])", name)
+    digits = re.sub(r"\D", "", str(grade or ""))
+    if not m or len(digits) < 4:
+        return None
+    year_index = int(m.group(1)) - int(digits[:4]) + 1
+    if not 1 <= year_index <= 6:
+        return None
+    return year_index if m.group(3) == "1" else year_index + 1
+
+
+def _plan_semester_call(query: str, major: str, grade: str) -> dict | None:
+    """问句要「下个学期选什么课」时，追加 plan_semester 调用（否则返回 None）。"""
+    if not any(k in query for k in _PLAN_SEMESTER_KW):
+        return None
+    year_index = _next_term_year_index(grade)
+    if not year_index:
+        return None
+    return {"tool": "plan_semester",
+            "args": {"major": major, "grade": grade, "year_index": year_index}}
+
 
 def _same_major(a: object, b: object) -> bool:
     """两个专业名是否指向同一专业（含简写包含关系）；任一为空返回 True（保持既有行为）。"""
@@ -743,19 +818,28 @@ def _direct_tool_route(state: QaState) -> dict | None:
         own_grade = str(profile.get("grade") or "")
         target_college = (_detect_target_college(query, own_major)
                           if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
+        plan_call = None
         if target_college:
             # 目标专业必须走进度工具：已修课程由 act 注入，才能算出「哪些能抵、还差哪些」
             tool_name = "get_program_progress"
             args = {"major": target_college, "grade": own_grade}
             reason = f"跨专业方案对比确定性路由（{tool_name} → {target_college}）"
+            # 问「下个学期选什么课」时并行按真实学期分组（见 _plan_semester_call）
+            plan_call = _plan_semester_call(query, target_college, own_grade)
         else:
             tool_name = ("get_program_progress"
                          if any(k in query for k in _PROGRAM_PROGRESS_KW)
                          else "get_my_program")
             args = {"major": own_major, "grade": own_grade}
             reason = f"培养方案个人数据确定性路由（{tool_name}）"
+        calls = [{"tool": tool_name, "args": args}] + ([plan_call] if plan_call else [])
+        if plan_call:
+            reason += f" + {plan_call['tool']}(year_index={plan_call['args']['year_index']})"
         results = state.get("tool_results") or []
-        if any(r.get("tool") == tool_name and r.get("status") == "done" for r in results):
+        if all(
+            any(r.get("tool") == call["tool"] and r.get("status") == "done" for r in results)
+            for call in calls
+        ):
             return {"decision": "compose", "tool_calls": [],
                     "thought_log": (state.get("thought_log") or []) + [{
                         "round": rounds + 1, "decision": "compose",
@@ -763,7 +847,7 @@ def _direct_tool_route(state: QaState) -> dict | None:
                     }]}
         return {
             "decision": "call_tool",
-            "tool_calls": [{"tool": tool_name, "args": args}],
+            "tool_calls": calls,
             "thought_log": (state.get("thought_log") or []) + [{
                 "round": rounds + 1, "decision": "call_tool", "reason": reason,
             }],
@@ -1015,6 +1099,7 @@ def think(state: QaState) -> dict:
             "query": query,
             "current_date": _current_date_text(),
             "current_weekday": _current_weekday_text(),
+            "semester_context": _semester_context_text(),
             "student_info": _build_student_info(state),
             "chat_history": _build_chat_history(state.get("chat_history") or []),
             "module_signal": state.get("module_signal") or "自动判断",
@@ -1695,6 +1780,7 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 用户问题: {query}
 
 当前时间: {current_date}（{current_weekday}）——回答中涉及今天/本周/年份/日期时必须以此为准，禁止自行推测年份或星期
+{semester_context}
 
 意图: {intent}
 
@@ -1720,10 +1806,15 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - **指定课程直查**（recommend_courses 返回 source=exact_course）：结果即该课程的全部班级（用**标准 GFM 表格**逐班列出：教师组合 | 评分 | 样本，评论另起 `>` 引用块），**不是培养方案推荐**；必须逐班**列全所有班级**（不得遗漏、合并或只挑高分班），班级多时每班最多引用 1 条评论；**每个班级只列一次**，已在前面列出的班级不得再次出现（禁止「已在上方列出」这类重复段）；禁止使用「必修/选修/方案学期/培养方案要求」等方案措辞；program_hint 为空时不得编造方案学期或开课学期
 - 不得提及未通过工具实际查询到的数据（如成绩/课表/考试），不得声称“查询不到/没有数据”，工具未查过的一律不主动提及
 - 必修组课程是培养方案要求：展示顺序必须与工具返回一致，不得重排；只有 program_context.taken_courses_known=true 时才能称为“未修缺口”，否则必须说“方案必修参考、需确认是否已修”；不得将必修课表述为「可作备选」「可考虑退」等可选性措辞
+- 已修数据口径：`taken_courses_known=true` 时**已修课程确实已用于匹配**，**严禁**声称"我这边没有你的已修成绩/已修记录/已修明细"或"未核验你的已修记录"（这类话会让用户以为没算过）；可以如实说明的是"已修按课程名匹配、非教务官方结算"。确实没有的数据（如实时课表、先修是否满足、个人培养方案）才可以说明缺失
 - 培养进度（get_program_progress）：taken_courses_known=true 时可如实陈述已修门数/学分/完成度与缺口，并说明依据是本地成绩表按课程名匹配（不是教务官方结算）；taken_courses_known=false 时「已修 0」只是缺省占位，必须说明尚未取得已修记录，不得断言完成度为 0、不得称之为「未修缺口」
 - 跨专业对比/转专业：当工具返回的是**本人专业之外**的方案（例如问「转去物理学院」而返回「物理学专业培养方案」）时，这就是你需要的目标专业方案，必须如实使用——给出目标专业的必修总数、已对应上的课程（required_taken_list）、缺口清单（required_remaining）与完成度百分比；**严禁声称「没有该专业数据」「我并未查询到」**；同时说明方案是按专业+年级定位的通用方案、已修匹配按课程名完成，最终认定以教务系统为准；不得把目标专业的数字说成本人已修进度
+- 转专业窗口与资格（命中转专业/转院系意图时**必须**交代，缺一不可）：①**资格**——政策规定「二年级学生可以在全校范围内申请转院系或修读专业；三年级学生只能在其修读学院内申请转修读专业」，即**跨学院转专业必须在二年级完成申请**，升入三年级后就没有跨学院这条路，这是硬约束，必须明确告知；②**窗口**——申请时间为**春季学期第 14~16 教学周、秋季学期第 16~18 教学周**，**获准者于下一学期进入新专业学习**；③**落到日历**——用上方「教学周起始日」把适用窗口换算成具体日期（如第16周 12-14），并明确说明"最近一次申请在什么时间、获准后从哪个学期起在新专业学习"。若学生意向是"大三进入某学院"，要点明那正需要在**二年级期间**的窗口申请
+- **申请学期 ≠ 进入学期**：政策是「获准者于**下一学期**进入新专业学习」——秋季窗口（第16~18周）获准 → **次年春季学期**进入；春季窗口（第14~16周）获准 → **当年秋季学期**进入。**严禁**把进入学期写成申请窗口所在的那个学期，或写成别的学期（实测出现过"12月申请、次年秋进入"这种错答；同一会话里其它回答又是对的，口径必须一致）
+- 跨专业/转专业的选课建议必须**分段**：①「下个学期（学期口径见上）」= **只列方案 term 恰好等于该学期的课**；②「需要补修的低年级课」= 单独成段，并写明这是补齐先修链条的补课、不属于该学期方案。**严禁**把 1秋/1春 这类低年级补课混进"下学期建议"的同一张表或同一列表里，否则用户会误以为那是下学期该选的方案课
+- 人称与学期口径：问题说"下个学期/下学期/明年/这学期"时，**必须以上方「当前学期」为基准推算，严禁把当前学期当成下学期**（例如当前是 2秋，则"下个学期"= 2春）；给选课/规划建议时必须写明所依据的学期
 - 联系人身份：引用通讯录时必须区分身份——《第二课堂通讯录》里的院系联系人是**第二课堂（校团委）**对接人，负责二课学时/社团/志愿服务，**不是教学秘书**；转专业、学籍异动、培养方案认定、选课异常、缓考补考等**教务事务只能引用《教学秘书联系方式》里的本学院教学秘书**。严禁把团委/行政联系人称为「教学秘书」「教学办」「教务」，也不得把教务处工作人员当成学院教学秘书
-- 年级与专业冲突：问题里自称的年级或专业与登录画像不一致时，**以画像为准并明确点出差异**（如「你画像上是 2025 级（大二）」），提示用户确认；严禁同时用两个年级分别给建议
+- 年级与专业冲突：**先判断问题里的年级是「自称当前年级」还是「意向时间」**——「我是大三」是自称，「大三想转去物理学院」「大二打算转」「明年转」是**意向时间点**，此时**严禁**报年级冲突或以画像纠正。只有自称当前年级/专业与画像不一致时才以画像为准并点出差异（如「你画像上是 2025 级（大二）」）并提示确认；严禁同时用两个年级分别给建议
 - 方案性质：方案名含「辅修」「英才班」「强基计划」「同主修」「贯通」时，必须说明该方案的性质（如「这是辅修方案，只含辅修课程」）以及**它不是完整主修方案**，不得按完整专业方案给出毕业学分等结论
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
 - 培养方案工具返回 source=personal 时可称“教务系统个人培养方案”；source=generic 时必须醒目说明“专业通用参考，不是个人培养方案”；source=unavailable 时不得猜测专业方案
@@ -1757,6 +1848,20 @@ def _current_weekday_text() -> str:
     from utils.semester_time import semester_weekday_text
 
     return semester_weekday_text()
+
+
+def _semester_context_text() -> str:
+    """当前学期 + 教学周 + 教学周→日期对照（见 utils.semester_time）。
+
+    只注入日期是不够的：模型知道"今天几号"，却不知道这是哪个学期、第几教学周，
+    于是"下个学期选什么课"会把**当前学期当成下学期**，政策里的"第16~18教学周"
+    也无法换算成日期。取不到时返回空串（模板变量仍在，不会 KeyError）。"""
+    try:
+        from utils.semester_time import semester_context_text
+
+        return semester_context_text()
+    except Exception:  # noqa: BLE001 — 学期配置缺失不应让回答失败
+        return ""
 
 
 # ── world_knowledge: 世界知识快速通道（2026-09-04 新增） ────────────
@@ -1831,6 +1936,7 @@ def compose(state: QaState) -> dict:
             "query": query,
             "current_date": _current_date_text(),
             "current_weekday": _current_weekday_text(),
+            "semester_context": _semester_context_text(),
             "intent": intent,
             "chat_history": _build_chat_history(state.get("chat_history") or []),
             "student_info": _build_student_info(state),
