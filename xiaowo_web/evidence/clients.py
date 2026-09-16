@@ -189,14 +189,23 @@ class BaiduSearchClient:
         model: str | None = None,
         limit: int = 8,
         timeout: float = 45.0,
-    ) -> str:
-        """百度智能搜索生成：搜索+生成一体（AI 搜索），直接返回答案文本。
+    ) -> tuple[str, list[dict]]:
+        """百度智能搜索生成：搜索+生成一体（AI 搜索）。
 
-        POST {base}/v2/ai_search/chat/completions（X-Appbuilder-Authorization 头）；
-        响应 choices[0].message.content 为生成答案；**不返回引用列表**（2026-09-07 实测，
-        keys 仅 choices/is_safe/request_id/safe_classification/usage）。
-        注意：该 endpoint 的 messages 仅支持 user 角色（system 会 400，实测），
-        提示词工程文本并入单条 user 消息。
+        POST {base}/v2/ai_search/chat/completions（X-Appbuilder-Authorization 头）。
+
+        **2026-09-16 更正**：响应**同时**返回生成答案与引用列表——
+        `choices[0].message.content` + `references[]`（含 url/title/content/date/website）。
+        旧注释称"不返回引用列表（keys 仅 choices/is_safe/…）"**已不成立**，据此丢弃
+        references 会丧失唯一的来源校验输入（也曾用假来源标签顶替）。
+
+        Returns:
+            (生成答案文本, references 列表) —— references 原样返回，由调用方分层。
+
+        注意：
+        - 该 endpoint 的 messages 仅支持 user 角色（system 会 400，实测），提示词会并入
+          单条 user 消息，因此**提示词会直接影响检索**（见 pipeline._smart_prompt）。
+        - `site:` 限定、`enable_deep_search` 实测均**无效果**（2026-09-16），不要启用。
         """
         user_content = query
         if system_prompt:
@@ -226,7 +235,8 @@ class BaiduSearchClient:
         text = str(content or "").strip()
         if not text:
             raise SidecarContractError("Baidu smart-search returned empty content")
-        return text
+        references = [r for r in (payload.get("references") or []) if isinstance(r, dict)]
+        return text, references
 
     async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
         response = await self._client.post(

@@ -114,6 +114,48 @@ def wechat_core_words(question: str) -> list[str]:
     return list(dict.fromkeys(words))
 
 
+# 校内事务检索词里的"权威线索词"：实测能显著提高官方域名命中率
+_CAMPUS_AUTHORITY_WORDS = ("教务处", "官方")
+
+
+def campus_search_keywords(question: str) -> list[str] | None:
+    """校内事务问句 → **智能搜索的检索关键词**（短关键词串；不含 site:）。
+
+    2026-09-16 实测（同一问题「最新的转专业政策是什么？」）：
+    - 检索词里写"**科大**"→ 百度匹配到科大讯飞／天津科技大学"AI科大"／华科大，
+      本校来源 **0/8**，答案答成天津科技大学；
+    - 换成全称"中国科学技术大学"并把关键词单独前置 → 本校来源 **2/8**，"天津"消失；
+    - 再加"教务处/官方"→ 命中 `www.teach.ustc.edu.cn`（教务处官网）。
+    - `site:ustc.edu.cn` 对该端点**无效**（实测 0/8），故本函数**不生成 site:**。
+
+    非校内事务（提取不到业务词）返回 None，调用方应退化为不限定学校的形态。
+    """
+    matched = _business_words(question)
+    # 显式点名学校（"中科大国庆放假安排"）也算校内事务——`_business_words` 只擅长
+    # 事务类词，抓不到"放假/校历"这类；若只看业务词会漏掉整类校内问题（2026-09-16 补）。
+    explicit_school = bool(WECHAT_TRIGGER_RE.search(question or ""))
+    if not matched and not explicit_school:
+        return None
+    words: list[str] = [_WECHAT_OFFICIAL_NAME]
+    year = temporal_anchor(question)
+    if year:
+        words.append(year)
+    words.extend(matched[:3])
+    words.extend(_CAMPUS_AUTHORITY_WORDS)
+    return words
+
+
+# 学校简称 → 全称。检索词里出现"科大"会被百度匹配到科大讯飞／天津科技大学"AI科大"／
+# 华科大（实测本校来源 0/8、答案答成天津科技大学）。`科大(?!讯飞)` 是唯一豁免：
+# "科大讯飞"是公司名，替换会造出"中国科学技术大学讯飞"这种错误实体。
+_SCHOOL_ABBREV_RE = re.compile(r"中科大|中国科大|科大(?!讯飞)")
+
+
+def normalize_school_terms(text: str) -> str:
+    """把问句里的学校简称规范成**全称**（检索副本用；不改用户看到的原文）。"""
+    return _SCHOOL_ABBREV_RE.sub(_WECHAT_OFFICIAL_NAME, str(text or ""))
+
+
 def official_site_query(question: str) -> str | None:
     """若问题涉及校内事务，返回 site 限定的官方站点查询。
 

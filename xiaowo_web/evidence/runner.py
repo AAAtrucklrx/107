@@ -183,6 +183,15 @@ class EvidenceAwareRunner:
             if warning not in local.limitations:
                 local.limitations.append(warning)
             return local
+        # B5｜冲突口径：本地另有**本校官方**材料涉及该问题时，联网结论若与之冲突以本地为准。
+        # （本地优先已保证"本地答得出来就不联网"，能走到这里说明本地未 confirmed，
+        #   但仍可能召回了官方文档——此时必须给出以本地为准的口径。）
+        if any((s.get("level") or "") == "official_primary"
+               for s in (getattr(local, "sources", None) or [])):
+            note = ("注意：本地知识库中另有本校官方材料涉及该问题；上文若与之冲突，"
+                    "请以本校官方文件与综合教务系统为准。")
+            if note not in web.limitations:
+                web.limitations.append(note)
         return web
 
     async def close(self) -> None:

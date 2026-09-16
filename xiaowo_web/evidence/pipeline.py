@@ -26,6 +26,8 @@ from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
 from xiaowo_web.evidence.rewrite import (
     WECHAT_TRIGGER_RE,
     QueryRewriter,
+    campus_search_keywords,
+    normalize_school_terms,
     official_site_query,
     temporal_anchor,
     wechat_query,
@@ -584,25 +586,56 @@ class EvidencePipeline:
 
     @staticmethod
     def _smart_prompt(question: str) -> str:
-        """百度智能搜索生成的提示词工程（2026-09-07）：锁死「只转述检索依据」。"""
+        """智能搜索的**单条 user 内容**：检索关键词在前、指令在后（2026-09-16 改）。
+
+        为什么必须这样切分：该端点不支持 system 角色（system 会 400），提示词会被并进
+        同一条 user 消息、**直接影响检索**。实测教训——提示词里写"你是**科大**校园助手"
+        → 检索词含"科大"→ 百度返回科大讯飞／天津科技大学"AI科大"／华科大，本校来源
+        0/8，答案答成天津科技大学。改成全称并把关键词单独前置后 → 本校来源 2/8、
+        "天津"消失；再加"教务处/官方"→ 命中教务处官网 `www.teach.ustc.edu.cn`。
+
+        另：`site:` 限定对该端点**无效**（实测 0/8），不得写进检索词。
+        """
         today = time.strftime("%Y年%m月%d日")
-        prompt = (
-            "你是科大校园助手「小蜗」的联网检索模块，请基于百度智能搜索检索到的信息"
-            "回答用户问题。\n"
+        keywords = campus_search_keywords(question)
+        parts: list[str] = []
+        if keywords:
+            parts.append("检索关键词：" + " ".join(keywords))
+            parts.append("---")
+        common = (
+            "你是「小蜗」，服务对象是**中国科学技术大学**的师生。\n"
             f"今天是 {today}。\n"
             "规则：\n"
             "1. 用简体中文回答，结论先行，使用简洁段落（不超过 3 段、300 字）。\n"
-            "2. **只**依据检索结果回答；答案中每个日期/数字都必须能在检索结果中找到依据。\n"
-            "3. 不要使用往年惯例、内部知识或历法推算来推断日期（例如不要把「中秋节」自行换算成某天）；"
-            "检索结果若包含权威来源（政府/官方机构/主流媒体）的明确表述，直接转述。\n"
-            "4. 若检索结果包含明确的日期/安排表述（即使来自非权威站点），请转述该说法并标注来源；"
+            "2. **只**依据检索结果回答；答案中每个日期/数字都必须能在检索结果中找到依据，"
+            "不得用往年惯例或历法推算补足。\n"
+            "3. 若检索结果包含明确的日期/安排表述，请转述该说法（即使来自非权威站点）；"
             "多个说法并存时一并列出并说明依据强弱；完全无明确表述时才回答「暂时无法确认」。\n"
-            "5. 若检索结果中能辨识来源站点，在回答末尾用一行「来源：站点名（网址）」列出不超过 3 条。\n"
-            "6. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
         )
-        if WECHAT_TRIGGER_RE.search(question):
-            prompt += "7. 问题涉及中国科学技术大学校园事务，请优先采用学校官方口径表述。\n"
-        return prompt
+        if keywords:
+            parts.append(
+                common
+                + "4. **只采用中国科学技术大学的官方信息**（来源域名含 `ustc.edu.cn`）。"
+                "百家号、知乎、CSDN、gk100、搜狐等第三方站点的说法**不得**用于陈述"
+                "政策条文、数字或时间，只能作为背景线索。\n"
+                "5. 若检索结果与中国科学技术大学无关（例如别的学校的同名事项），"
+                "**直接回答「未找到本校相关信息」**，严禁改用其他学校的信息作答。\n"
+                "6. 若没有任何中国科学技术大学的官方来源，明确说明「未找到本校官方信息，"
+                "以下仅为互联网传闻，请以教务系统为准」。\n"
+                "7. 能辨识来源站点时，在回答末尾用一行「来源：站点名（网址）」列出不超过 3 条。\n"
+                "8. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
+            )
+        else:
+            parts.append(
+                common
+                + "4. 若检索结果中能辨识来源站点，在回答末尾用一行「来源：站点名（网址）」"
+                "列出不超过 3 条。\n"
+                "5. 不要输出表格、代码块或深层列表；不要复述问题本身。\n"
+            )
+        # A2：问句本身若写了"中科大/科大"，也一并规范成全称——整条 user 消息都会
+        # 参与检索，问句里的简称同样会把百度带偏（2026-09-16）。
+        parts.append(f"用户问题：\n{normalize_school_terms(question)}")
+        return "\n".join(parts)
 
     async def _smart_answer(
         self,
@@ -615,10 +648,10 @@ class EvidencePipeline:
         self._stage(on_stage, "web_search", "正在使用百度智能搜索生成")
         timeout = 60.0  # 智能搜索生成（128k 模型）需 5~15s，独立于 8s 搜索超时
         try:
-            text = await asyncio.wait_for(
+            # 提示词已含检索关键词与全部指令 → 作为单条 user 内容传入
+            text, references = await asyncio.wait_for(
                 self.search.generate(
-                    question,
-                    system_prompt=self._smart_prompt(question),
+                    self._smart_prompt(question),
                     model=self.settings.baidu_smart_model,
                 ),
                 timeout=timeout,
@@ -626,28 +659,32 @@ class EvidencePipeline:
         except Exception as exc:  # noqa: BLE001 —— 生成失败即回退经典检索链（含 429）
             limitations_acc.append("百度智能搜索生成暂不可用，已回退通用检索。")
             return None
-        sources: list[dict] = [
-            {
-                "source_id": "s-ai-search",
-                "title": "百度智能搜索生成",
-                "display_url": None,
-                "institution": "百度智能云 · AI 搜索",
-                "domain": "qianfan.baidubce.com",
-                "published_at": None,
-                "fetched_at": None,
-                "level": "unverified",
-                "validity": "unverified",
-                "citation": 1,
-                "tags": ["ai_generated"],
-            }
-        ]
+        # B1/B2：接住**真实返回的 references** 并按域名分层。
+        # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
+        sources, official_n = self._smart_sources(references)
+        if not sources:
+            # references 为空时的兜底来源（仍标未核实，绝不伪装成官方）
+            sources.append({
+                "source_id": "s-ai-search", "title": "百度智能搜索生成",
+                "display_url": None, "institution": "百度智能云 · AI 搜索",
+                "domain": "qianfan.baidubce.com", "published_at": None,
+                "fetched_at": None, "level": "unverified", "validity": "unverified",
+                "citation": 1, "tags": ["ai_generated"],
+            })
         seen = {str(item.get("source_id") or "") for item in sources}
         for item in wechat_sources:
             if str(item.get("source_id") or "") not in seen:
                 sources.append(item)
         limitations_acc.append(
-            "来自百度智能搜索生成（AI 检索结果自动生成，未附独立引用），仅供快速参考。"
+            f"来自百度智能搜索生成（AI 检索）；本次命中本校官方来源 {official_n} 条，"
+            "未附独立引用，请以教务系统为准。"
         )
+        # B4：校内事务问句若一条官方来源都没有，必须显式示警
+        if official_n == 0 and campus_search_keywords(question):
+            limitations_acc.append(
+                "本次联网检索**未命中本校官方来源**，上述内容均来自第三方站点，"
+                "请勿据此办理事务；相关事务请以教务系统或本校官方文件为准。"
+            )
         return AnswerBundle(
             markdown=text,
             claims=[{
@@ -661,6 +698,43 @@ class EvidencePipeline:
             limitations=limitations_acc,
             terminal_reason="AI_GENERATED",
         )
+
+    @staticmethod
+    def _smart_sources(references: list[dict]) -> tuple[list[dict], int]:
+        """智能搜索的 `references` → 来源列表，并按域名分层（B1/B2）。
+
+        - `*.ustc.edu.cn` → `official_primary`（本校官方）
+        - 其余（百家号/知乎/CSDN/gk100/搜狐…）→ `unverified`（第三方）
+        - `references` 为空时返回空列表，由调用方兜底
+
+        Returns:
+            (sources, 官方来源条数)
+        """
+        sources: list[dict] = []
+        official_n = 0
+        for index, ref in enumerate(references[:8], start=1):
+            url = str(ref.get("url") or "").strip()
+            if not url:
+                continue
+            host = urlsplit(url).netloc.lower()
+            is_official = host == "ustc.edu.cn" or host.endswith(".ustc.edu.cn")
+            if is_official:
+                official_n += 1
+            sources.append({
+                "source_id": f"s-smart-{index}",
+                "title": str(ref.get("title") or host or "网页")[:120],
+                "display_url": url,
+                "institution": ("中国科学技术大学" if is_official
+                                else (str(ref.get("website") or "").strip() or host)),
+                "domain": host or None,
+                "published_at": str(ref.get("date") or "").strip() or None,
+                "fetched_at": None,
+                "level": "official_primary" if is_official else "unverified",
+                "validity": "active" if is_official else "unverified",
+                "citation": index,
+                "tags": ["ai_generated", "official" if is_official else "third_party"],
+            })
+        return sources, official_n
 
     @staticmethod
     def _public_source(record: _PageRecord, citation: int) -> dict:
