@@ -78,10 +78,20 @@ def _local_says_no_answer(bundle, question: str) -> bool:
     **永不联网**。实测「今天合肥天气怎么样」「国家助学贷款新政」都因此没走联网。
     这与既定规则「**本地没有**的时候才联网」不符——"本地没有"应指**没答出内容**。
 
-    仅当三条同时成立才判真，防止误伤：
+    判据分两层：
+
+    1. **结构信号（可靠）**：`bundle.retrieval["candidates_found"] is False`
+       → 知识库压根没召回任何材料 → 没答出来。
+       ⚠️ **只有这一条可靠**。`top_score` 实测**不能**用于判定——"答得出"与"答不出"
+       的分数几乎重叠（实测 答得出 0.50~0.60 / 答不出 0.44~0.58），设任何阈值都会误伤；
+       `candidates_found` 本身也几乎恒为 True（阈值偏松），所以它只能覆盖"完全没召回"。
+    2. **措辞（启发式，兜底）**：答案开头出现强否定表述。这是**打地鼠**——实测本地把
+       "没有查到"换成"没有**能**查到"就漏了。故它只是兜底，**不是正确性依赖**。
+
+    另有三条前置豁免，防止误伤：
     - 有工具结果（如"考试 0 场"是工具的真实结果，联网更查不到）→ 不算；
     - 问句在要用户个人数据（未登录时本地答"请登录"，联网同样拿不到）→ 不算；
-    - 否定式措辞出现在**答案开头**。
+    - claim 未全 confirmed（本来就不会被本地优先拦下）→ 不算。
     """
     if not (bundle.claims and all(c.get("status") == "confirmed" for c in bundle.claims)):
         return False
@@ -89,6 +99,9 @@ def _local_says_no_answer(bundle, question: str) -> bool:
         return False
     if _needs_personal_data(question, bundle.markdown or ""):
         return False
+    retrieval = getattr(bundle, "retrieval", None) or {}
+    if retrieval and retrieval.get("candidates_found") is False:
+        return True   # 结构信号：知识库没召回任何材料
     return bool(_NO_ANSWER_RE.search((bundle.markdown or "")[:_NO_ANSWER_PREFIX_CHARS]))
 
 

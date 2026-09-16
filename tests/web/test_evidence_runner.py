@@ -312,3 +312,21 @@ def test_real_answer_mentioning_gap_stays_local() -> None:
     bundle = asyncio.run(runner.run(_request("2026年国庆节放假安排")))
     assert pipeline.calls == 0, "真的答出来了就不该联网"
     assert bundle.terminal_reason == "local_answer"
+
+
+def test_structural_signal_no_recall_falls_through_to_web() -> None:
+    """结构信号：知识库**没召回任何材料** → 没答出来，落到联网（可靠判据）。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="已根据现有资料为你整理如下。",   # 措辞上**没有**否定词
+        claims=[_claim("factual", "confirmed")],
+        retrieval={"candidates_found": False, "candidate_count": 0, "top_score": 0.0},
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("科大有哪些校园服务？")))
+    assert pipeline.calls == 1, "知识库没召回就该联网"
+    assert bundle.terminal_reason == "web_evidence_confirmed"

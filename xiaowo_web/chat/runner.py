@@ -452,6 +452,19 @@ class LegacyQaRunner:
         tool_records = _tool_records(tool_results)
         candidate_records = _candidate_records(candidates, self._trust_store)
         candidate_supports = candidate_records if result.get("candidates_found") else []
+        # 结构信号（见 AnswerBundle.retrieval 的说明）：只把**可靠**的判据往外传，
+        # 相关度分数一并带上仅供排查，切勿用于判定。
+        retrieval_signal: dict[str, Any] = {
+            "candidates_found": bool(result.get("candidates_found")),
+            "candidate_count": len(candidates or []),
+            "tool_used": bool(tool_records),
+        }
+        try:
+            retrieval_signal["top_score"] = round(
+                max((float(c.get("score") or 0) for c in (candidates or [])), default=0.0), 4
+            )
+        except (TypeError, ValueError):
+            retrieval_signal["top_score"] = 0.0
         sources, evidence = _with_citations(tool_records + candidate_records)
         supporting_ids = {
             relation["source_id"]
@@ -516,6 +529,7 @@ class LegacyQaRunner:
             sources=sources,
             limitations=limitations,
             structured=list(result.get("structured") or []),
+            retrieval=retrieval_signal,
             terminal_reason="local_answer",
             thoughts=thoughts,
             truncated=bool(result.get("truncated")),

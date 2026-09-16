@@ -38,3 +38,9 @@ class AnswerBundle:
     # 阶段1 结构化数据卡：工具结果表格（成绩/课表/考试/选课），不经 LLM 重述
     structured: list[dict[str, Any]] = field(default_factory=list)
     truncated: bool = False
+    # 本地链路的结构信号（2026-09-16）：供上层判断"本地到底有没有答出来"。
+    # 字段：candidates_found / candidate_count / top_score / tool_used。
+    # ⚠️ 实测只有 `candidates_found is False`（知识库压根没召回）是**可靠**判据；
+    #    `top_score` **不能**用来区分"答得出/答不出"（实测两组分数几乎重叠：
+    #    答得出 0.50~0.60，答不出 0.44~0.58），不要据此设阈值。
+    retrieval: dict[str, Any] = field(default_factory=dict)
