@@ -29,6 +29,25 @@ def _likely_local_tool_answer(question: str) -> bool:
         return False
 
 
+# 需要「用户本人数据」的问句特征：第一人称领属 + 自己的课程/成绩。
+# **不能用 `_likely_local_tool_answer`**——它是给并行预判用的启发式，实测对
+# "今天的新闻" 也返回 True，会把本该联网的时效问题误拦（2026-09-16 踩到）。
+_PERSONAL_NEED_KW = ("我的", "我目前", "我选的", "我修的", "我已修", "帮我对比我", "对比下我")
+# 本地回答已经在要求登录 → 联网无从补足，它就是权威答案
+_LOGIN_NEED_MARKERS = ("未登录", "没有登录", "请登录", "登录后", "需要登录")
+
+
+def _needs_personal_data(question: str, local_markdown: str = "") -> bool:
+    """问句是否在要「用户本人的数据」（未登录时联网根本查不到）。
+
+    只在两种证据下判真：问句出现第一人称领属词，或本地回答已明确要求登录。
+    通用政策类时效问题（"最新的转专业政策"）**不**算——那类正需要联网核验。"""
+    q = question or ""
+    if any(k in q for k in _PERSONAL_NEED_KW):
+        return True
+    return any(m in (local_markdown or "") for m in _LOGIN_NEED_MARKERS)
+
+
 def _is_world_query(question: str) -> bool:
     """非校内通用常识判定（延迟导入 agents，避免启动期依赖图）。
     时效词（最新/今天/现状等）仍走联网证据链，避免世界知识给出过期信息。"""
@@ -104,6 +123,18 @@ class EvidenceAwareRunner:
         )
 
         local = await local_task
+        # 未登录 + 问句需要个人数据/校园工具 → 联网无从补足，本地的「请登录」才是权威答案。
+        # 否则 local_ready 判 False（"请登录"类 claim 天然是 insufficient）会把这份好答案
+        # 顶掉，换成网页泛泛科普（实测引到了极客公园/钛媒体）。2026-09-16。
+        if not request.principal.is_authenticated and _needs_personal_data(
+            request.question, local.markdown or ""
+        ):
+            if web_task is not None:
+                web_task.cancel()
+            note = "未登录：你的课程、成绩与培养方案需登录统一身份认证后读取。"
+            if note not in local.limitations:
+                local.limitations.append(note)
+            return local
         # 本地可答判定：全部 claim 均 confirmed 即可（无论 kind）。
         local_ready = bool(local.claims) and all(
             claim.get("status") == "confirmed" for claim in local.claims

@@ -414,3 +414,96 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
         "source": prog.get("source", "unavailable"),
         "fallback_from_personal": prog.get("fallback_from_personal", False),
     }
+
+
+
+def _resolve_major_loose(conn: sqlite3.Connection, major: str, grade: str = None) -> dict | None:
+    """专业定位的宽容版：先走共享解析，失败再按学院名**前缀**匹配简称。
+
+    用户口语常写简称（"计算机系""物理系"），共享解析器只认"计算机科学与技术"这类
+    完整词干，直接传简称会返回 None。这里补一层前缀匹配（≥2 字），
+    命中后仍交给共享解析器定位方案，保持口径一致。
+    """
+    prog = _resolve_program(conn, major, grade)
+    if prog:
+        return prog
+    stem = re.sub(r"(学院|学部|系|专业)$", "", str(major or "")).strip()
+    if len(stem) < 2:
+        return None
+    best: tuple[int, str] | None = None
+    for (col,) in conn.execute("SELECT DISTINCT college FROM programs WHERE college != ''"):
+        name = re.sub(r"^\d+", "", str(col or "")).strip()
+        cstem = re.sub(r"(学院|学部|系)$", "", name) or name
+        n = 0
+        for x, y in zip(stem, cstem):
+            if x != y:
+                break
+            n += 1
+        if n >= 2 and (best is None or n > best[0]):
+            best = (n, name)
+    if not best:
+        return None
+    return _resolve_program(conn, best[1], grade)
+
+@tool
+def compare_programs(major_a: str, major_b: str, grade: Optional[str] = None) -> dict:
+    """两个专业培养方案的**方案级**差异（不使用任何个人已修数据）。
+
+    未登录用户问「转去 X 学院，我差哪些课」时用它：把 B（目标）方案**要求**的课
+    拆成「A、B 都要求」（转专业时通常可认定）与「仅 B 要求」（需要补）。
+    回答**必须**说明这是两个通用方案的差异、不是用户的个人已修情况。
+
+    Args:
+        major_a: 用户当前专业/学院（如 "计算机系" 或 "计算机科学与技术"）
+        major_b: 目标专业/学院（如 "物理学院"）
+        grade: 年级（可选；留空取库内该专业最新年级）
+
+    Returns:
+        {"a","b","shared","only_b","shared_credits","only_b_credits",
+         "personal_data_used": False, "note"}
+    """
+    try:
+        conn = _cdb()
+    except sqlite3.Error as e:
+        return {"error": f"方案库不可用: {e}", "personal_data_used": False}
+    try:
+        pa = _resolve_major_loose(conn, major_a, grade)
+        pb = _resolve_major_loose(conn, major_b, grade)
+        if not pa or not pb:
+            return {"error": "未找到匹配的培养方案", "a": pa, "b": pb,
+                    "personal_data_used": False}
+        ca = _load_full_program_courses(conn, pa["id"])
+        cb = _load_full_program_courses(conn, pb["id"])
+    finally:
+        conn.close()
+
+    def _fp(c: dict) -> str:
+        """课程指纹：优先课程号；无号则用去修饰的课程名（同课程号不同班次不会误判）。"""
+        code = str(c.get("code") or "").strip()
+        if code:
+            return code.upper()
+        return re.sub(r"[\s()（）【】\[\]“”\"'·,，、\-—]+", "", str(c.get("name") or "")).upper()
+
+    req_a = {_fp(c) for c in ca if c.get("required") == "必修"}
+    req_b = [c for c in cb if c.get("required") == "必修"]
+    shared = [c for c in req_b if _fp(c) in req_a]
+    only_b = [c for c in req_b if _fp(c) not in req_a]
+
+    def _sum(cs: list[dict]) -> float:
+        return round(sum(c["credit"] or 0 for c in cs), 1)
+
+    return {
+        "a": {"name": pa["name"], "college": pa["college"], "grade": pa["grade"],
+              "required_total": len(req_a)},
+        "b": {"name": pb["name"], "college": pb["college"], "grade": pb["grade"],
+              "required_total": len(req_b)},
+        "shared": [_public_plan_course(c) for c in shared],
+        "only_b": [_public_plan_course(c) for c in only_b],
+        "shared_credits": _sum(shared),
+        "only_b_credits": _sum(only_b),
+        "personal_data_used": False,
+        "note": "这是两个专业**通用培养方案**的方案级差异："
+                "「shared」= 两方案都要求的课（转专业时通常可认定），"
+                "「only_b」= 仅目标方案要求、需要补的课。"
+                "已修课程未参与计算，登录统一身份认证后才能按你的实际已修算出真实缺口。",
+    }

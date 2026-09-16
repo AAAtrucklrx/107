@@ -296,6 +296,7 @@ _TOOL_ENTRIES = (
     "get_my_program(培养方案-我的方案, 参数 major/grade, 个人方案树自动注入)",
     "get_program_progress(培养进度, 参数 major/grade, 已修课程自动注入)",
     "plan_semester(学期规划, 参数 major/grade/year_index, 个人方案树自动注入)",
+    "compare_programs(方案级差异对比, 参数 major_a/major_b/grade, 不含个人已修数据)",
     "collect_preferences(收集选课偏好)",
     "recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"workload_preference\",\"course_scope\",\"preferred_teachers\",\"target_term\",\"gpa\"} 或同名顶层参数)",
     "compare_courses(课程对比, 参数 course_a/course_b)",
@@ -776,11 +777,34 @@ def _known_colleges() -> list[str]:
 
 
 def _detect_target_college(query: str, own_major: str) -> str | None:
-    """识别问句里「本人之外」的学院名；识别不到返回 None（交 LLM 决策）。"""
+    """识别问句里「本人之外」的学院名；识别不到返回 None（交 LLM 决策）。
+
+    ⚠️ own_major 为空（未登录）时**不得**用它做排除：`_same_major(name, "")`
+    对任何 name 都返回 True，会把所有学院都排掉、目标学院永远是 None
+    （2026-09-16 实测踩到，匿名跨专业路由因此完全不触发）。"""
     for name in _known_colleges():
-        if name in query and not _same_major(name, own_major):
+        if name in query and not (own_major and _same_major(name, own_major)):
             return name
     return None
+
+
+def _detect_claimed_college(query: str, exclude: str = "") -> str | None:
+    """识别问句里用户**自称**的学院（"我是计算机系的" → 计算机科学与技术学院）。
+
+    用户口语常写简称，上面 `_detect_target_college` 的精确子串匹配认不出"计算机系"，
+    故改用「学院名去掉后缀后的**前缀**出现在问句中」匹配（≥2 字），取最长者；
+    与 exclude 指向同一学院时跳过（那是目标学院，不是自称学院）。"""
+    best: tuple[int, str] | None = None
+    for name in _known_colleges():
+        if exclude and _same_major(name, exclude):
+            continue
+        stem = re.sub(r"(学院|学部|系)$", "", name) or name
+        for k in range(len(stem), 1, -1):
+            if stem[:k] in query:
+                if best is None or k > best[0]:
+                    best = (k, name)
+                break
+    return best[1] if best else None
 
 
 # 方案名含这些词时不是完整主修方案（辅修/英才班只列增设或辅修课程），正文必须说明性质
@@ -812,12 +836,33 @@ def _direct_tool_route(state: QaState) -> dict | None:
     # 2026-09-15 按意图细分：含「完成/进度/还差…」的问句走 get_program_progress
     # （act 阶段注入已修课程并算出差额），否则只走 get_my_program（课程清单）；
     # 另加「跨专业对比/转专业」分支——此时要查**目标专业**的方案，而非本人方案。
-    if state.get("student_id") and any(k in query for k in _PROGRAM_ROUTE_KW):
+    if any(k in query for k in _PROGRAM_ROUTE_KW):
         profile = state.get("user_profile") or {}
         own_major = str(profile.get("major") or "")
         own_grade = str(profile.get("grade") or "")
         target_college = (_detect_target_college(query, own_major)
                           if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
+        # 未登录：拿不到本人已修，但**用户自称了专业**时仍可给「两个通用方案的方案级
+        # 差异」（都要求的课 / 仅目标方案要求的课）——比只说"请登录"有信息量，且完全
+        # 不需要个人数据。认不出自称专业才退回 LLM（由它说明需登录）。2026-09-16
+        if not state.get("student_id"):
+            claimed = _detect_claimed_college(query, target_college or "")
+            if target_college and claimed:
+                anon_call = {"tool": "compare_programs",
+                             "args": {"major_a": claimed, "major_b": target_college}}
+                anon_results = state.get("tool_results") or []
+                if any(r.get("tool") == anon_call["tool"] and r.get("status") == "done"
+                       for r in anon_results):
+                    return {"decision": "compose", "tool_calls": [],
+                            "thought_log": (state.get("thought_log") or []) + [{
+                                "round": rounds + 1, "decision": "compose",
+                                "reason": "方案级差异工具已有结果，直接合成"}]}
+                return {"decision": "call_tool", "tool_calls": [anon_call],
+                        "thought_log": (state.get("thought_log") or []) + [{
+                            "round": rounds + 1, "decision": "call_tool",
+                            "reason": f"未登录方案级差异路由（compare_programs {claimed}"
+                                      f" → {target_college}）"}]}
+            return None
         plan_call = None
         if target_college:
             # 目标专业必须走进度工具：已修课程由 act 注入，才能算出「哪些能抵、还差哪些」
@@ -1809,11 +1854,12 @@ COMPOSE_PROMPT = """你是小蜗，科大校园智能助手。请根据用户问
 - 已修数据口径：`taken_courses_known=true` 时**已修课程确实已用于匹配**，**严禁**声称"我这边没有你的已修成绩/已修记录/已修明细"或"未核验你的已修记录"（这类话会让用户以为没算过）；可以如实说明的是"已修按课程名匹配、非教务官方结算"。确实没有的数据（如实时课表、先修是否满足、个人培养方案）才可以说明缺失
 - 培养进度（get_program_progress）：taken_courses_known=true 时可如实陈述已修门数/学分/完成度与缺口，并说明依据是本地成绩表按课程名匹配（不是教务官方结算）；taken_courses_known=false 时「已修 0」只是缺省占位，必须说明尚未取得已修记录，不得断言完成度为 0、不得称之为「未修缺口」
 - 跨专业对比/转专业：当工具返回的是**本人专业之外**的方案（例如问「转去物理学院」而返回「物理学专业培养方案」）时，这就是你需要的目标专业方案，必须如实使用——给出目标专业的必修总数、已对应上的课程（required_taken_list）、缺口清单（required_remaining）与完成度百分比；**严禁声称「没有该专业数据」「我并未查询到」**；同时说明方案是按专业+年级定位的通用方案、已修匹配按课程名完成，最终认定以教务系统为准；不得把目标专业的数字说成本人已修进度
+- 未登录的「方案级差异」（工具返回 compare_programs / personal_data_used=false）：这是「用户自称的专业」与「目标专业」两个**通用培养方案**的差异，**不含**其个人已修数据。**必须**分三段讲：①两方案**都要求**的课（shared，转专业时通常可认定）②**仅目标方案要求**的课（only_b，需要补）③学分对照（shared_credits / only_b_credits）。**严禁**说成"你已修了 N 门""你还差 N 门"（没有个人数据，算不出），也**严禁**声称"我无法对比"（工具已经给出对比）；并明确告诉用户登录后可得到按实际已修的缺口
 - 转专业窗口与资格（命中转专业/转院系意图时**必须**交代，缺一不可）：①**资格**——政策规定「二年级学生可以在全校范围内申请转院系或修读专业；三年级学生只能在其修读学院内申请转修读专业」，即**跨学院转专业必须在二年级完成申请**，升入三年级后就没有跨学院这条路，这是硬约束，必须明确告知；②**窗口**——申请时间为**春季学期第 14~16 教学周、秋季学期第 16~18 教学周**，**获准者于下一学期进入新专业学习**；③**落到日历**——用上方「教学周起始日」把适用窗口换算成具体日期（如第16周 12-14），并明确说明"最近一次申请在什么时间、获准后从哪个学期起在新专业学习"。若学生意向是"大三进入某学院"，要点明那正需要在**二年级期间**的窗口申请
 - **申请学期 ≠ 进入学期**：政策是「获准者于**下一学期**进入新专业学习」——秋季窗口（第16~18周）获准 → **次年春季学期**进入；春季窗口（第14~16周）获准 → **当年秋季学期**进入。**严禁**把进入学期写成申请窗口所在的那个学期，或写成别的学期（实测出现过"12月申请、次年秋进入"这种错答；同一会话里其它回答又是对的，口径必须一致）
 - 跨专业/转专业的选课建议必须**分段**：①「下个学期（学期口径见上）」= **只列方案 term 恰好等于该学期的课**；②「需要补修的低年级课」= 单独成段，并写明这是补齐先修链条的补课、不属于该学期方案。**严禁**把 1秋/1春 这类低年级补课混进"下学期建议"的同一张表或同一列表里，否则用户会误以为那是下学期该选的方案课
 - 人称与学期口径：问题说"下个学期/下学期/明年/这学期"时，**必须以上方「当前学期」为基准推算，严禁把当前学期当成下学期**（例如当前是 2秋，则"下个学期"= 2春）；给选课/规划建议时必须写明所依据的学期
-- 联系人身份：引用通讯录时必须区分身份——《第二课堂通讯录》里的院系联系人是**第二课堂（校团委）**对接人，负责二课学时/社团/志愿服务，**不是教学秘书**；转专业、学籍异动、培养方案认定、选课异常、缓考补考等**教务事务只能引用《教学秘书联系方式》里的本学院教学秘书**。严禁把团委/行政联系人称为「教学秘书」「教学办」「教务」，也不得把教务处工作人员当成学院教学秘书
+- 联系人身份：引用通讯录时必须区分身份——《第二课堂通讯录》里的院系联系人是**第二课堂（校团委）**对接人，负责二课学时/社团/志愿服务，**不是教学秘书**；**按事务归属选对象**：转专业/跨院系修读、目标专业的培养方案认定这类**涉及目标学院**的事务，要找**目标学院**的教学秘书（如转去物理学院就找物理学院教学秘书）；学籍异动、本专业培养方案认定、选课异常、缓考补考等**本院事务**找**本学院**教学秘书（均出自《教学秘书联系方式》）。严禁把团委/行政联系人称为「教学秘书」「教学办」「教务」，也不得把教务处工作人员当成学院教学秘书
 - 年级与专业冲突：**先判断问题里的年级是「自称当前年级」还是「意向时间」**——「我是大三」是自称，「大三想转去物理学院」「大二打算转」「明年转」是**意向时间点**，此时**严禁**报年级冲突或以画像纠正。只有自称当前年级/专业与画像不一致时才以画像为准并点出差异（如「你画像上是 2025 级（大二）」）并提示确认；严禁同时用两个年级分别给建议
 - 方案性质：方案名含「辅修」「英才班」「强基计划」「同主修」「贯通」时，必须说明该方案的性质（如「这是辅修方案，只含辅修课程」）以及**它不是完整主修方案**，不得按完整专业方案给出毕业学分等结论
 - recommend_courses 返回 limitations 时必须逐条简要说明，尤其不得把缺失的实时排课、已修记录或个人方案说成已经核验
@@ -2538,6 +2584,24 @@ def _build_tool_summary(results: list[dict]) -> str:
             for e in exams[:60]:
                 lines.append(f"- {e.get('course', '?')} {e.get('date', '')} {e.get('time', '')} "
                              f"{e.get('location', '')} {e.get('type', '')}")
+        elif tool == "compare_programs" and isinstance(res.get("shared"), list):
+            # 方案级差异：**不含任何个人数据**，必须整份给全（两个清单 + 学分），
+            # 否则模型会因摘要缺口而自称"工具未返回完整清单"并自行编表（2026-09-16 实测）
+            a, b = res.get("a") or {}, res.get("b") or {}
+            lines.append(
+                f"[{tool}] 方案级差异（不含个人已修数据）: "
+                f"A={a.get('name', '')}（{a.get('grade', '')}，必修 {a.get('required_total')} 门） vs "
+                f"B={b.get('name', '')}（{b.get('grade', '')}，必修 {b.get('required_total')} 门）")
+            lines.append(f"  ①两方案都要求（转专业时通常可认定）{len(res['shared'])} 门 / "
+                         f"{res.get('shared_credits')} 学分: "
+                         + "、".join(str(c.get("name", "")) for c in res["shared"][:60]))
+            only = res.get("only_b") or []
+            lines.append(f"  ②仅 B（目标方案）要求、需要补 {len(only)} 门 / "
+                         f"{res.get('only_b_credits')} 学分:")
+            for c in only[:80]:
+                lines.append(f"- {c.get('name', '?')} {c.get('credit', '')}学分 "
+                             f"{c.get('term', '')} [{c.get('category', '')}]")
+            lines.append(f"  ⚠️ {res.get('note', '')}")
         elif tool == "get_program_progress":
             # 缺省占位与「真的没修」必须区分；未取得已修记录时不得称「缺口」（与 advisor_tools 同口径）
             known = bool(res.get("taken_courses_known"))

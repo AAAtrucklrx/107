@@ -259,3 +259,63 @@ def test_major_query_prefers_prefix_match_over_longer_sibling(grade):
         conn.close()
     assert got is not None
     assert got["name"] == "物理学专业培养方案", f"{grade} 定位到 {got['name']!r}"
+
+
+# ── 未登录（匿名）的跨专业问句（2026-09-16） ────────────────────────
+# 匿名拿不到本人已修，原先只会被联网答案覆盖；现在改成：用户**自称**了专业时，
+# 用两个通用方案做「方案级差异」对比（不需要任何个人数据）；认不出自称专业才交 LLM。
+
+_ANON_Q = ("我是计算机系的，大三想转去物理学院，帮我对比下我目前选的课和物理学院的培养方案，"
+           "我下个学期应该选哪些课来拉近差距和过度呢？")
+
+
+def test_anonymous_with_claimed_major_uses_plan_level_diff(colleges):
+    """未登录但自称了专业 → 走方案级差异工具，而不是只说"请登录"。"""
+    assert _route(_ANON_Q, student_id="") == "compare_programs"
+
+
+def test_anonymous_without_claimed_major_falls_back_to_llm(colleges):
+    """未登录且认不出自称专业 → 交 LLM（由它说明需要登录），禁止硬猜专业。"""
+    assert _route("我想转去物理学院，对比一下物理学院的培养方案", student_id="") == "llm"
+
+
+def test_logged_in_route_unaffected_by_anonymous_branch(colleges):
+    """登录态仍走进度工具，匿名分支不得抢走。"""
+    q = "我是计算机系的，大三想转去物理学院，帮我对比下我目前选的课和物理学院的培养方案"
+    assert _route(q, student_id="PB25111691").startswith("get_program_progress")
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("我是计算机系的，想转去物理学院", "计算机科学与技术学院"),
+        ("我是数学系的，想转去物理学院", "数学科学学院"),
+        ("我想转专业去物理学院", None),
+    ],
+)
+def test_detect_claimed_college(query, expected):
+    from agents.qa.nodes import _detect_claimed_college
+
+    assert _detect_claimed_college(query, "物理学院") == expected
+
+
+@pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
+def test_compare_programs_is_plan_level_and_internally_consistent():
+    """方案级差异：不碰个人数据，且「都要求 + 仅目标要求」必须等于目标方案必修数。"""
+    from tools.program_tools import compare_programs
+
+    r = compare_programs.invoke({"major_a": "计算机系", "major_b": "物理学院"})
+    assert r["personal_data_used"] is False
+    assert len(r["shared"]) + len(r["only_b"]) == r["b"]["required_total"]
+    assert r["a"]["required_total"] > 0 and r["b"]["required_total"] > 0
+    assert all(c["code"] or c["name"] for c in r["shared"] + r["only_b"])
+
+
+@pytest.mark.skipif(not _DB.exists(), reason="需要 data/course_data.db（部署数据，不入 git）")
+def test_compare_programs_accepts_colloquial_short_names():
+    """口语简称（"计算机系"/"物理系"）必须能定位到方案，否则匿名路径形同虚设。"""
+    from tools.program_tools import compare_programs
+
+    r = compare_programs.invoke({"major_a": "计算机系", "major_b": "物理系"})
+    assert "error" not in r
+    assert r["b"]["name"].startswith("物理学")
