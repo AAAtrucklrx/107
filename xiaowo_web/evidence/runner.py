@@ -111,28 +111,15 @@ class EvidenceAwareRunner:
                 on_stage=request.emit_stage,
             )
 
-        # ── 2026-09-04 流水线并行（语义不变，只改执行顺序） ──
-        # 世界知识预判：通用常识问题不启动联网证据链（本地不 ready 时直接 LLM 常识回答）
+        # ── 本地优先（2026-09-16 改）──
+        # 原先「时效词强制联网」（并行预起 + 末尾 needs_web 再压一次）会把本地官方内容
+        # 顶掉：实测「最新的转专业政策是什么」本地 claim=confirmed、来源含
+        # official_primary，却被换成了百度智能搜索生成的一段**天津科技大学**内容。
+        # 现在：**本地答得出来就用本地**，联网只在本地区答不出时兜底。
+        # 「纯联网」不再是可选模式，只保留为显式后门（effective_mode == "web"，
+        # 由回答下方的「强制联网重答」触发）。
         world_query = _is_world_query(request.question)
-        # 时效词问题预判必然需要联网核验（除非本地是工具结果——权威数据不核对）
-        needs_web_now = (
-            bool(_CURRENT_TERMS.search(request.question))
-            and not world_query
-            and not _likely_local_tool_answer(request.question)
-        )
-
-        local_task = asyncio.create_task(self.local_runner.run(request))
-        web_task = (
-            asyncio.create_task(self.pipeline.answer(
-                request.question,
-                profile=request.principal.profile,
-                on_stage=request.emit_stage,
-                rounds_limit=1,  # auto 有本地兜底：单轮联网
-            ))
-            if needs_web_now else None
-        )
-
-        local = await local_task
+        local = await self.local_runner.run(request)
         # 未登录 + 问句需要个人数据/校园工具 → 联网无从补足，本地的「请登录」才是权威答案。
         # 否则 local_ready 判 False（"请登录"类 claim 天然是 insufficient）会把这份好答案
         # 顶掉，换成网页泛泛科普（实测引到了极客公园/钛媒体）。2026-09-16。
@@ -143,8 +130,6 @@ class EvidenceAwareRunner:
             and not _HARD_CURRENT_TERMS.search(request.question)
             and _needs_personal_data(request.question, local.markdown or "")
         ):
-            if web_task is not None:
-                web_task.cancel()
             note = "未登录：你的课程、成绩与培养方案需登录统一身份认证后读取。"
             if note not in local.limitations:
                 local.limitations.append(note)
@@ -159,39 +144,27 @@ class EvidenceAwareRunner:
             (source.get("level") or "") in {"tool_result", "tool_cache"}
             for source in local.sources
         )
-        # 本地即可答（且无可疑时效/无需证据）→ 取消未完成的联网任务并返回
-        if local_ready and not has_tool_source and not _CURRENT_TERMS.search(request.question):
-            if web_task is not None:
-                web_task.cancel()
-            return local
-        if local_ready and has_tool_source:
-            if web_task is not None:
-                web_task.cancel()
+        # 本地答得出来 → 直接用本地（时效问句也一样：本地官方内容优先于联网）。
+        # 时效问句用本地内容时如实标注，并指向「强制联网重答」这个出口。
+        if local_ready:
+            if _CURRENT_TERMS.search(request.question):
+                note = ("以上依据本地知识库，可能不是最新；如需最新可点回答下方的"
+                        "「强制联网重答」。")
+                if note not in local.limitations:
+                    local.limitations.append(note)
             return local
         # 世界知识通道（本地未命中 + 非校内通用常识 → LLM 直接答，跳过联网）
-        if not local_ready and world_query:
-            if web_task is not None:
-                web_task.cancel()
+        if world_query:
             return _world_answer(request.question)
 
-        if web_task is None:
-            # 无时效预判但本地仍不可答：串行联网兜底（保持原语义）
-            web = await self.pipeline.answer(
-                request.question,
-                profile=request.principal.profile,
-                on_stage=request.emit_stage,
-                rounds_limit=1,
-            )
-        else:
-            try:
-                web = await web_task
-            except asyncio.CancelledError:
-                return local
-
+        # 本地答不出 → 串行联网兜底（不再预起：预起会在本地可答时白烧一次联网调用）
+        web = await self.pipeline.answer(
+            request.question,
+            profile=request.principal.profile,
+            on_stage=request.emit_stage,
+            rounds_limit=1,
+        )
         current = bool(_CURRENT_TERMS.search(request.question))
-        needs_web = current and not has_tool_source
-        if local_ready and not needs_web:
-            return local
         # 联网证据不足时回退本地回答，不再丢弃已命中的本地结果。
         # 时效性问题且本地也未确认时，保留诚实拒答（不回退可能过期的数据）。
         fallback_eligible = (

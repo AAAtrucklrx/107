@@ -128,16 +128,62 @@ def test_local_miss_with_web_confirmed_uses_web_answer() -> None:
 
 
 def test_double_miss_falls_back_to_local_answer() -> None:
-    """回归：本地未命中 + 联网证据不足 → 回退本地回答而非拒答。"""
+    """本地未答出 + 联网证据不足 → 回退本地回答而非拒答（非时效问句）。"""
     pipeline = _StubPipeline()  # EVIDENCE_INSUFFICIENT
-    local_bundle = _local_bundle([_claim("factual", "confirmed")])
+    local_bundle = _local_bundle([_claim("factual", "insufficient")])
     runner, _ = _build(local_bundle, pipeline)
-    # 本地 confirmed 但问题带时效词 → 照常走联网 → 失败后回退本地
-    bundle = asyncio.run(runner.run(_request("现在的校历安排是什么？")))
+    bundle = asyncio.run(runner.run(_request("科大有哪些校园服务？")))
     assert pipeline.calls == 1
     assert bundle.terminal_reason == "local_answer"
     assert any("联网证据不足" in item for item in bundle.limitations)
-    assert "可能涉及时效" in bundle.limitations[-1]
+
+
+# ── 本地优先（2026-09-16 改）：本地答得出来就不联网，时效问句也一样 ──────
+
+def test_confirmed_local_answer_wins_even_for_current_questions() -> None:
+    """核心回归：本地已确认 → **不联网**，即便问句带时效词。
+
+    原行为是「时效词强制联网」，把本地官方内容顶掉：实测「最新的转专业政策是什么」
+    本地 claim=confirmed、来源含 official_primary，却被换成了百度智能搜索生成的一段
+    **天津科技大学**内容（检索把"科大"匹配到了别校的"AI科大"平台）。
+    """
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答（可能来自别的学校）。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    runner, _ = _build(_local_bundle([_claim("factual", "confirmed")]), pipeline)
+    bundle = asyncio.run(runner.run(_request("现在的校历安排是什么？")))
+    assert pipeline.calls == 0, "本地已确认就不该联网"
+    assert bundle.terminal_reason == "local_answer"
+    assert any("可能不是最新" in item for item in bundle.limitations), "须如实标注时效"
+
+
+def test_local_not_ready_falls_through_to_web() -> None:
+    """本地答不出 → 仍然联网兜底（本地优先不等于不联网）。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    runner, _ = _build(_local_bundle([_claim("factual", "insufficient")]), pipeline)
+    bundle = asyncio.run(runner.run(_request("科大有哪些校园服务？")))
+    assert pipeline.calls == 1
+    assert bundle.terminal_reason == "web_evidence_confirmed"
+
+
+def test_web_mode_is_explicit_force_web_backdoor() -> None:
+    """「纯联网」已不是可选模式，只作「强制联网重答」的显式后门：绕过本地优先。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    runner, local = _build(_local_bundle([_claim("factual", "confirmed")]), pipeline)
+    bundle = asyncio.run(runner.run(_request("现在的校历安排是什么？", mode="web")))
+    assert pipeline.calls == 1
+    assert local.calls == 0, "后门必须绕过本地"
+    assert bundle.terminal_reason == "web_evidence_confirmed"
 
 
 def test_current_question_double_miss_stays_honest() -> None:

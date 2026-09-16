@@ -318,30 +318,28 @@ function RetrievalControl({ value, disabled, webEnabled, onChange }: {
   webEnabled: boolean;
   onChange: (mode: RetrievalMode) => void;
 }) {
-  const options: Array<{ value: RetrievalMode; label: string; icon: typeof Search; disabled?: boolean }> = [
-    { value: "auto", label: "自动", icon: Search },
-    { value: "web", label: "联网", icon: Globe2, disabled: !webEnabled },
-    { value: "local", label: "本地", icon: Database },
-  ];
+  // 2026-09-16：三选一（自动/联网/本地）收敛成一个「联网搜索」开关。
+  // 「纯联网」不再是可选模式——联网只在**本地答不出来**时自动兜底；
+  // 需要强制联网核一遍时，用回答下方的「强制联网重答」。
+  const online = webEnabled && value !== "local";
   return (
-    <div className="retrieval-control" role="radiogroup" aria-label="资料范围">
-      {options.map((option) => {
-        const Icon = option.icon;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={value === option.value}
-            data-active={value === option.value}
-            disabled={disabled || option.disabled}
-            title={option.disabled ? "联网服务当前未启用" : undefined}
-            onClick={() => onChange(option.value)}
-          >
-            <Icon size={13} />{option.label}
-          </button>
-        );
-      })}
+    <div className="retrieval-control" role="group" aria-label="联网搜索">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={online}
+        data-active={online}
+        disabled={disabled || !webEnabled}
+        title={webEnabled
+          ? (online ? "已开启：本地答不出来时会联网补充" : "已关闭：只用本地资料")
+          : "联网服务当前未启用"}
+        onClick={() => {
+          if (!webEnabled) return;
+          onChange(online ? "local" : "auto");
+        }}
+      >
+        <Globe2 size={13} />联网搜索 · {online ? "开" : "关"}
+      </button>
     </div>
   );
 }
@@ -1056,7 +1054,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   <div className="message-actions">
                     <button className="message-action" type="button" onClick={() => void navigator.clipboard.writeText(message.content)} aria-label="复制回答"><Clipboard size={15} /></button>
                     <button className="message-action" type="button" disabled={busy} onClick={() => void submitQuestion(lastUserQuestion(index), message.mode ?? "auto")} aria-label="按原模式重试"><RotateCcw size={15} /></button>
-                    <button className="message-action message-action--web" type="button" disabled={busy || !config.features.web_search} onClick={() => void submitQuestion(lastUserQuestion(index), "web")} aria-label="联网重试"><Globe2 size={15} /></button>
+                    <button className="message-action message-action--web" type="button" disabled={busy || !config.features.web_search} title="忽略本地答案，强制联网重答一遍" onClick={() => void submitQuestion(lastUserQuestion(index), "web")} aria-label="强制联网重答"><Globe2 size={15} /></button>
                     <FeedbackDialog message={message} csrfToken={session.csrf_token} initialCategory="helpful" />
                     <FeedbackDialog message={message} csrfToken={session.csrf_token} initialCategory="incorrect" />
                   </div>
