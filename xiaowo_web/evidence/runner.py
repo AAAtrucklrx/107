@@ -58,6 +58,39 @@ def _needs_personal_data(question: str, local_markdown: str = "") -> bool:
     return any(m in (local_markdown or "") for m in _LOGIN_NEED_MARKERS)
 
 
+# 「本地其实没答出来」的否定式措辞。**只看答案开头**（通常首句就交代结论），
+# 避免误伤"答出来了但附带说明"的回答（如"国庆放假 3 天……校历未列出具体日期"）。
+# 只用**强信号**：都表示"压根没检索到东西"。刻意**不收**"暂无/暂时没有/无法确认/
+# 超出范围"这类弱措辞——它们常出现在**答出来了、只是某个细节没明确**的回答里
+# （实测「国庆放假3天……具体日期暂无」被误判成"没答出来"，丢掉了正确的本地校历）。
+_NO_ANSWER_RE = re.compile(
+    r"(?:未(?:能)?找到|没有找到|未检索到|没有检索到|未能查到|查不到|没有查到)"
+)
+_NO_ANSWER_PREFIX_CHARS = 150
+
+
+def _local_says_no_answer(bundle, question: str) -> bool:
+    """本地是否只是"答了个没有"（而非真的答出了内容）。
+
+    **为什么需要**（2026-09-16）：本地把"我这边暂时没有查到…"这类回答也标成
+    `claim.status=confirmed`，于是 `local_ready` 为真、被"本地优先"直接返回，
+    **永不联网**。实测「今天合肥天气怎么样」「国家助学贷款新政」都因此没走联网。
+    这与既定规则「**本地没有**的时候才联网」不符——"本地没有"应指**没答出内容**。
+
+    仅当三条同时成立才判真，防止误伤：
+    - 有工具结果（如"考试 0 场"是工具的真实结果，联网更查不到）→ 不算；
+    - 问句在要用户个人数据（未登录时本地答"请登录"，联网同样拿不到）→ 不算；
+    - 否定式措辞出现在**答案开头**。
+    """
+    if not (bundle.claims and all(c.get("status") == "confirmed" for c in bundle.claims)):
+        return False
+    if any((s.get("level") or "") in {"tool_result", "tool_cache"} for s in (bundle.sources or [])):
+        return False
+    if _needs_personal_data(question, bundle.markdown or ""):
+        return False
+    return bool(_NO_ANSWER_RE.search((bundle.markdown or "")[:_NO_ANSWER_PREFIX_CHARS]))
+
+
 def _is_world_query(question: str) -> bool:
     """非校内通用常识判定（延迟导入 agents，避免启动期依赖图）。
     时效词（最新/今天/现状等）仍走联网证据链，避免世界知识给出过期信息。"""
@@ -145,8 +178,9 @@ class EvidenceAwareRunner:
             for source in local.sources
         )
         # 本地答得出来 → 直接用本地（时效问句也一样：本地官方内容优先于联网）。
+        # 但"答了个没有"不算答出来：那种情况正是该联网的时候（2026-09-16 修）。
         # 时效问句用本地内容时如实标注，并指向「强制联网重答」这个出口。
-        if local_ready:
+        if local_ready and not _local_says_no_answer(local, request.question):
             if _CURRENT_TERMS.search(request.question):
                 note = ("以上依据本地知识库，可能不是最新；如需最新可点回答下方的"
                         "「强制联网重答」。")

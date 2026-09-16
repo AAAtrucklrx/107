@@ -256,3 +256,59 @@ def test_normalized_quote_matching_allows_punctuation_drift() -> None:
 
     assert claims and claims[0]["status"] == "confirmed"
     assert confirmed_lines and "图书馆周一至周日" in confirmed_lines[0]
+
+
+# ── 「本地答了个没有」不算答出来（2026-09-16）────────────────────────
+# 本地会把"我这边暂时没有查到…"也标成 claim=confirmed，若据此判定"本地答得出来"，
+# 该联网的问题就永远不联网。实测「今天合肥天气怎么样」「国家助学贷款新政」都中招。
+
+def test_local_no_answer_falls_through_to_web() -> None:
+    """本地只回了句"查不到" → 不算答出来，应落到联网兜底。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="小蜗这边暂时没有查到相关的实时数据，建议你用天气 App 查询。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("今天合肥天气怎么样？")))
+    assert pipeline.calls == 1, "本地没答出来就该联网"
+    assert bundle.terminal_reason == "web_evidence_confirmed"
+
+
+def test_local_no_answer_with_tool_source_stays_local() -> None:
+    """工具返回的"没有记录"是真实结果，联网更查不到 → 必须留在本地。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="暂时没有查到你的考试安排。",
+        claims=[_claim("factual", "confirmed")],
+        sources=[{"level": "tool_result", "title": "考试安排"}],
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("我的考试安排")))
+    assert pipeline.calls == 0
+    assert bundle.terminal_reason == "local_answer"
+
+
+def test_real_answer_mentioning_gap_stays_local() -> None:
+    """答出来了、只是附带说明数据不全 → 不得误判为"没答出来"。"""
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="根据校历，国庆节放假 3 天。校历未列出具体起止日期，以学校通知为准。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("2026年国庆节放假安排")))
+    assert pipeline.calls == 0, "真的答出来了就不该联网"
+    assert bundle.terminal_reason == "local_answer"
