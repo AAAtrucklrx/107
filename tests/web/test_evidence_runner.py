@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from xiaowo_web.auth.models import Principal
 from xiaowo_web.chat.models import AnswerBundle, QaRunRequest
 from xiaowo_web.evidence.pipeline import EvidencePipeline
+from xiaowo_web.evidence import runner as runner_mod
 from xiaowo_web.evidence.runner import EvidenceAwareRunner
 
 
@@ -330,3 +333,48 @@ def test_structural_signal_no_recall_falls_through_to_web() -> None:
     bundle = asyncio.run(runner.run(_request("科大有哪些校园服务？")))
     assert pipeline.calls == 1, "知识库没召回就该联网"
     assert bundle.terminal_reason == "web_evidence_confirmed"
+
+
+@pytest.fixture(autouse=True)
+def _stub_answer_judge(monkeypatch):
+    """把 LLM 判定器替换为"不可用"（返回 None）→ 单测走措辞启发式，保持离线与确定性。
+
+    判定器本身的行为由下面两个用例单独覆盖。
+    """
+    monkeypatch.setattr(runner_mod, "_llm_judge_answered", lambda q, a: None)
+
+
+def test_answer_judge_not_answered_falls_through_to_web(monkeypatch) -> None:
+    """判定器说"没回答" → 即使措辞里没有否定词，也要落到联网。"""
+    monkeypatch.setattr(runner_mod, "_llm_judge_answered", lambda q, a: False)
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="已为你把相关要点整理如下，供参考。",   # 无任何否定措辞
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("科大有哪些校园服务？")))
+    assert pipeline.calls == 1
+    assert bundle.terminal_reason == "web_evidence_confirmed"
+
+
+def test_answer_judge_answered_keeps_local_even_with_negative_wording(monkeypatch) -> None:
+    """判定器说"回答了" → 判定优先于措辞启发式（措辞只是兜底）。"""
+    monkeypatch.setattr(runner_mod, "_llm_judge_answered", lambda q, a: True)
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    local = AnswerBundle(
+        markdown="暂时没有查到具体日期，但放假 3 天已经确认。",
+        claims=[_claim("factual", "confirmed")],
+        terminal_reason="local_answer",
+    )
+    runner, _ = _build(local, pipeline)
+    bundle = asyncio.run(runner.run(_request("2026年国庆节放假安排")))
+    assert pipeline.calls == 0
+    assert bundle.terminal_reason == "local_answer"

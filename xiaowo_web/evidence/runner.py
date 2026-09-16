@@ -70,39 +70,81 @@ _NO_ANSWER_RE = re.compile(
 _NO_ANSWER_PREFIX_CHARS = 150
 
 
-def _local_says_no_answer(bundle, question: str) -> bool:
-    """本地是否只是"答了个没有"（而非真的答出了内容）。
+_ANSWER_JUDGE_PROMPT = """你是判定器：判断「助手回答」是否**真的回答了**「用户问题」。
 
-    **为什么需要**（2026-09-16）：本地把"我这边暂时没有查到…"这类回答也标成
-    `claim.status=confirmed`，于是 `local_ready` 为真、被"本地优先"直接返回，
-    **永不联网**。实测「今天合肥天气怎么样」「国家助学贷款新政」都因此没走联网。
-    这与既定规则「**本地没有**的时候才联网」不符——"本地没有"应指**没答出内容**。
+只输出两个字之一：能 / 不能
+- 回答给出了问题所问的具体信息（哪怕同时附带说明或补充）→ 能
+- 回答只是说没查到 / 暂无 / 无法确认 / 不在范围内，或答非所问，或要求用户先登录、
+  先补充信息 → 不能
 
-    判据分两层：
+用户问题：
+{q}
 
-    1. **结构信号（可靠）**：`bundle.retrieval["candidates_found"] is False`
-       → 知识库压根没召回任何材料 → 没答出来。
-       ⚠️ **只有这一条可靠**。`top_score` 实测**不能**用于判定——"答得出"与"答不出"
-       的分数几乎重叠（实测 答得出 0.50~0.60 / 答不出 0.44~0.58），设任何阈值都会误伤；
-       `candidates_found` 本身也几乎恒为 True（阈值偏松），所以它只能覆盖"完全没召回"。
-    2. **措辞（启发式，兜底）**：答案开头出现强否定表述。这是**打地鼠**——实测本地把
-       "没有查到"换成"没有**能**查到"就漏了。故它只是兜底，**不是正确性依赖**。
+助手回答：
+{a}
 
-    另有三条前置豁免，防止误伤：
-    - 有工具结果（如"考试 0 场"是工具的真实结果，联网更查不到）→ 不算；
-    - 问句在要用户个人数据（未登录时本地答"请登录"，联网同样拿不到）→ 不算；
-    - claim 未全 confirmed（本来就不会被本地优先拦下）→ 不算。
+只输出：能 或 不能"""
+
+
+def _llm_judge_answered(question: str, answer: str) -> bool | None:
+    """LLM 判定「这段回答是否真的回答了问题」。失败返回 None（由调用方退回启发式）。
+
+    为什么需要它（2026-09-16）：本地会把「我这边暂时没有查到…」也标成 `claim=confirmed`，
+    于是被"本地优先"直接返回、永不联网。而**别的判据都不够用**：
+
+    - **结构信号**：`top_score` 实测在「答得出/答不出」两组几乎重叠
+      （0.50~0.60 vs 0.44~0.58），设任何阈值都会误伤；`candidates_found` 恒为 True；
+    - **文本措辞**：打地鼠——本地把"没有查到"换成"没有能查到"就漏了。
+
+    故用一次极短调用做语义判定。判定器本身不可用时返回 None，绝不阻断主链路。
+    """
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+
+        from utils.llm_client import create_llm, llm_content
+
+        prompt = ChatPromptTemplate.from_messages([("human", _ANSWER_JUDGE_PROMPT)])
+        text = llm_content((prompt | create_llm(temperature=0.0)).invoke({
+            "q": (question or "")[:500],
+            "a": (answer or "")[:800],
+        })) or ""
+    except Exception as exc:  # noqa: BLE001 —— 判定器不可用不得影响回答
+        log.warning(f"回答判定器调用失败，退回措辞启发式: {exc}")
+        return None
+    verdict = str(text).strip()
+    if "不能" in verdict:
+        return False
+    if "能" in verdict:
+        return True
+    return None
+
+
+async def _local_answered(bundle, question: str) -> bool:
+    """本地是否**真的**答出了内容（结构信号 → LLM 判定 → 措辞兜底）。
+
+    判据优先级：
+    1. **前置豁免**（直接算"答出来了"，不浪费判定调用）：
+       - claim 未全 confirmed：本来就会被 `local_ready` 拦下，不参与；
+       - 有 `tool_result`/`tool_cache` 来源：「考试 0 场」是工具的真实结果，联网更查不到；
+       - 问句在要用户个人数据：未登录时本地答「请登录」，联网同样拿不到。
+    2. **结构信号（可靠但覆盖窄）**：`retrieval["candidates_found"] is False`
+       → 知识库压根没召回材料。
+    3. **LLM 判定（主判据）**：见 `_llm_judge_answered`。
+    4. **措辞（兜底）**：仅当判定器不可用时。
     """
     if not (bundle.claims and all(c.get("status") == "confirmed" for c in bundle.claims)):
-        return False
+        return True
     if any((s.get("level") or "") in {"tool_result", "tool_cache"} for s in (bundle.sources or [])):
-        return False
+        return True
     if _needs_personal_data(question, bundle.markdown or ""):
-        return False
+        return True
     retrieval = getattr(bundle, "retrieval", None) or {}
     if retrieval and retrieval.get("candidates_found") is False:
-        return True   # 结构信号：知识库没召回任何材料
-    return bool(_NO_ANSWER_RE.search((bundle.markdown or "")[:_NO_ANSWER_PREFIX_CHARS]))
+        return False
+    judged = await asyncio.to_thread(_llm_judge_answered, question, bundle.markdown or "")
+    if judged is not None:
+        return judged
+    return not bool(_NO_ANSWER_RE.search((bundle.markdown or "")[:_NO_ANSWER_PREFIX_CHARS]))
 
 
 def _is_world_query(question: str) -> bool:
@@ -194,7 +236,7 @@ class EvidenceAwareRunner:
         # 本地答得出来 → 直接用本地（时效问句也一样：本地官方内容优先于联网）。
         # 但"答了个没有"不算答出来：那种情况正是该联网的时候（2026-09-16 修）。
         # 时效问句用本地内容时如实标注，并指向「强制联网重答」这个出口。
-        if local_ready and not _local_says_no_answer(local, request.question):
+        if local_ready and await _local_answered(local, request.question):
             if _CURRENT_TERMS.search(request.question):
                 note = ("以上依据本地知识库，可能不是最新；如需最新可点回答下方的"
                         "「强制联网重答」。")
