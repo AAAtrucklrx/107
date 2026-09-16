@@ -836,33 +836,13 @@ def _direct_tool_route(state: QaState) -> dict | None:
     # 2026-09-15 按意图细分：含「完成/进度/还差…」的问句走 get_program_progress
     # （act 阶段注入已修课程并算出差额），否则只走 get_my_program（课程清单）；
     # 另加「跨专业对比/转专业」分支——此时要查**目标专业**的方案，而非本人方案。
-    if any(k in query for k in _PROGRAM_ROUTE_KW):
+    _program_q = any(k in query for k in _PROGRAM_ROUTE_KW)
+    if _program_q and state.get("student_id"):
         profile = state.get("user_profile") or {}
         own_major = str(profile.get("major") or "")
         own_grade = str(profile.get("grade") or "")
         target_college = (_detect_target_college(query, own_major)
                           if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
-        # 未登录：拿不到本人已修，但**用户自称了专业**时仍可给「两个通用方案的方案级
-        # 差异」（都要求的课 / 仅目标方案要求的课）——比只说"请登录"有信息量，且完全
-        # 不需要个人数据。认不出自称专业才退回 LLM（由它说明需登录）。2026-09-16
-        if not state.get("student_id"):
-            claimed = _detect_claimed_college(query, target_college or "")
-            if target_college and claimed:
-                anon_call = {"tool": "compare_programs",
-                             "args": {"major_a": claimed, "major_b": target_college}}
-                anon_results = state.get("tool_results") or []
-                if any(r.get("tool") == anon_call["tool"] and r.get("status") == "done"
-                       for r in anon_results):
-                    return {"decision": "compose", "tool_calls": [],
-                            "thought_log": (state.get("thought_log") or []) + [{
-                                "round": rounds + 1, "decision": "compose",
-                                "reason": "方案级差异工具已有结果，直接合成"}]}
-                return {"decision": "call_tool", "tool_calls": [anon_call],
-                        "thought_log": (state.get("thought_log") or []) + [{
-                            "round": rounds + 1, "decision": "call_tool",
-                            "reason": f"未登录方案级差异路由（compare_programs {claimed}"
-                                      f" → {target_college}）"}]}
-            return None
         plan_call = None
         if target_college:
             # 目标专业必须走进度工具：已修课程由 act 注入，才能算出「哪些能抵、还差哪些」
@@ -897,6 +877,30 @@ def _direct_tool_route(state: QaState) -> dict | None:
                 "round": rounds + 1, "decision": "call_tool", "reason": reason,
             }],
         }
+
+    # 未登录：拿不到本人已修，但**用户自称了专业**时仍可给「两个通用方案的方案级差异」
+    # （都要求的课 / 仅目标方案要求的课）——比只说"请登录"有信息量，且不需要个人数据。
+    # ⚠️ 认不出自称专业时**必须穿过**（不能 return None）：否则会提前退出 _direct_tool_route，
+    # 把后面的活动推荐/选课推荐等确定性路由全部跳过（2026-09-16 自查发现）。
+    if _program_q and not state.get("student_id"):
+        anon_target = (_detect_target_college(query, "")
+                       if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
+        claimed = _detect_claimed_college(query, anon_target or "")
+        if anon_target and claimed:
+            anon_call = {"tool": "compare_programs",
+                         "args": {"major_a": claimed, "major_b": anon_target}}
+            anon_results = state.get("tool_results") or []
+            if any(r.get("tool") == anon_call["tool"] and r.get("status") == "done"
+                   for r in anon_results):
+                return {"decision": "compose", "tool_calls": [],
+                        "thought_log": (state.get("thought_log") or []) + [{
+                            "round": rounds + 1, "decision": "compose",
+                            "reason": "方案级差异工具已有结果，直接合成"}]}
+            return {"decision": "call_tool", "tool_calls": [anon_call],
+                    "thought_log": (state.get("thought_log") or []) + [{
+                        "round": rounds + 1, "decision": "call_tool",
+                        "reason": f"未登录方案级差异路由（compare_programs {claimed}"
+                                  f" → {anon_target}）"}]}
     # 活动推荐确定性路由（2026-09-04）：优先于推荐课程（LLM 常误判"推荐活动"为课程推荐）
     activity_kw = _DIRECT_ROUTE_KEYWORDS["活动推荐"][1]
     if any(k in query for k in activity_kw):

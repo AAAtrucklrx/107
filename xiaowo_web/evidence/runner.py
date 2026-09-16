@@ -32,9 +32,19 @@ def _likely_local_tool_answer(question: str) -> bool:
 # 需要「用户本人数据」的问句特征：第一人称领属 + 自己的课程/成绩。
 # **不能用 `_likely_local_tool_answer`**——它是给并行预判用的启发式，实测对
 # "今天的新闻" 也返回 True，会把本该联网的时效问题误拦（2026-09-16 踩到）。
-_PERSONAL_NEED_KW = ("我的", "我目前", "我选的", "我修的", "我已修", "帮我对比我", "对比下我")
+_PERSONAL_NEED_KW = ("我的", "我目前", "我现在", "我选的", "我修的", "我已修",
+                     "帮我对比我", "对比下我")
 # 本地回答已经在要求登录 → 联网无从补足，它就是权威答案
 _LOGIN_NEED_MARKERS = ("未登录", "没有登录", "请登录", "登录后", "需要登录")
+
+
+# 匿名短路里用来判「这题在问**外部时效事实**」的更窄时效词。
+# **不含**"今天/现在/当前/目前"——它们在个人问句里常是"我现在的课表""我目前选的课"，
+# 与"外部信息是否过期"无关；直接复用 `_CURRENT_TERMS` 会把"我目前选的课…"判成时效问题，
+# 短路失效（2026-09-16 自查发现）。
+_HARD_CURRENT_TERMS = re.compile(
+    r"(?:最新|最近|近期|近日|截至|刚刚|本周|本月|今年|现行|还有效吗)"
+)
 
 
 def _needs_personal_data(question: str, local_markdown: str = "") -> bool:
@@ -126,8 +136,12 @@ class EvidenceAwareRunner:
         # 未登录 + 问句需要个人数据/校园工具 → 联网无从补足，本地的「请登录」才是权威答案。
         # 否则 local_ready 判 False（"请登录"类 claim 天然是 insufficient）会把这份好答案
         # 顶掉，换成网页泛泛科普（实测引到了极客公园/钛媒体）。2026-09-16。
-        if not request.principal.is_authenticated and _needs_personal_data(
-            request.question, local.markdown or ""
+        if (
+            not request.principal.is_authenticated
+            # 带时效词的问题（"最新/现行/目前…"）**照旧联网核验**：本地可能过期。
+            # 否则"最新政策对我的影响"这类问句会被误拦（2026-09-16 自查发现）。
+            and not _HARD_CURRENT_TERMS.search(request.question)
+            and _needs_personal_data(request.question, local.markdown or "")
         ):
             if web_task is not None:
                 web_task.cancel()
