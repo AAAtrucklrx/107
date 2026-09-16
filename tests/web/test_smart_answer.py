@@ -188,11 +188,23 @@ def test_classic_mode_skips_smart(tmp_path) -> None:
 
 def test_unreliable_source_lines_are_scrubbed() -> None:
     """正文里的「来源：垃圾站」必须确定性删除——提示词拦不住（实测两次都照写）。"""
-    from xiaowo_web.evidence.pipeline import _scrub_unreliable_source_lines
+    from xiaowo_web.evidence.pipeline import _scrub_unreliable_sources
 
     dirty = "暂时无法确认。\n\n来源：2265下载网、豆丁下载网"
-    assert "2265" not in _scrub_unreliable_source_lines(dirty)
-    assert "暂时无法确认" in _scrub_unreliable_source_lines(dirty)
+    assert "2265" not in _scrub_unreliable_sources(dirty)
+    assert "暂时无法确认" in _scrub_unreliable_sources(dirty)
 
     clean = "按教务处通知执行。\n\n来源：中国科学技术大学教务处（https://www.teach.ustc.edu.cn）"
-    assert _scrub_unreliable_source_lines(clean) == clean, "合格来源行不得被删"
+    assert _scrub_unreliable_sources(clean) == clean, "合格来源行不得被删"
+
+
+def test_inline_junk_mentions_are_redacted() -> None:
+    """内联提到的垃圾站名也要清理（只删整行会漏掉夹在句中的例子）。"""
+    from xiaowo_web.evidence.pipeline import _scrub_unreliable_sources
+
+    out = _scrub_unreliable_sources(
+        "所有页面均为应用下载信息，如“贵州十一选五开奖结果”等，未涉及奖项。"
+    )
+    assert "十一选五" not in out
+    assert "无关站点" in out
+    assert "未涉及奖项" in out

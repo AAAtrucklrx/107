@@ -119,6 +119,51 @@ def _llm_judge_answered(question: str, answer: str) -> bool | None:
     return None
 
 
+_NEEDS_WEB_JUDGE_PROMPT = """你是判定器：判断这个问题**是否需要联网获取最新信息**。
+
+只输出三个字之一：需要 / 不需要
+- 问「最新 / 有没有变化 / 现在怎么样 / 今年 / 近期 / 调整 / 新政 / 通知 / 安排 / 实时数据」→ 需要
+- 稳定的常识、概念解释、历史事实、校内固定制度（培养方案条文、校历规则、办事流程）→ 不需要
+
+问题：
+{q}
+
+只输出：需要 或 不需要"""
+
+
+def _llm_judge_needs_web(question: str) -> bool | None:
+    """LLM 判定「这题是否需要联网」。失败返回 None（= 保持既有行为）。
+
+    用途（2026-09-16）：`_is_world_query` 靠「不含时效词 + 意图∈{知识问答,活动推荐}」
+    判定"世界知识"，会把**隐含时效**的问题（"……有什么**新变化**"）也判进去，
+    于是走 LLM 记忆回答、**永不联网**（实测「国家助学贷款新政」就是这样）。
+    时效词表**永远列不全**——这已是同类模式的第二次翻车（先漏"没有能查到"、
+    再漏"新变化"），故把语义判断交给 LLM。
+
+    ⚠️ **单向**：调用方只在 `_is_world_query` 已判为真时才问它，且只允许把
+    「世界知识」改成「联网」，**不允许反向**；判定器失败（None）同样保持原判。
+    所以它**不会比现状更糟**。时效词表作为"世界知识"的前置门槛继续保留。
+    """
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+
+        from utils.llm_client import create_llm, llm_content
+
+        prompt = ChatPromptTemplate.from_messages([("human", _NEEDS_WEB_JUDGE_PROMPT)])
+        text = llm_content((prompt | create_llm(temperature=0.0)).invoke({
+            "q": (question or "")[:500],
+        })) or ""
+    except Exception as exc:  # noqa: BLE001 —— 判定器不可用不得影响回答
+        log.warning(f"联网需求判定器调用失败，保持既有世界知识判定: {exc}")
+        return None
+    verdict = str(text).strip()
+    if "不需要" in verdict:
+        return False
+    if "需要" in verdict:
+        return True
+    return None
+
+
 async def _local_answered(bundle, question: str) -> bool:
     """本地是否**真的**答出了内容（结构信号 → LLM 判定 → 措辞兜底）。
 
@@ -243,8 +288,10 @@ class EvidenceAwareRunner:
                 if note not in local.limitations:
                     local.limitations.append(note)
             return local
-        # 世界知识通道（本地未命中 + 非校内通用常识 → LLM 直接答，跳过联网）
-        if world_query:
+        # 世界知识通道（本地未命中 + 非校内通用常识 → LLM 直接答，跳过联网）。
+        # 单向双保险：只有 `_is_world_query` 已判为真才会问判定器，且它**只能**把
+        # "世界知识"改成"联网"；返回 False/None（不需要联网 / 判定器不可用）都保持原判。
+        if world_query and not await asyncio.to_thread(_llm_judge_needs_web, request.question):
             return _world_answer(request.question)
 
         # 本地答不出 → 串行联网兜底（不再预起：预起会在本地可答时白烧一次联网调用）

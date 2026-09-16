@@ -342,6 +342,7 @@ def _stub_answer_judge(monkeypatch):
     判定器本身的行为由下面两个用例单独覆盖。
     """
     monkeypatch.setattr(runner_mod, "_llm_judge_answered", lambda q, a: None)
+    monkeypatch.setattr(runner_mod, "_llm_judge_needs_web", lambda q: None)
 
 
 def test_answer_judge_not_answered_falls_through_to_web(monkeypatch) -> None:
@@ -378,3 +379,29 @@ def test_answer_judge_answered_keeps_local_even_with_negative_wording(monkeypatc
     bundle = asyncio.run(runner.run(_request("2026年国庆节放假安排")))
     assert pipeline.calls == 0
     assert bundle.terminal_reason == "local_answer"
+
+
+def test_world_judge_needs_web_goes_to_web(monkeypatch) -> None:
+    """判定器 B（单向）：已判为"世界知识"的问题，若判定"需要联网" → 改走联网。"""
+    monkeypatch.setattr(runner_mod, "_llm_judge_needs_web", lambda q: True)
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    runner, _ = _build(_local_bundle([_claim("factual", "insufficient")]), pipeline)
+    bundle = asyncio.run(runner.run(_request("2026年国家助学贷款政策有什么新变化？")))
+    assert pipeline.calls == 1
+    assert bundle.terminal_reason == "web_evidence_confirmed"
+
+
+def test_world_judge_says_no_web_keeps_world_answer(monkeypatch) -> None:
+    """判定器 B 说"不需要联网"（或不可用）→ 保持世界知识通道，行为不比现状更糟。"""
+    monkeypatch.setattr(runner_mod, "_llm_judge_needs_web", lambda q: False)
+    pipeline = _StubPipeline(AnswerBundle(
+        markdown="联网回答。", claims=[_claim("factual", "confirmed")],
+        terminal_reason="web_evidence_confirmed",
+    ))
+    # 用线上已验证会走"世界知识"的问句（"什么是量子力学"实测不在该分类内）
+    runner, _ = _build(_local_bundle([_claim("factual", "insufficient")]), pipeline)
+    bundle = asyncio.run(runner.run(_request("2026年国家助学贷款政策有什么新变化？")))
+    assert pipeline.calls == 0

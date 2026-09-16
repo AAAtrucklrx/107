@@ -104,16 +104,31 @@ _ANSWER_SOURCE_LINE_RE = re.compile(
 )
 
 
-def _scrub_unreliable_source_lines(text: str) -> str:
-    """删掉正文中列举**不合格站点**的「来源：」行。
+# 命中的**整段**站名（以标点为界）——用来把内联提到的不合格站点替换掉，而不是只删整行。
+_JUNK_CHUNK_RE = re.compile(
+    r"[^，。；、,.;\s「」“”\"'（）()\[\]]*?"
+    r"(?:2265|豆丁|道客|文库|下载网|下载站|开奖|彩票|十一选五|双色球|大乐透|走势图|"
+    r"棋牌|真人视讯|老虎机|成人|色情|エロ|docin|doc88|book118|caipiao)"
+    r"[^，。；、,.;\s「」“”\"'（）()\[\]]*"
+)
 
-    这些站点已被 `_smart_source_tier` 判为 blocked/third_party，出现在正文里会看着像
-    正式引用；只删"来源"行，不动正文其余表述（模型解释"检索结果与问题无关"是合理的）。
+
+def _scrub_unreliable_sources(text: str) -> str:
+    """清理正文里的**不合格站点痕迹**（确定性，不依赖提示词）。
+
+    为什么必须后处理：提示词拦不住——加了"不得引用无关站点"规则后，模型仍照写
+    "来源：2265下载网"，因为它是在**描述自己的检索输入**（2026-09-16 实测两次）。
+
+    两步：
+    1. 删掉列举不合格站点的「来源：」行；
+    2. 把**内联**提到的不合格站名整段替换为「无关站点」（如"如'贵州十一选五开奖结果'等"
+       → "如'无关站点'等"），避免只清整行而漏掉夹在句中的例子。
     """
     def _drop(match: "re.Match[str]") -> str:
         return "" if _UNRELIABLE_SOURCE_TEXT_RE.search(match.group(0)) else match.group(0)
 
-    cleaned = _ANSWER_SOURCE_LINE_RE.sub(_drop, text or "")
+    cleaned = _ANSWER_SOURCE_LINE_RE.sub(_drop, text or "")   # ① 先删整行
+    cleaned = _JUNK_CHUNK_RE.sub("无关站点", cleaned)          # ② 再清内联
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
@@ -725,7 +740,7 @@ class EvidencePipeline:
         except Exception as exc:  # noqa: BLE001 —— 生成失败即回退经典检索链（含 429）
             limitations_acc.append("百度智能搜索生成暂不可用，已回退通用检索。")
             return None
-        text = _scrub_unreliable_source_lines(text)
+        text = _scrub_unreliable_sources(text)
         # B1/B2：接住**真实返回的 references** 并按域名分层。
         # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
         sources, official_n, dropped = self._smart_sources(references)
