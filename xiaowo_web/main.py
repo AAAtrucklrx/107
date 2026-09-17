@@ -107,7 +107,19 @@ def create_app(
                 rewriter=QueryRewriter(),
                 wechat=WechatClient(),
             )
-            resolved_runner = EvidenceAwareRunner(local_runner, evidence_pipeline)
+            shadow_comparer = None
+            if resolved_settings.shadow_compare_enabled:
+                # Phase 2 影子对比（2026-09-17）：独立 sqlite，默认关
+                from xiaowo_web.evidence.shadow import ShadowComparer, ShadowStore
+
+                shadow_store = ShadowStore(
+                    resolved_settings.review_db_path.parent / "shadow_compare.db"
+                )
+                shadow_store.initialize()
+                shadow_comparer = ShadowComparer(shadow_store, search_client)
+            resolved_runner = EvidenceAwareRunner(
+                local_runner, evidence_pipeline, shadow=shadow_comparer
+            )
             if resolved_health_provider is None:
                 resolved_health_provider = SidecarHealthProvider(search_client, crawl_client)
         else:

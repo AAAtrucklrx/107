@@ -784,6 +784,7 @@ class EvidencePipeline:
                 sources=[],
                 ingestion_urls=ref_urls,
                 ingestion_snippets=ref_snippets,
+                web_references=references,
                 limitations=limitations_acc,
                 terminal_reason="EVIDENCE_INSUFFICIENT",
             )
@@ -838,6 +839,7 @@ class EvidencePipeline:
             sources=sources,
             ingestion_urls=ref_urls,
             ingestion_snippets=ref_snippets,
+            web_references=references,
             limitations=limitations_acc,
             terminal_reason="AI_GENERATED",
         )

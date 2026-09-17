@@ -121,6 +121,9 @@ class WebSettings:
     # 分级自动批准（2026-09-17）：**默认关**。开启前先用管理页日报对照几天，
     # 确认预审判定可靠（自动批准会直接进线上知识库）。
     review_auto_approve: bool = False
+    # Phase 2 影子对比（2026-09-17）：线上答案照常返回，后台并行跑"纯搜索+自研合成"
+    # **只记录不展示**，用于量化两方案的质量差。默认关；开启不影响回答。
+    shadow_compare_enabled: bool = False
     # Web evidence extraction is capability-gated: a configured model must
     # pass the runtime probe before the web gate opens.
     evidence_extractor_enabled: bool = True
@@ -236,6 +239,9 @@ class WebSettings:
                 review_pre_review=_env_bool(source, "XIAOWO_REVIEW_PRE_REVIEW", default=True),
                 review_auto_approve=_env_bool(
                     source, "XIAOWO_REVIEW_AUTO_APPROVE", default=False
+                ),
+                shadow_compare_enabled=_env_bool(
+                    source, "XIAOWO_SHADOW_COMPARE", default=False
                 ),
                 evidence_extractor_enabled=_env_bool(
                     source, "XIAOWO_EVIDENCE_EXTRACTOR_ENABLED", default=True,

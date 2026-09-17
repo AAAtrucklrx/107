@@ -54,3 +54,7 @@ class AnswerBundle:
     # 抓正文必然失败；而检索器返回的摘要本身就是**原文片段**，可兜底入审核库，
     # 但必须**显式标注"仅摘要"**（见 content_type/title），绝不冒充整页。
     ingestion_snippets: dict[str, dict[str, str]] = field(default_factory=dict)
+    # 智能搜索**原样返回的 references**（2026-09-17 影子对比用）。
+    # 只用于后台记录 A/B 对比指标（如"答案里有多少事实能在证据中找到"），
+    # **不进 SSE 响应**：`manager._complete` 是按字段显式拼载荷的，不会 dump 整个 bundle。
+    web_references: list[dict[str, Any]] = field(default_factory=list)

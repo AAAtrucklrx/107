@@ -6,9 +6,13 @@ import asyncio
 import inspect
 import re
 
+from utils.logger import get_logger
+
 from xiaowo_web.chat.models import AnswerBundle, QaRunRequest
 from xiaowo_web.chat.runner import QaRunner, chitchat_reply, is_chitchat_query
 from xiaowo_web.evidence.pipeline import EvidencePipeline
+
+log = get_logger(__name__)
 
 
 _CURRENT_TERMS = re.compile(r"(?:最新|最近|近期|近日|最近几天|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)")
@@ -228,9 +232,56 @@ def _world_answer(question: str) -> AnswerBundle:
 
 
 class EvidenceAwareRunner:
-    def __init__(self, local_runner: QaRunner, pipeline: EvidencePipeline) -> None:
+    def __init__(
+        self,
+        local_runner: QaRunner,
+        pipeline: EvidencePipeline,
+        shadow: object | None = None,
+    ) -> None:
         self.local_runner = local_runner
         self.pipeline = pipeline
+        # Phase 2 影子对比（2026-09-17）：None = 关闭。只记录，不参与回答。
+        self.shadow = shadow
+        self._shadow_tasks: set[asyncio.Task] = set()
+
+    def _shadow_compare(self, request: QaRunRequest, web: AnswerBundle, latency: float) -> None:
+        """把这一次线上答案（方案 A）交给影子对比后台记录方案 B。
+
+        只有"确实走了智能搜索生成、且有原始 references"才记——本地答案没有 A/B 可比性。
+        **任何异常都吞掉**：影子链路绝不能影响用户拿到的回答。
+        """
+        if self.shadow is None:
+            return
+        references = list(getattr(web, "web_references", None) or [])
+        if not references:
+            return
+        shadow = self.shadow
+
+        async def _guarded() -> None:
+            # 包一层：影子链路任何异常都在任务内部消化，不留"Task exception was never
+            # retrieved"的噪声，也绝不冒到回答路径上。
+            try:
+                await shadow.compare(
+                    question=request.question,
+                    a_answer=web.markdown or "",
+                    a_references=references,
+                    a_latency=latency,
+                    a_limitations=list(web.limitations or []),
+                    namespace="demo" if request.principal.auth_mode == "demo" else "production",
+                    source="production",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(f"影子对比任务失败: {type(exc).__name__}: {exc}")
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # 没有运行中的事件循环（同步上下文/单测）→ 直接不记。
+            # ⚠️ 必须**先**取循环再建协程，否则 create_task 失败会把协程丢成未 await。
+            return
+        task = loop.create_task(_guarded(), name=f"shadow-compare:{request.run_id}")
+        self._shadow_tasks.add(task)
+        task.add_done_callback(self._shadow_tasks.discard)
 
     async def run(self, request: QaRunRequest) -> AnswerBundle:
         # 闲聊入口快路径：短问候句不进入联网证据链（模板回应，毫秒级）
@@ -295,11 +346,15 @@ class EvidenceAwareRunner:
             return _world_answer(request.question)
 
         # 本地答不出 → 串行联网兜底（不再预起：预起会在本地可答时白烧一次联网调用）
+        _web_started = asyncio.get_running_loop().time()
         web = await self.pipeline.answer(
             request.question,
             profile=request.principal.profile,
             on_stage=request.emit_stage,
             rounds_limit=1,
+        )
+        self._shadow_compare(
+            request, web, asyncio.get_running_loop().time() - _web_started
         )
         current = bool(_CURRENT_TERMS.search(request.question))
         # 联网证据不足时回退本地回答，不再丢弃已命中的本地结果。
