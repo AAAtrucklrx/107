@@ -29,6 +29,7 @@ import type {
   ReviewChunk,
   ReviewItemDetail,
   ReviewItemSummary,
+  ReviewStats,
   ReviewStatus,
   SessionPayload,
   SourceTrustProposal,
@@ -45,6 +46,27 @@ const statusLabels: Record<ReviewStatus, string> = {
   expired: "已过期",
   revoked: "已撤回",
 };
+
+// 预审四项判定的中文口径（2026-09-17）。unknown = 判不出来，一律按"没判出"展示，
+// 且不具备自动批准资格（fail-closed）。
+const preReviewLabels = {
+  stability: { stable: "长期稳定", volatile: "时效易变", unknown: "未判出" },
+  sensitivity: { clean: "无敏感信息", sensitive: "含敏感信息", unknown: "未判出" },
+  duplication: { unique: "不重复", duplicate: "重复", conflict: "与已入库冲突", unknown: "未判出" },
+  relevance: { on_topic: "范围内", off_topic: "跑题", unknown: "未判出" },
+} as const;
+
+const preReviewFields = [
+  ["stability", "稳定性"],
+  ["sensitivity", "敏感性"],
+  ["duplication", "重复性"],
+  ["relevance", "相关性"],
+] as const;
+
+function preReviewLabel(field: keyof typeof preReviewLabels, value: string): string {
+  const table = preReviewLabels[field] as Record<string, string>;
+  return table[value] ?? value;
+}
 
 const categories: Array<{ value: ReviewCategory; label: string; maxTtl: number }> = [
   { value: "announcement", label: "公告", maxTtl: 7 },
@@ -147,6 +169,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   const [category, setCategory] = useState<ReviewCategory>("announcement");
   const [ttl, setTtl] = useState(7);
   const [proposal, setProposal] = useState<SourceTrustProposal | null>(null);
+  const [stats, setStats] = useState<ReviewStats | null>(null);
   const [feedback, setFeedback] = useState<Array<{
     id: number;
     answer_id: string;
@@ -166,6 +189,17 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
       setError(reason instanceof Error ? reason.message : "无法读取发布状态。" );
     } finally {
       setGenerationLoading(false);
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const payload = await apiGet<ReviewStats>("/admin/review-items/stats");
+      // 形状守卫：日报是"锦上添花"的观测信息，载荷契约不符时宁可不显示，
+      // 也绝不能让整个审核页崩掉（缺 dead 会在渲染时炸）。
+      setStats(payload && typeof payload === "object" && payload.dead ? payload : null);
+    } catch {
+      setStats(null);
     }
   }, []);
 
@@ -203,6 +237,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   useEffect(() => {
     void loadItems("");
     void loadGeneration();
+    void loadStats();
   }, []); // queue ownership changes remount this workspace
 
   useEffect(() => {
@@ -221,7 +256,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
       await apiMutation(path, session.csrf_token, { method: "POST", body: JSON.stringify(body) });
       const refreshed = await apiGet<ReviewItemDetail>(`/admin/review-items/${detail.item_id}`);
       setDetail(refreshed);
-      await Promise.all([loadItems(filter), loadGeneration()]);
+      await Promise.all([loadItems(filter), loadGeneration(), loadStats()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "审核操作失败。" );
     } finally {
@@ -390,6 +425,26 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
         </div>
       </Tabs.Content>
       <Tabs.Content className="review-view-content" value="queue">
+      {stats && (
+        <section className="review-daily" aria-label="审核链路日报">
+          <header className="review-daily__head">
+            <h2>进料日报</h2>
+            <span className="data-source">
+              近 {Math.round(stats.window_seconds / 3600)} 小时 · {stats.namespace === "demo" ? "演示空间" : "生产空间"}
+            </span>
+          </header>
+          <dl className="review-daily__metrics">
+            <div><dt>进料</dt><dd>{stats.ingested}</dd></div>
+            <div><dt>已预审</dt><dd>{stats.pre_reviewed}</dd></div>
+            <div data-tone="success"><dt>本可自动批准</dt><dd>{stats.auto_eligible}</dd></div>
+            <div data-tone="success"><dt>自动批准</dt><dd>{stats.auto_approved}</dd></div>
+            <div data-tone={stats.off_topic ? "warning" : undefined}><dt>跑题拦下</dt><dd>{stats.off_topic}</dd></div>
+            <div data-tone={stats.dead?.SENSITIVE_CONTENT ? "danger" : undefined}><dt>敏感拦下</dt><dd>{stats.dead?.SENSITIVE_CONTENT ?? 0}</dd></div>
+            <div data-tone={stats.draft_backlog ? "warning" : undefined}><dt>待审积压</dt><dd>{stats.draft_backlog}</dd></div>
+            <div><dt>线上文档</dt><dd>{stats.active_documents}</dd></div>
+          </dl>
+        </section>
+      )}
       <div className="review-layout" data-detail={Boolean(detail)}>
         <ReviewQueue
           items={items}
@@ -405,7 +460,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
             <>
               <button className="review-back" type="button" onClick={() => setDetail(null)}><ArrowLeft size={16} />返回队列</button>
               <div className="review-detail__heading">
-                <div><span className={`review-status review-status--${detail.status}`}>{statusLabels[detail.status]}</span><h2>{detail.title}</h2><a href={detail.final_url} target="_blank" rel="noreferrer">{detail.normalized_url}</a></div>
+                <div><span className={`review-status review-status--${detail.status}`}>{statusLabels[detail.status]}</span>{detail.auto_approved && <span className="review-status review-status--auto">系统自动批准</span>}<h2>{detail.title}</h2><a href={detail.final_url} target="_blank" rel="noreferrer">{detail.normalized_url}</a></div>
                 <div className="review-detail__commands">
                   <button className="secondary-button" disabled={busy} onClick={() => void queueRefetch()}><RefreshCw className={busy ? "is-spinning" : ""} size={14} />重新抓取</button>
                   {detail.status === "draft" && <button className="command-button" disabled={busy} onClick={() => void mutate(`/admin/review-items/${detail.item_id}/review`)}>开始审核</button>}
@@ -419,6 +474,20 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                 <div><dt>当前版本</dt><dd>v{detail.current_version}</dd></div>
                 <div><dt>范围</dt><dd>{detail.scope === "campus" ? "科大校园" : "通识"}</dd></div>
               </dl>
+              {detail.pre_review && (
+                <div className="review-pre-review" data-eligible={detail.pre_review.auto_approve_eligible}>
+                  <div className="review-pre-review__judgements">
+                    {preReviewFields.map(([field, label]) => (
+                      <span key={field}>{label} <b>{preReviewLabel(field, detail.pre_review?.[field] ?? "unknown")}</b></span>
+                    ))}
+                  </div>
+                  {detail.pre_review.reason && <p className="review-pre-review__reason">{detail.pre_review.reason}</p>}
+                  {detail.pre_review.fallback_reason && (
+                    <p className="review-pre-review__reason">预审未完成（{detail.pre_review.fallback_reason}），该条**不具备**自动批准资格。</p>
+                  )}
+                  {detail.pre_review.auto_approve_eligible && <span className="review-pre-review__flag">满足自动批准条件</span>}
+                </div>
+              )}
               <Tabs.Root className="review-tabs" defaultValue="cleaned">
                 <Tabs.List className="tabs-list tabs-list--compact">
                   <Tabs.Trigger value="original"><FileText size={14} />原文</Tabs.Trigger>

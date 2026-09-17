@@ -47,6 +47,34 @@ const detail: ReviewItemDetail = {
     expires_at: null,
   }],
   diff: "-公开资料原文。\n+模型清洗后的公开资料。",
+  auto_approved: false,
+  pre_review: {
+    stability: "stable",
+    sensitivity: "clean",
+    duplication: "unique",
+    relevance: "on_topic",
+    reason: "校级公告属长期稳定的校园信息，无个人敏感信息。",
+    model: "test-model",
+    fallback_reason: null,
+    level: "official_primary",
+    category: "announcement",
+    auto_approve_eligible: false,
+  },
+};
+
+const stats = {
+  namespace: "demo" as const,
+  window_seconds: 86400,
+  items: { draft: 3, active: 29 },
+  draft_backlog: 42,
+  active_items: 29,
+  ingested: 19,
+  dead: { SENSITIVE_CONTENT: 1, OFF_TOPIC: 7 },
+  off_topic: 7,
+  pre_reviewed: 12,
+  auto_eligible: 4,
+  auto_approved: 0,
+  active_documents: 31,
 };
 
 const session: SessionPayload = {
@@ -80,6 +108,8 @@ beforeEach(() => {
       can_rollback: true,
       publish_busy: false,
     });
+    // ⚠️ 必须排在通用 `/admin/review-items` 分支**之前**（它用 startsWith 兜底）
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
     if (path.startsWith("/admin/review-items/item-demo")) return Promise.resolve(detail);
     if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
     if (path.startsWith("/admin/feedback")) return Promise.resolve({ items: [] });
@@ -92,6 +122,24 @@ beforeEach(() => {
     return Promise.resolve({});
   });
 });
+
+test("daily card and pre-review verdict render with real numbers", async () => {
+  const user = userEvent.setup();
+  render(<ReviewWorkspace session={session} />);
+
+  // 进料日报：数字来自 /admin/review-items/stats
+  expect(await screen.findByRole("heading", { name: "进料日报" })).toBeTruthy();
+  expect(screen.getByText("跑题拦下").parentElement?.textContent).toContain("7");
+  expect(screen.getByText("线上文档").parentElement?.textContent).toContain("31");
+  expect(screen.getByText("待审积压").parentElement?.textContent).toContain("42");
+
+  // 预审四项判定 + 理由要展示给审批人
+  await user.click(await screen.findByRole("button", { name: /科大新栏目公开资料/ }));
+  await waitFor(() => expect(screen.getByText(/校级公告属长期稳定的校园信息/)).toBeTruthy());
+  expect(screen.getByText("相关性").parentElement?.textContent).toContain("范围内");
+  expect(screen.getByText("敏感性").parentElement?.textContent).toContain("无敏感信息");
+});
+
 
 test("review item can queue a refetch and submit a source rule proposal", async () => {
   const user = userEvent.setup();

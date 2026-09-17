@@ -817,6 +817,23 @@ class ReviewStore:
                 """,
                 (item_id,),
             ).fetchall()
+            pre_review = conn.execute(
+                """
+                SELECT detail_json FROM review_audit
+                WHERE namespace = ? AND object_type = 'review_item' AND object_id = ?
+                  AND action = 'pre_review'
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (namespace, item_id),
+            ).fetchone()
+            auto_approved = conn.execute(
+                """
+                SELECT 1 FROM review_audit
+                WHERE namespace = ? AND object_type = 'review_item' AND object_id = ?
+                  AND action = 'auto_approve' LIMIT 1
+                """,
+                (namespace, item_id),
+            ).fetchone()
         payload = dict(item)
         try:
             payload["raw_snapshot"] = self.read_snapshot(payload["content_path"])
@@ -828,6 +845,15 @@ class ReviewStore:
             payload["snapshot_available"] = False
         payload["versions"] = [dict(row) for row in versions]
         payload["chunks"] = [dict(row) for row in chunks]
+        # 进料预审结果（2026-09-17）：四项判定 + 理由，供管理页展示
+        payload["pre_review"] = None
+        detail_json = "" if pre_review is None else str(pre_review["detail_json"] or "")
+        if detail_json.strip():
+            try:
+                payload["pre_review"] = json.loads(detail_json)
+            except (TypeError, ValueError):
+                payload["pre_review"] = None
+        payload["auto_approved"] = auto_approved is not None
         payload.pop("content_path", None)
         return payload
 
@@ -990,6 +1016,33 @@ class ReviewStore:
             )
             conn.commit()
 
+    def record_pre_review_rejection(
+        self,
+        namespace: str,
+        *,
+        job_id: str,
+        detail: dict[str, Any],
+        request_id: str,
+        now: float | None = None,
+    ) -> None:
+        """被预审**拦下**的候选没有 review item（跑题资料根本不建 draft），
+        但仍要把"为什么拦下"留在审计里：挂到 ingestion job 上，保证可追溯。
+        """
+        self._validate_namespace(namespace)
+        with self._write_lock, self._connect() as conn:
+            self._audit(
+                conn,
+                namespace=namespace,
+                actor_key="system:pre-review",
+                action="pre_review_rejected",
+                object_type="ingestion_job",
+                object_id=job_id,
+                request_id=request_id,
+                now=time.time() if now is None else now,
+                detail=detail,
+            )
+            conn.commit()
+
     def auto_approve_item(
         self,
         namespace: str,
@@ -1100,7 +1153,7 @@ class ReviewStore:
             for row in conn.execute(
                 "SELECT action, detail_json FROM review_audit "
                 "WHERE namespace = ? AND created_at >= ? "
-                "AND action IN ('pre_review', 'auto_approve')",
+                "AND action IN ('pre_review', 'pre_review_rejected', 'auto_approve')",
                 (namespace, since),
             ):
                 if str(row["action"]) == "auto_approve":

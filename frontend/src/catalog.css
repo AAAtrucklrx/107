@@ -5386,3 +5386,114 @@ body::after {
   display: flex;
   justify-content: flex-end;
 }
+
+/* 进料预审与日报（2026-09-17） */
+
+.review-daily {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  padding: 11px 13px;
+}
+
+.review-daily__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-daily__head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.review-daily__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 7px;
+  margin: 9px 0 0;
+}
+
+.review-daily__metrics > div {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-muted);
+  padding: 6px 8px;
+}
+
+.review-daily__metrics dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.review-daily__metrics dd {
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.review-daily__metrics > div[data-tone="success"] { border-color: var(--success); }
+.review-daily__metrics > div[data-tone="success"] dd { color: var(--success); }
+.review-daily__metrics > div[data-tone="warning"] { border-color: var(--warning); }
+.review-daily__metrics > div[data-tone="warning"] dd { color: var(--warning); }
+.review-daily__metrics > div[data-tone="danger"] { border-color: var(--danger); }
+.review-daily__metrics > div[data-tone="danger"] dd { color: var(--danger); }
+
+.review-pre-review {
+  margin: 0 0 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-muted);
+  padding: 8px 10px;
+}
+
+.review-pre-review[data-eligible="true"] {
+  border-left-color: var(--success);
+}
+
+.review-pre-review__judgements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.review-pre-review__judgements span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.review-pre-review__judgements b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.review-pre-review__reason {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.review-pre-review__flag {
+  display: inline-block;
+  margin-top: 6px;
+  border: 1px solid var(--success);
+  border-radius: 3px;
+  background: var(--success-soft);
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--success);
+}
+
+.review-status--auto {
+  border: 1px solid var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}

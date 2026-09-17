@@ -135,8 +135,15 @@ def test_off_topic_candidate_never_enters_queue(tmp_path) -> None:
     assert worker.run_once() == "dead"
     assert _items(store) == [], "跑题资料不该建 draft"
     assert _jobs(settings.review_db_path) == [("dead", "OFF_TOPIC")]
-    # 审计里不该出现预审记录（根本没走到建 draft 那一步）
+    # 没有建 draft → 没有 review_item 级的 pre_review 审计
     assert _details(settings.review_db_path, "pre_review") == []
+    # 但"为什么拦下"必须留在审计里（挂在 ingestion job 上，可追溯）
+    rejected = _details(settings.review_db_path, "pre_review_rejected")
+    assert len(rejected) == 1
+    assert rejected[0]["relevance"] == "off_topic"
+    assert rejected[0]["reason"] == "与校园知识无关"
+    # 日报要把被拦下的也算进"已预审"
+    assert store.review_stats("demo")["pre_reviewed"] == 1
 
 
 def test_judgement_failure_still_ingests_but_never_auto_approves(tmp_path) -> None:

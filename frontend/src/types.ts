@@ -447,6 +447,19 @@ export interface ReviewChunk {
   expires_at: number | null;
 }
 
+export interface ReviewPreReview {
+  stability: string;
+  sensitivity: string;
+  duplication: string;
+  relevance: string;
+  reason: string;
+  model: string;
+  fallback_reason: string | null;
+  level: string;
+  category: ReviewCategory;
+  auto_approve_eligible: boolean;
+}
+
 export interface ReviewItemDetail extends ReviewItemSummary {
   final_url: string;
   content_type: string;
@@ -455,6 +468,25 @@ export interface ReviewItemDetail extends ReviewItemSummary {
   versions: ReviewVersion[];
   chunks: ReviewChunk[];
   diff: string;
+  /** 进料预审四项判定（2026-09-17）；老条目没有这条审计时为 null。 */
+  pre_review?: ReviewPreReview | null;
+  /** 该条目是否由 system:auto 自动批准（与人工批准的区分标记）。 */
+  auto_approved?: boolean;
+}
+
+export interface ReviewStats {
+  namespace: "demo" | "production";
+  window_seconds: number;
+  items: Partial<Record<ReviewStatus, number>>;
+  draft_backlog: number;
+  active_items: number;
+  ingested: number;
+  dead: Record<string, number>;
+  off_topic: number;
+  pre_reviewed: number;
+  auto_eligible: number;
+  auto_approved: number;
+  active_documents: number;
 }
 
 export interface GenerationState {

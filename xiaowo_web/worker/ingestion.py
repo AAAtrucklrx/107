@@ -241,6 +241,16 @@ class IngestionWorker:
         except Exception:  # noqa: BLE001
             return None
 
+    def _record_rejection(self, job: IngestionJob, verdict, *, now=None) -> None:
+        """跑题资料没有 item_id，仍把预审理由落到 job 上（否则只剩一个 OFF_TOPIC 码）。"""
+        self.store.record_pre_review_rejection(
+            job.namespace,
+            job_id=job.job_id,
+            detail=verdict.as_detail(level=str(job.payload.get("level") or ""), category=""),
+            request_id=f"pre-review:{job.job_id}",
+            now=now,
+        )
+
     def _record_verdict(
         self, job: IngestionJob, item_id: str, draft: CleanDraft, verdict, *, now=None
     ) -> None:
@@ -291,6 +301,7 @@ class IngestionWorker:
                 # 相关性闸门（2026-09-17）：实测智能搜索对"助学贷款"整批返回 RAG/知网/
                 # 论文这类完全无关的内容。这类资料**根本不进审核队列**——否则人工要白筛
                 # 一遍，而且摘要兜底会把它们灌进来。失败码留在 job 上供日报统计。
+                self._record_rejection(job, verdict, now=now)
                 self.store.fail_job(job, "OFF_TOPIC", permanent=True, now=now)
                 return "dead"
             draft = self.cleaner.clean(snapshot, job.payload)
