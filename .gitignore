@@ -66,7 +66,6 @@ docs/qa/
 docs/tmp_*
 docs/e2e_v5_link_*.png
 docs/选课测试_轮*_Q*.png
-\n
 # 环境与数据产物（2026-09-17 补）。这些路径此前是"未跟踪但不被忽略"的状态 ——
 # 对目录用 `git add -A` 会把它们一起提交（2026-09-17 两次同类事故：scripts/tmp_*.py、
 # docs 截图产物）。规则：**提交前只看 `git status`，不要对目录用 -A。**
