@@ -468,6 +468,11 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
               <div>
                 <span className={`review-status review-status--fb-${item.status}`}>{feedbackStatusLabels[item.status] ?? item.status}</span>
                 <span className="review-status review-status--in_review">{feedbackCategoryLabels[item.category] ?? item.category}</span>
+                {item.namespace === "anonymous" && (
+                  <span className="review-status review-status--anonymous" title="未登录用户提交，处理时看不到身份">
+                    未登录用户
+                  </span>
+                )}
                 <time>{formatTimestamp(item.created_at)}</time>
               </div>
               <p>{item.detail || "用户仅提交了反馈分类，没有补充说明。"}</p>

@@ -4,6 +4,8 @@
 - 失效：知识发布激活时按 chunk content_hash 对比定向清理——答案引用的 chunk
   hash 不在新发布集合中（依据已变化）则该条目失效；未受影响的缓存保留
 - 存储：独立 SQLite（与 review.db 同目录），条目量小（数百级），逐条余弦足矣
+- 来源：**连同原始 sources 一起存**（2026-09-17 修 P1-3），命中时还原 —— 否则缓存回答
+  只剩一条「语义缓存回答」占位来源，用户无从核对、反馈分诊也拿不到 URL
 - 隔离：demo / production 命名空间分开；个人数据工具参与的回答一律不写缓存
 """
 
@@ -27,6 +29,7 @@ CREATE TABLE IF NOT EXISTS semantic_cache(
     answer TEXT NOT NULL,
     embedding TEXT NOT NULL,
     source_hashes TEXT NOT NULL,
+    sources TEXT NOT NULL DEFAULT '[]',
     created_at REAL NOT NULL,
     hit_count INTEGER NOT NULL DEFAULT 0
 );
@@ -39,12 +42,15 @@ CREATE INDEX IF NOT EXISTS idx_semantic_cache_ns
     ON semantic_cache(namespace, created_at);
 """
 
-def _ensure_structured_column(conn: "sqlite3.Connection") -> None:
-    """轻量迁移：旧库语义缓存表补 structured 列（SQLite ALTER 幂等容错）。"""
+def _ensure_columns(conn: "sqlite3.Connection") -> None:
+    """轻量迁移：旧库语义缓存表补 structured / sources 列（SQLite ALTER 幂等容错）。"""
     cols = [row[1] for row in conn.execute("PRAGMA table_info(semantic_cache)").fetchall()]
     if "structured" not in cols:
         conn.execute("ALTER TABLE semantic_cache ADD COLUMN structured TEXT NOT NULL DEFAULT '[]'")
-        conn.commit()
+    if "sources" not in cols:
+        # 2026-09-17 修 P1-3：缓存回答的**原始来源**（命中时还原给用户/反馈分诊）
+        conn.execute("ALTER TABLE semantic_cache ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
+    conn.commit()
 
 
 class SemanticCache:
@@ -72,7 +78,7 @@ class SemanticCache:
         conn.executescript(_SCHEMA)
         import sqlite3 as _sqlite3
         try:
-            _ensure_structured_column(conn)
+            _ensure_columns(conn)
         except Exception:  # noqa: BLE001 — 迁移失败不阻塞（lookup 侧容错）
             pass
         return conn
@@ -119,7 +125,7 @@ class SemanticCache:
             return None  # embedding 不可用时缓存整体旁路，不影响问答主链路
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, question, answer, structured, embedding, created_at FROM semantic_cache "
+                "SELECT id, question, answer, structured, sources, embedding, created_at FROM semantic_cache "
                 "WHERE namespace = ? AND created_at > ? ORDER BY created_at DESC",
                 (namespace, timestamp - self.ttl),
             ).fetchall()
@@ -136,6 +142,7 @@ class SemanticCache:
                 best = {
                     "answer": row["answer"],
                     "structured": json.loads(row["structured"] or "[]") or [],
+                    "sources": json.loads(row["sources"] or "[]") or [],
                     "score": round(score, 4),
                     "created_at": row["created_at"],
                     "cache_id": row["id"],
@@ -157,6 +164,7 @@ class SemanticCache:
         *,
         source_hashes: list[str] | None = None,
         structured: list[dict] | None = None,
+        sources: list[dict] | None = None,
         now: float | None = None,
     ) -> bool:
         if not (question or "").strip() or not (answer or "").strip():
@@ -169,8 +177,8 @@ class SemanticCache:
             return False
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO semantic_cache(namespace, question, answer, structured, embedding, source_hashes, created_at) "
-                "VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO semantic_cache(namespace, question, answer, structured, embedding, source_hashes, sources, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
                 (
                     namespace,
                     question.strip(),
@@ -178,6 +186,7 @@ class SemanticCache:
                     json.dumps(structured or [], ensure_ascii=False),
                     json.dumps(vec),
                     json.dumps(sorted(set(source_hashes or []))),
+                    json.dumps(list(sources or []), ensure_ascii=False),
                     timestamp,
                 ),
             )

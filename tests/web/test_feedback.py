@@ -113,3 +113,46 @@ def test_feedback_detail_allows_profile_words_but_blocks_real_identifiers(tmp_pa
         assert post("请联系我 13800138000").status_code == 422, "手机号仍要拦"
         assert post("邮箱是 someone@example.com").status_code == 422, "邮箱仍要拦"
 
+
+def test_anonymous_feedback_is_visible_and_actionable_for_reviewers(tmp_path) -> None:
+    """P1-1 回归：未登录用户的反馈必须能被审核人看到并处理。
+
+    原来它落 `namespace='anonymous'`，而 `list_feedback_page` 只接受 demo/production
+    → 用户看到"反馈已记录"，后台却永远看不到它。
+    """
+    settings = make_settings(
+        tmp_path, mode="demo", data_key="feedback-data-key", admin_ids="PB25111691"
+    )
+    app = create_app(settings, runner=ImmediateRunner())
+    with TestClient(app) as anonymous, TestClient(app) as reviewer:
+        anon_csrf, _ = bootstrap(anonymous)
+        run_id, answer_id = _completed_answer(anonymous, anon_csrf)
+        created = anonymous.post(
+            f"/api/v1/answers/{answer_id}/feedback",
+            json={"run_id": run_id, "category": "outdated", "detail": "开放时间疑似过期"},
+            headers=mutation_headers(anon_csrf),
+        )
+        assert created.status_code == 200
+        feedback_id = created.json()["feedback_id"]
+
+        rev_csrf, _ = bootstrap(reviewer)
+        session = reviewer.post("/api/v1/auth/demo", headers=mutation_headers(rev_csrf)).json()
+        rev_csrf = session["csrf_token"]
+
+        listing = reviewer.get("/api/v1/admin/feedback").json()
+        row = next((x for x in listing["items"] if x["id"] == feedback_id), None)
+        assert row is not None, "匿名反馈必须出现在审核人的反馈列表里"
+        assert row["namespace"] == "anonymous"
+        assert row["detail"] == "开放时间疑似过期", "说明要能解密读出（审核人要看得懂才处理得了）"
+
+        patched = reviewer.patch(
+            f"/api/v1/admin/feedback/{feedback_id}",
+            json={"status": "handled", "resolution": "已人工核实"},
+            headers=mutation_headers(rev_csrf),
+        )
+        assert patched.status_code == 200, "审核人必须能处理匿名反馈"
+        assert patched.json()["status"] == "handled"
+
+        stats = reviewer.get("/api/v1/admin/review-items/stats").json()
+        assert stats["feedback"]["anonymous"] >= 1
+

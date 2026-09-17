@@ -5547,6 +5547,12 @@ body::after {
 }
 
 /* 回答反馈闭环（2026-09-17）：状态色、处理记录、来源清单与操作区 */
+.review-status--anonymous {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+}
+
 .review-status--fb-open { border: 1px solid var(--warning); background: var(--warning-soft); color: var(--warning); }
 .review-status--fb-in_progress { border: 1px solid var(--primary); background: var(--primary-soft); color: var(--primary); }
 .review-status--fb-handled { border: 1px solid var(--success); background: var(--success-soft); color: var(--success); }

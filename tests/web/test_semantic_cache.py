@@ -173,3 +173,26 @@ def test_runner_skips_cache_for_personal_tools(tmp_path) -> None:
 
 def calls_personal(result) -> bool:
     return "课表" in result.markdown
+
+
+def test_cache_round_trips_sources_for_verifiability(tmp_path) -> None:
+    """P1-3 回归：缓存必须存/还原**原始来源**。
+
+    否则缓存命中的回答只剩一条「语义缓存回答」占位来源：用户无从核对（与"可核验"
+    定位相悖），反馈分诊也因为拿不到 URL 而永远无法自动转动作。
+    """
+    from xiaowo_web.knowledge.semantic_cache import SemanticCache
+
+    cache = SemanticCache(tmp_path / "sc.db", embedder=lambda _text: [1.0, 0.0])
+    sources = [
+        {"source_id": "s1", "title": "教务处公告",
+         "display_url": "https://www.teach.ustc.edu.cn/a", "level": "official_primary"},
+        {"source_id": "s2", "title": "图书馆通知",
+         "display_url": "https://lib.ustc.edu.cn/b", "level": "official_primary"},
+    ]
+    assert cache.store("图书馆开放时间", "每天 8:00-22:00。", "demo", sources=sources) is True
+
+    hit = cache.lookup("图书馆开放时间", "demo")
+    assert hit is not None
+    assert hit["sources"] == sources, "命中时要把原始来源原样还回来"
+

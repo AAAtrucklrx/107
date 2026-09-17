@@ -329,3 +329,32 @@ test("chunk decisions send an explicit three-state approval value", async () => 
     approval_status: "approved",
   });
 });
+
+
+test("未登录用户的反馈会标注来源并能处理（P1-1 回归）", async () => {
+  const user = userEvent.setup();
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false,
+    });
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({
+      items: [{
+        id: 9, answer_id: "answer-1", run_id: "run-1", namespace: "anonymous",
+        category: "outdated", status: "open", created_at: "2026-09-17T00:00:00Z",
+        detail: "开放时间疑似过期", resolution: "", sources: [],
+      }],
+    });
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("tab", { name: /回答反馈/ }));
+  // 匿名反馈必须在列表里，并明确标注来源（原来它落 anonymous 命名空间，后台根本看不到）
+  expect(await screen.findByText("未登录用户")).toBeTruthy();
+  expect(screen.getByText("开放时间疑似过期")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "标为已办结" })).toBeTruthy();
+});
+

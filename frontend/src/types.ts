@@ -486,6 +486,8 @@ export interface ReviewFeedback {
   id: number;
   answer_id: string;
   run_id: string;
+  /** 反馈来源命名空间：demo / production / anonymous（未登录用户）—— P1-1 */
+  namespace?: string;
   category: string;
   status: "open" | "in_progress" | "handled" | "ignored";
   created_at: string;

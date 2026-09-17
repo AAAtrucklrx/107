@@ -237,7 +237,9 @@ async def update_feedback(
         raise ApiError(404, "FEEDBACK_NOT_FOUND", "没有找到该反馈。") from exc
     except ValueError as exc:
         raise ApiError(422, "FEEDBACK_STATUS_INVALID", "反馈状态不合法。") from exc
-    if updated.get("namespace") not in {None, namespace}:
+    # P1-1：未登录用户的反馈（namespace=anonymous）也要允许审核人处理，
+    # 否则"看得到但动不了"，闭环仍然断在最后一步。
+    if updated.get("namespace") not in {None, namespace, "anonymous"}:
         raise ApiError(403, "FORBIDDEN", "该反馈不属于当前审核空间。")
     return updated
 

@@ -329,6 +329,14 @@ class LegacyQaRunner:
         if cached is not None:
             if request.emit_stage is not None:
                 request.emit_stage("缓存命中", f"⚡ 语义缓存命中（相似度 {cached['score']}）")
+            # 2026-09-17 修 P1-3：还原**原始来源**（缓存里现在会存 sources）。
+            # 原来这里只硬造一条「语义缓存回答」：用户看不到任何可核对的来源（与
+            # "可核验"的定位相悖），反馈分诊也因为拿不到 URL 而永远无法自动转动作。
+            restored = [s for s in (cached.get("sources") or []) if isinstance(s, dict)]
+            cache_marker = {
+                "citation": "缓存", "source_id": "semantic-cache",
+                "title": "语义缓存回答", "source": "本地语义缓存",
+            }
             return AnswerBundle(
                 markdown=cached["answer"],
                 claims=[{
@@ -337,12 +345,12 @@ class LegacyQaRunner:
                     "evidence": [{"source_id": "semantic-cache", "relation": "supports",
                                   "quote": f"语义缓存命中（相似度 {cached['score']}）"}],
                 }],
-                sources=[{
-                    "citation": "缓存", "source_id": "semantic-cache",
-                    "title": "语义缓存回答", "source": "本地语义缓存",
-                }],
+                sources=[cache_marker, *restored],
                 structured=list(cached.get("structured") or []),
-                limitations=[],
+                limitations=(
+                    ["本条回答来自语义缓存；下列来源是该答案最初生成时的引用。"]
+                    if restored else []
+                ),
                 terminal_reason="cache_hit",
                 thoughts=[{"round": 0, "decision": "cache_hit",
                            "reason": f"语义缓存命中（相似度 {cached['score']}），跳过全链路"}],
@@ -520,6 +528,7 @@ class LegacyQaRunner:
                     request.question, answer, namespace,
                     source_hashes=source_hashes,
                     structured=list(result.get("structured") or []),
+                    sources=list(sources),   # P1-3：连来源一起存，命中时还原
                 )
             except Exception:
                 pass  # 缓存写入失败不影响回答

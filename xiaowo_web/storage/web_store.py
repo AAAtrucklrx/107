@@ -826,6 +826,8 @@ class WebStore:
             "id": row["id"],
             "answer_id": row["answer_id"],
             "run_id": row["run_id"],
+            # P1-1：带上命名空间，前端据此标注"未登录用户"
+            "namespace": (row["namespace"] if "namespace" in keys else None),
             "category": row["category"],
             "status": row["status"],
             "created_at": _utc_iso(row["created_at"]),
@@ -895,24 +897,26 @@ class WebStore:
         if namespace not in {"demo", "production"}:
             raise ValueError("invalid reviewer feedback namespace")
         cutoff = time.time() - window_days * 24 * 60 * 60
+        # P1-1：统计也把匿名反馈算进来（审核人要看到"有多少条来自未登录用户"）
+        scoped = "(namespace = ? OR namespace = 'anonymous')"
         with self._connect() as conn:
             by_status = {
                 str(row["status"]): int(row["n"])
                 for row in conn.execute(
-                    "SELECT status, COUNT(*) AS n FROM answer_feedback WHERE namespace = ? GROUP BY status",
+                    f"SELECT status, COUNT(*) AS n FROM answer_feedback WHERE {scoped} GROUP BY status",
                     (namespace,),
                 )
             }
             by_category = {
                 str(row["category"]): int(row["n"])
                 for row in conn.execute(
-                    "SELECT category, COUNT(*) AS n FROM answer_feedback WHERE namespace = ? GROUP BY category",
+                    f"SELECT category, COUNT(*) AS n FROM answer_feedback WHERE {scoped} GROUP BY category",
                     (namespace,),
                 )
             }
             recent = int(
                 conn.execute(
-                    "SELECT COUNT(*) FROM answer_feedback WHERE namespace = ? AND created_at >= ?",
+                    f"SELECT COUNT(*) FROM answer_feedback WHERE {scoped} AND created_at >= ?",
                     (namespace, cutoff),
                 ).fetchone()[0]
             )
@@ -927,6 +931,12 @@ class WebStore:
             "ignored": by_status.get("ignored", 0),
             "window_days": window_days,
             "recent": recent,
+            # P1-1：匿名（未登录）反馈单独给一个数，方便审核人判断来源结构
+            "anonymous": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM answer_feedback WHERE namespace = 'anonymous'"
+                ).fetchone()[0]
+            ),
         }
 
     def create_feedback(
@@ -974,17 +984,23 @@ class WebStore:
         *,
         limit: int = 100,
         cursor: tuple[float, str] | None = None,
+        include_anonymous: bool = True,
     ) -> tuple[list[dict[str, Any]], tuple[float, str] | None]:
         if namespace not in {"demo", "production"}:
             raise ValueError("invalid reviewer feedback namespace")
         page_size = min(max(limit, 1), 200)
-        sql = """
-            SELECT id, answer_id, run_id, category, detail, status, created_at,
+        # 2026-09-17 修 P1-1：未登录用户的反馈落 `anonymous` 命名空间，而这里原来只查审核人
+        # 自己的命名空间 → 匿名反馈写进库后再也看不到（"只写不读"）。现在默认一并列出，
+        # 并在返回里带上 `namespace` 供前端标注"未登录用户"。
+        namespaces = [namespace, "anonymous"] if include_anonymous else [namespace]
+        placeholders = ", ".join("?" for _ in namespaces)
+        sql = f"""
+            SELECT id, answer_id, run_id, namespace, category, detail, status, created_at,
                    handled_by, handled_at, resolution, sources_json
             FROM answer_feedback
-            WHERE namespace = ?
+            WHERE namespace IN ({placeholders})
         """
-        params: list[Any] = [namespace]
+        params: list[Any] = list(namespaces)
         if cursor is not None:
             try:
                 cursor_id = int(cursor[1])
