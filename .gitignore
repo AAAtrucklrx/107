@@ -58,3 +58,11 @@ frontend/vite.config.d.ts
 
 # 临时/一次性脚本（2026-09-17：曾被 git add -A 误提交 105 个，撤回并忽略）
 scripts/tmp_*.py
+
+# 截图与临时产物（2026-09-17：`git add -A docs` 误把 61 个截图提交，事后撤出并补规则。
+# 与 2026-09-17 早先 `scripts/tmp_*.py` 那次同类教训 —— 提交前用 `git status` 逐条看，
+# 不要对目录用 `git add -A`。）
+docs/qa/
+docs/tmp_*
+docs/e2e_v5_link_*.png
+docs/选课测试_轮*_Q*.png
