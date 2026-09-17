@@ -447,3 +447,31 @@ def test_sort_articles_by_recent_prefers_official_and_new() -> None:
     no_time = WechatArticle(title="官方无时间", author="中国科学技术大学", url="https://mp.weixin.qq.com/s?src=11&signature=D", markdown="x")
     ordered = sort_articles_by_recent([old, no_time, other_new, new])
     assert [a.title for a in ordered] == ["官方新文", "官方旧文", "官方无时间", "普通新文"]
+
+
+# ── 公众号相关性词（2026-09-17 收紧：不跨虚词滑窗、丢掉过泛词） ────────────────
+
+def _core(question: str) -> list[str]:
+    from xiaowo_web.evidence.pipeline import EvidencePipeline
+    return EvidencePipeline._wechat_core_words(question)
+
+
+def test_core_words_drop_generic_words_and_cross_particle_bigrams() -> None:
+    """实测的误判来源：「专业」「政策」这种过泛词 + 「是怎」「样的」跨虚词碎片。"""
+    words = _core("中国科学技术大学转专业政策是怎样的？")
+    assert "专业" not in words and "政策" not in words, "过泛词会把无关标题判成相关"
+    assert "是怎" not in words and "样的" not in words, "窗口不能跨虚词生成"
+    assert "转专" in words or "业政" in words, "业务词必须留下，否则会全被过滤掉"
+
+
+def test_core_words_keep_business_words() -> None:
+    words = _core("中国科学技术大学食堂开放时间")
+    assert "食堂" in words and "开放" in words
+    assert "时间" not in words, "「时间」过泛"
+
+
+def test_core_words_empty_when_only_school_name() -> None:
+    """只剩校名/疑问词时返回空 → 调用方跳过过滤（空列表不会误杀全部文章）。"""
+    assert _core("中国科学技术大学怎么样") == []
+    assert _core("中科大是啥") == []
+
