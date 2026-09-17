@@ -5502,3 +5502,46 @@ body::after {
   margin: 8px 10px;
   justify-content: center;
 }
+
+/* 审核工作台：卡片归位 + 队列/详情各自成框滚动（2026-09-17）
+   两个真实问题：
+   1) `.review-view-content[data-state=active]` 原本是 row 方向（只有一个子元素时没毛病）。
+      加了「进料日报」卡片后，卡片被当成 row 的兄弟 → 实测被挤成 230px 宽、5793px 高的
+      竖条，审核布局被推到右边。这里是"卡片在上、布局在下"的纵向流，必须 column。
+   2) 父级是定高滚动块（height:900 + overflow-y:auto），`flex: 1` 对块级子元素无效，
+      于是 `.review-workspace` 随内容无限增高：队列 89 条时整个工作区被拉到 5805px，
+      页面被"拉得很长"。显式 height:100% 让高度链条有界，队列与详情各自成框内部滚动。 */
+.review-view-content[data-state="active"] {
+  flex-direction: column;
+}
+
+.review-daily {
+  flex: none;
+}
+
+.review-queue__items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.review-detail {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 761px) {
+  .review-workspace {
+    height: 100%;
+  }
+}
+
+/* 移动端（≤760px）布局是纵向堆叠、整页滚动，不套内部滚动框，保持原行为 */
+@media (max-width: 760px) {
+  .review-queue__items,
+  .review-detail {
+    max-height: none;
+  }
+}
