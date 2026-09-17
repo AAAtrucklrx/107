@@ -260,3 +260,91 @@ def test_hedge_note_reaches_limitations(tmp_path, monkeypatch) -> None:
     bundle = asyncio.run(_pipeline(tmp_path, PureSearch()).answer("中国科学技术大学图书馆开放时间？"))
     assert bundle.terminal_reason == "AI_GENERATED"
     assert any("没有依据" in item for item in bundle.limitations)
+
+
+# ── 取舍顺序（2026-09-17 晚）：纯搜索先答，公众号降为兜底 ─────────────────────
+
+class SlowWechat:
+    """公众号替身：collect 故意很慢（真实约 13s：抓 3 篇正文）。"""
+
+    def __init__(self, *, delay: float = 5.0) -> None:
+        self.delay = delay
+        self.calls = 0
+        self.cancelled = False
+
+    async def collect(self, query):
+        from xiaowo_web.evidence.wechat import WechatBundle
+        self.calls += 1
+        try:
+            await asyncio.sleep(self.delay)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return WechatBundle(articles=[])
+
+
+def _pipeline_with_wechat(tmp_path, wechat, *, search=None):
+    from tests.web.test_evidence_pipeline import FakeCrawler, FixedExtractor
+    from xiaowo_web.evidence.url_security import UrlGuard
+    return EvidencePipeline(
+        _settings(tmp_path), search or PureSearch(), FakeCrawler({}),
+        url_guard=UrlGuard(lambda _h, _p: ["8.8.8.8"]),
+        extractor=FixedExtractor([]), wechat=wechat,
+    )
+
+
+def test_pure_answer_returns_without_waiting_for_wechat(tmp_path, monkeypatch) -> None:
+    """纯搜索答得出来就立刻答，不等那 ~13s 的公众号分支（实测确认率仅 25%）。"""
+    import time as _time
+    import xiaowo_web.evidence.pipeline as pipeline_module
+
+    monkeypatch.setattr(pipeline_module, "judge_relevance", lambda question, refs, **kw: True)
+    monkeypatch.setattr(pipeline_module, "compose_and_verify",
+                        lambda question, refs, **kw: ("图书馆每周开放 7*16 小时，电话 63607647。", []))
+    slow = SlowWechat(delay=5.0)
+    pipe = _pipeline_with_wechat(tmp_path, slow)
+
+    async def run():
+        t0 = _time.monotonic()
+        bundle = await pipe.answer("中国科学技术大学图书馆开放时间？")
+        return bundle, _time.monotonic() - t0
+
+    bundle, dt = asyncio.run(run())
+    assert bundle.terminal_reason == "AI_GENERATED"
+    assert "7*16" in bundle.markdown
+    assert dt < 3.0, f"不该等公众号（替身要 5s）：实测 {dt:.1f}s"
+    assert slow.calls == 1, "公众号分支仍应被启动（只是不等它）"
+
+
+def test_pure_refusal_waits_for_wechat_confirmation(tmp_path, monkeypatch) -> None:
+    """纯搜索被闸门拒答时，公众号还有机会（它现在是兜底安全网）→ 必须等。"""
+    import xiaowo_web.evidence.pipeline as pipeline_module
+    from xiaowo_web.chat.models import AnswerBundle
+
+    monkeypatch.setattr(pipeline_module, "judge_relevance", lambda question, refs, **kw: False)
+    confirmed = AnswerBundle(markdown="公众号官方号确认的答案。",
+                             terminal_reason="web_evidence_confirmed")
+    waited = {"n": 0}
+
+    async def fake_branch(question, year_anchor, on_stage):
+        await asyncio.sleep(0.05)
+        waited["n"] += 1
+        return confirmed, [], ["公众号确认"]
+
+    pipe = _pipeline_with_wechat(tmp_path, SlowWechat(delay=5.0))
+    monkeypatch.setattr(pipe, "_wechat_branch", fake_branch)
+
+    bundle = asyncio.run(pipe.answer("中国科学技术大学图书馆开放时间？"))
+    assert bundle is confirmed, "纯搜索拒答时应采用公众号确认的答案"
+    assert waited["n"] == 1
+
+
+def test_pure_refusal_without_confirmation_stays_refusal(tmp_path, monkeypatch) -> None:
+    """纯搜索拒答 + 公众号也没确认 → 仍是拒答（终态必须留给 runner 回退本地）。"""
+    import xiaowo_web.evidence.pipeline as pipeline_module
+
+    monkeypatch.setattr(pipeline_module, "judge_relevance", lambda question, refs, **kw: False)
+    pipe = _pipeline_with_wechat(tmp_path, SlowWechat(delay=0.0))
+    bundle = asyncio.run(pipe.answer("中国科学技术大学图书馆开放时间？"))
+    assert bundle.terminal_reason == "EVIDENCE_INSUFFICIENT"
+    assert bundle.sources == [], "拒答不展示无依据内容（也不补公众号来源）"

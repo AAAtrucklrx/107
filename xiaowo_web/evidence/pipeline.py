@@ -185,6 +185,14 @@ _WECHAT_GENERIC_WORDS = frozenset({
 
 # 「合成结果无法核验」的专用拒答文案（2026-09-17）：与 B3 的"没有合格来源"不同——
 # 这里检索是有结果的，只是合成出来的数字/日期在检索结果里找不到依据，所以不展示。
+def _pure_answers(bundle: object) -> bool:
+    """纯搜索是否给出了**可用答案**（2026-09-17 晚）。
+
+    拒答/证据不足**不算** —— 那种情况要留给公众号兜底（它的定位已从"优先"改为"安全网"）。
+    """
+    return bundle is not None and getattr(bundle, "terminal_reason", "") == "AI_GENERATED"
+
+
 _UNVERIFIED_ANSWER = (
     "小蜗这次**没有查到可靠的数据**可以回答这个问题——检索到的资料里没有能核实的相关数字"
     "或日期，小蜗不凭印象补充。\n\n"
@@ -256,7 +264,21 @@ class EvidencePipeline:
             pure_task = asyncio.create_task(
                 self._pure_search_answer(sanitized.text, pure_limitations, [], on_stage)
             )
+        # ── 取舍顺序（2026-09-17 晚，实测后调整）──
+        # 纯搜索通常 4~7s 就有答案；公众号要 ~13s（抓 3 篇正文，每篇 2.7~3.7s）且只有
+        # 25% 会确认，而**确认的那些题本地知识库也都能答**（生产本地优先根本走不到联网）。
+        # 所以：纯搜索答得出来 → **立刻答**（取消公众号，不白等）；
+        #       纯搜索答不出来 → **才等公众号**，把它放在真正有价值的位置（兜底安全网）。
         wechat_sources: list[dict] = []
+        pure = None
+        if pure_task is not None:
+            pure = await pure_task
+            limitations_acc.extend(pure_limitations)
+            if _pure_answers(pure):
+                if wechat_task is not None:
+                    wechat_task.cancel()
+                    await asyncio.gather(wechat_task, return_exceptions=True)
+                return pure
         if wechat_task is not None:
             confirmed, wechat_sources, notes = await wechat_task
             limitations_acc.extend(notes)
@@ -268,17 +290,18 @@ class EvidencePipeline:
                     pure_task.cancel()
                     await asyncio.gather(pure_task, return_exceptions=True)
                 return confirmed
-        if pure_task is not None:
-            pure = await pure_task
-            if pure is not None:
-                limitations_acc.extend(pure_limitations)
+        if pure is not None:
+            # 纯搜索给的是拒答（证据不足）→ 交给 runner 回退本地。
+            # 拒答 bundle 的 sources 为空是**有意的**（闸门拒答不展示无依据内容），
+            # 所以这里也不补公众号来源，免得"没查到可靠数据"旁边又列出一堆未核实来源。
+            if pure.terminal_reason != "EVIDENCE_INSUFFICIENT":
                 # 并行时纯搜索拿不到公众号来源（它先起跑）→ 在这里补上，去重后并入
                 seen = {str(item.get("source_id") or "") for item in pure.sources}
                 for item in wechat_sources:
                     if str(item.get("source_id") or "") not in seen:
                         pure.sources.append(item)
-                return pure
-            limitations_acc.extend(pure_limitations)
+            return pure
+
 
         # ── 2026-09-07 百度智能搜索生成直达答复（smart 模式）：提示词工程直接返回答案 ──
         # 覆盖场景：搜索→抓取→提取→置信门链路对时事类常因 robots/渲染失败空手而归；
