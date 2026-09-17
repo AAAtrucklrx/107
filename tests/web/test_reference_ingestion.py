@@ -111,7 +111,7 @@ def test_manager_ingests_references_in_background(tmp_path) -> None:
             calls.append((namespace, candidates))
             return []
 
-    async def _fetcher(urls: list[str]):
+    async def _fetcher(urls: list[str], snippets=None):
         fetched.append(list(urls))
         return [{"snapshot_text": "正文", "evidence_span_hash": "h"}]
 
@@ -130,7 +130,7 @@ def test_manager_ingests_references_in_background(tmp_path) -> None:
 
 def test_manager_ingest_failure_is_swallowed(tmp_path) -> None:
     """后台补料失败绝不能冒泡（回答已经返回给用户了）。"""
-    async def _boom(_urls):
+    async def _boom(_urls, snippets=None):
         raise RuntimeError("crawl down")
 
     manager = ChatManager(
@@ -138,6 +138,52 @@ def test_manager_ingest_failure_is_swallowed(tmp_path) -> None:
         ingestion_sink=object(), page_fetcher=_boom,
     )
     asyncio.run(manager._ingest_references("demo", ["https://a.example/1"]))
+
+
+def test_fetch_candidates_falls_back_to_search_snippet(tmp_path) -> None:
+    """robots 禁抓的站点（实测 mp.weixin.qq.com 是 `Disallow: /`）**不绕 robots**：
+    抓不到正文时改用检索器返回的摘要，并**显式标注仅摘要**，绝不冒充整页。"""
+    url = "https://mp.weixin.qq.com/s?__biz=abc&mid=1&idx=1"
+    crawler = _Crawler({url: None})          # 抓取失败（适配器会归一化成 502）
+    snippet = "中国科学技术大学转专业政策：二年级可全校申请，三年级只能本院内转。" * 4
+    out = asyncio.run(_pipeline(tmp_path, crawler).fetch_candidates_for_ingestion(
+        [url], snippets={url: {"content": snippet, "title": "转专业政策解读"}}))
+    assert len(out) == 1
+    cand = out[0]
+    assert cand["content_type"] == "text/search-snippet"
+    assert "仅搜索摘要" in cand["title"] and "转专业政策解读" in cand["title"]
+    assert cand["snapshot_text"] == snippet
+    assert cand["normalized_url"] == url
+
+
+def test_no_snippet_fallback_for_unsafe_or_too_short(tmp_path) -> None:
+    """① URL 校验不过（内网）**绝不**走摘要兜底；② 摘要过短也不入库。"""
+    unsafe = "http://127.0.0.1/secret"
+    short = "https://www.teach.ustc.edu.cn/s.html"
+    crawler = _Crawler({unsafe: None, short: None})
+    pipes = _pipeline(tmp_path, crawler)
+    snips = {unsafe: {"content": "敏感内容" * 40, "title": "t"},
+             short: {"content": "太短", "title": "t"}}
+    out = asyncio.run(pipes.fetch_candidates_for_ingestion([unsafe, short], snippets=snips))
+    assert out == [], [c["normalized_url"] for c in out]
+    assert unsafe not in crawler.asked, "内网 URL 不该被送去抓取"
+
+
+def test_manager_passes_snippets_to_fetcher(tmp_path) -> None:
+    """摘要必须一路传到 page_fetcher，否则兜底形同虚设。"""
+    seen: list[object] = []
+
+    async def _fetcher(urls, snippets=None):
+        seen.append(snippets)
+        return []
+
+    manager = ChatManager(
+        make_settings(tmp_path), store=object(), runner=object(),  # type: ignore[arg-type]
+        ingestion_sink=object(), page_fetcher=_fetcher,
+    )
+    snips = {"https://a.example/1": {"content": "x" * 100, "title": "t"}}
+    asyncio.run(manager._ingest_references("demo", ["https://a.example/1"], snips))
+    assert seen == [snips]
 
 
 def test_fetch_candidates_dedupes_identical_content(tmp_path) -> None:

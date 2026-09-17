@@ -147,6 +147,29 @@ def test_smart_sources_admission_drops_junk() -> None:
     assert dropped == {"third_party": 1, "blocked": 2}
 
 
+def test_smart_sources_wechat_shown_but_unverified() -> None:
+    """公众号：智能搜索拿不到账号名 → **显示但标未核实、不计入官方**；营销号标题仍拦。"""
+    sources, official_n, dropped = EvidencePipeline._smart_sources([
+        {"url": "https://mp.weixin.qq.com/s?__biz=a", "title": "中国科大奖学金助学金汇总"},
+        {"url": "https://mp.weixin.qq.com/s?__biz=b", "title": "贵州十一选五走势图"},
+    ])
+    assert [s["domain"] for s in sources] == ["mp.weixin.qq.com"]
+    assert sources[0]["level"] == "unverified"
+    assert sources[0]["validity"] == "unverified"
+    assert "wechat_unverified" in sources[0]["tags"]
+    assert official_n == 0, "账号未经核实，绝不能计入官方来源（那会变成假权威）"
+    assert dropped == {"third_party": 0, "blocked": 1}
+
+
+def test_smart_answer_labels_wechat_as_unverified(tmp_path) -> None:
+    """端到端：公众号来源要展示、要标未核实、并如实交代无法核实发布方。"""
+    refs = [{"url": "https://mp.weixin.qq.com/s?__biz=a", "title": "转专业政策解读"}]
+    bundle = asyncio.run(_pipeline(tmp_path, SmartSearch(text="答复", references=refs))
+                         .answer("最新的转专业政策是什么？"))
+    assert [s["level"] for s in bundle.sources] == ["unverified"]
+    assert any("微信公众号" in item and "未核实" in item for item in bundle.limitations)
+
+
 def test_smart_sources_keeps_government_whitelist() -> None:
     """政府/国家级媒体属于"独立可靠"，仍可作为来源。"""
     sources, official_n, dropped = EvidencePipeline._smart_sources([

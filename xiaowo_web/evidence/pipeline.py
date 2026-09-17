@@ -147,16 +147,30 @@ _NO_RELIABLE_SOURCE_ANSWER = (
 
 
 def _smart_source_tier(host: str, title: str) -> str:
-    """smart 来源准入分层：official / authoritative / third_party / blocked。"""
+    """smart 来源准入分层：official / wechat_unverified / authoritative / third_party / blocked。
+
+    ⚠️ 微信公众号**拿不到账号名**：实测 references 只有 content/date/icon/id/image/
+    title/type/url/video/web_anchor/website 十个字段，微信链接的 `website` 恒为
+    "腾讯网"。所以 mp.weixin.qq.com **不能**当权威——只能"展示但标未核实"，绝不
+    用文章标题去猜账号（那是制造假权威）。官方公众号的认定留在**能拿到账号名**的
+    自家公众号渠道（`evidence/wechat.py::is_official_account`，来源是 `og:article:author`）。
+    """
     host = (host or "").lower()
     if host == "ustc.edu.cn" or host.endswith(".ustc.edu.cn"):
         return "official"
     if _BLOCKED_DOMAIN_RE.search(host) or _BLOCKED_TITLE_RE.search(title or ""):
         return "blocked"
+    if host in {"mp.weixin.qq.com", "weixin.qq.com"} or host.endswith(".mp.weixin.qq.com"):
+        return "wechat_unverified"
     for allowed in _AUTHORITATIVE_HOSTS:
         if host == allowed or host.endswith("." + allowed):
             return "authoritative"
     return "third_party"
+
+
+# 检索摘要兜底的最小长度（2026-09-17）：智能搜索的 `references[].content` 是**固定
+# 203 字截断**，短于此值的多半是空片段或纯标题，没有入审核库的价值。
+_SNIPPET_MIN_CHARS = 60
 
 
 class EvidencePipeline:
@@ -740,6 +754,15 @@ class EvidencePipeline:
         # 这里只传 URL —— 入库要整页正文，而抓取不能阻塞回答。去重、限流都在下游。
         ref_urls = [str(r.get("url") or "").strip() for r in references]
         ref_urls = [u for u in ref_urls if u]
+        # url → references 自带的 {content,title}：给 robots 禁抓站点做摘要兜底（2026-09-17）
+        ref_snippets = {
+            u: {
+                "content": str(ref.get("content") or "").strip(),
+                "title": str(ref.get("title") or "").strip(),
+            }
+            for ref, u in ((r, str(r.get("url") or "").strip()) for r in references)
+            if u
+        }
         sources, official_n, dropped = self._smart_sources(references)
         # B3（收窄版，2026-09-16）：**没有任何合格来源、且确实过滤掉了 blocked 站**
         # → 说明本轮检索结果全是无关/低质站点，整篇替换为固定诚实答复，不复述检索垃圾。
@@ -758,6 +781,7 @@ class EvidencePipeline:
                 }],
                 sources=[],
                 ingestion_urls=ref_urls,
+                ingestion_snippets=ref_snippets,
                 limitations=limitations_acc,
                 terminal_reason="EVIDENCE_INSUFFICIENT",
             )
@@ -788,6 +812,12 @@ class EvidencePipeline:
                 f"另有 {dropped['third_party']} 条自媒体/聚合类站点，"
                 "未达到来源标准，未作为来源展示。"
             )
+        wechat_n = sum(1 for item in sources if "wechat_unverified" in (item.get("tags") or []))
+        if wechat_n:
+            limitations_acc.append(
+                f"其中 {wechat_n} 条为微信公众号文章：智能搜索未提供账号名，无法核实发布方，"
+                "已标注为未核实来源，请以官方渠道为准。"
+            )
         # B4：校内事务问句若一条官方来源都没有，必须显式示警
         if official_n == 0 and campus_search_keywords(question):
             limitations_acc.append(
@@ -805,12 +835,14 @@ class EvidencePipeline:
             }],
             sources=sources,
             ingestion_urls=ref_urls,
+            ingestion_snippets=ref_snippets,
             limitations=limitations_acc,
             terminal_reason="AI_GENERATED",
         )
 
     async def fetch_candidates_for_ingestion(
-        self, urls: list[str], *, limit: int = 8, min_chars: int = 200,
+        self, urls: list[str], *, snippets: dict[str, dict[str, str]] | None = None,
+        limit: int = 8, min_chars: int = 200,
     ) -> list[dict]:
         """把联网答案引用的 URL 抓成**可入审核库的候选**（供上层后台任务调用）。
 
@@ -820,6 +852,13 @@ class EvidencePipeline:
         （`url_guard` 校验 → Crawl4AI 抓取 → `trust_store` 分级），只补齐这两个字段。
 
         逐条失败只跳过、绝不抛出：这是后台补料，不能影响已经返回给用户的回答。
+
+        **摘要兜底（2026-09-17）**：有些站点 robots.txt 明令禁止抓取，抓正文必然失败
+        ——实测 `mp.weixin.qq.com` 是 `Disallow: /`（Crawl4AI 直接拒，适配器把它归一化
+        成 502），微博同因；`kepu.ustc.edu.cn` 则是抓到但无可提取文本。这些站点我们
+        **不绕 robots**，改用检索器随 references 返回的 `content` 摘要入审核库，并
+        **显式标注** `content_type=text/search-snippet` + 标题后缀「仅搜索摘要」，
+        由人工审批时自行判断——**绝不冒充整页正文**。
         """
         candidates: list[dict] = []
         seen: set[str] = set()
@@ -827,6 +866,13 @@ class EvidencePipeline:
         # wap. / uc. / e. …），只按 URL 去重会把 6 份近重复文档全灌进审核队列
         # （2026-09-16 实测 6/8 条候选实为同一页）。用抓取结果的 content_hash 兜住。
         seen_content: set[str] = set()
+        snippet_map = {
+            str(k).strip(): {
+                "content": str((v or {}).get("content") or "").strip(),
+                "title": str((v or {}).get("title") or "").strip(),
+            }
+            for k, v in (snippets or {}).items()
+        }
         for raw in (urls or [])[:limit]:
             url = str(raw or "").strip()
             if not url or url in seen:
@@ -834,18 +880,45 @@ class EvidencePipeline:
             seen.add(url)
             try:
                 validated = await asyncio.to_thread(self.url_guard.validate, url)
-                page = await self.crawler.crawl(validated.normalized_url)
-                if page is None:
-                    continue
-                final = await asyncio.to_thread(self.url_guard.validate, page.final_url)
-                trust = self.trust_store.classify(final)
+            except Exception as exc:  # noqa: BLE001 —— URL 不安全：**绝不**走摘要兜底
+                log.info(f"进料 URL 校验跳过 {url[:80]}: {exc}")
+                continue
+            # 摘要兜底也要有机构分级：直接按**已通过校验的原始 URL**分级
+            trust = self.trust_store.classify(validated)
+            page = None
+            final_url = validated.normalized_url
+            try:
+                crawled = await self.crawler.crawl(validated.normalized_url)
             except Exception as exc:  # noqa: BLE001 —— 单条失败不影响其余
                 log.info(f"进料抓取跳过 {url[:80]}: {exc}")
-                continue
+                crawled = None
+            if crawled is not None:
+                try:
+                    # 重定向后的最终域也必须过安全校验，否则**整条丢弃**（不能退化成
+                    # 用原始 URL 的摘要把一次被拒的跳转悄悄放进来）
+                    final = await asyncio.to_thread(self.url_guard.validate, crawled.final_url)
+                except Exception as exc:  # noqa: BLE001
+                    log.info(f"进料重定向目标不安全，整条跳过 {url[:80]}: {exc}")
+                    continue
+                trust = self.trust_store.classify(final)
+                final_url = final.normalized_url
+                page = crawled
             text = str(getattr(page, "markdown", "") or "")
-            if len(text) < min_chars:      # 过短的多半是抓取失败或纯导航页
-                continue
             fingerprint = str(getattr(page, "content_hash", "") or "")
+            if len(text) < min_chars:
+                # 抓不到正文（robots 禁抓／抓到空页／过短导航页）→ 检索摘要兜底
+                snippet = snippet_map.get(url) or {}
+                body = str(snippet.get("content") or "")
+                if len(body) < _SNIPPET_MIN_CHARS:
+                    continue
+                text = body
+                fingerprint = hashlib.sha256(body.encode("utf-8")).hexdigest()
+                title = str(snippet.get("title") or final_url)
+                title = f"{title}（仅搜索摘要 {len(body)} 字，未抓正文）"
+                content_type = "text/search-snippet"
+            else:
+                title = str(getattr(page, "title", "") or final_url)
+                content_type = str(getattr(page, "content_type", "") or "text/html")
             if fingerprint:
                 if fingerprint in seen_content:
                     continue
@@ -853,15 +926,15 @@ class EvidencePipeline:
             candidates.append({
                 "snapshot_text": text,
                 "evidence_span_hash": hashlib.sha256(url.encode("utf-8")).hexdigest(),
-                "source_id": "ref-" + hashlib.sha256(final.normalized_url.encode("utf-8")).hexdigest()[:12],
-                "normalized_url": final.normalized_url,
-                "final_url": final.normalized_url,
-                "title": str(getattr(page, "title", "") or final.normalized_url)[:200],
+                "source_id": "ref-" + hashlib.sha256(final_url.encode("utf-8")).hexdigest()[:12],
+                "normalized_url": final_url,
+                "final_url": final_url,
+                "title": title[:200],
                 "institution": trust.institution,
                 "level": trust.level,
                 "fetched_at": (getattr(page, "fetched_at", None)
                                or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
-                "content_type": str(getattr(page, "content_type", "") or "text/html"),
+                "content_type": content_type,
             })
         return candidates
 
@@ -871,6 +944,9 @@ class EvidencePipeline:
 
         不够格的**不进 `sources`**，只计数，由调用方在 limitations 里如实说明——
         把下载站/赌博站当来源展示既误导也不安全（2026-09-16 实测踩到）。
+
+        微信公众号（`wechat_unverified`）是**中间态**（2026-09-17 用户决定）：账号名拿不到
+        → 进 `sources` 但 `level/validity=unverified`、**不计入 `official_n`**。
 
         Returns:
             (sources, 官方来源条数, {"third_party": n, "blocked": n})
@@ -889,21 +965,32 @@ class EvidencePipeline:
                 dropped[tier] += 1
                 continue
             is_official = tier == "official"
+            is_wechat = tier == "wechat_unverified"
             if is_official:
                 official_n += 1
+            if is_official:
+                level, institution = "official_primary", "中国科学技术大学"
+                validity, tags = "active", ["ai_generated", "official"]
+            elif is_wechat:
+                # 拿不到账号名 → **显示但标未核实**，且不计入 official_n
+                level, institution = "unverified", "微信公众号（账号未核实）"
+                validity, tags = "unverified", ["ai_generated", "wechat_unverified"]
+            else:
+                level = "reliable_independent"
+                institution = str(ref.get("website") or "").strip() or host
+                validity, tags = "active", ["ai_generated", "authoritative"]
             sources.append({
                 "source_id": f"s-smart-{index}",
                 "title": title[:120] or host or "网页",
                 "display_url": url,
-                "institution": ("中国科学技术大学" if is_official
-                                else (str(ref.get("website") or "").strip() or host)),
+                "institution": institution,
                 "domain": host or None,
                 "published_at": str(ref.get("date") or "").strip() or None,
                 "fetched_at": None,
-                "level": "official_primary" if is_official else "reliable_independent",
-                "validity": "active",
+                "level": level,
+                "validity": validity,
                 "citation": index,
-                "tags": ["ai_generated", "official" if is_official else "authoritative"],
+                "tags": tags,
             })
         return sources, official_n, dropped
 

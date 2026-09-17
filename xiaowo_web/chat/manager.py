@@ -327,19 +327,35 @@ class ChatManager:
         ):
             namespace = "demo" if request.principal.auth_mode == "demo" else "production"
             task = asyncio.create_task(
-                self._ingest_references(namespace, ref_urls),
+                self._ingest_references(
+                    namespace, ref_urls, getattr(bundle, "ingestion_snippets", None)
+                ),
                 name=f"review-ingest-refs:{request.run_id}",
             )
             self._ingestion_tasks.add(task)
             task.add_done_callback(self._ingestion_tasks.discard)
 
-    async def _ingest_references(self, namespace: str, urls: list[str]) -> None:
-        """后台把联网引用的页面抓成整页后入审核库（失败不影响已返回的回答）。"""
+    async def _ingest_references(
+        self, namespace: str, urls: list[str],
+        snippets: dict[str, dict[str, str]] | None = None,
+    ) -> None:
+        """后台把联网引用的页面抓成整页后入审核库（失败不影响已返回的回答）。
+
+        `snippets` 是检索器随 references 返回的摘要，供 robots 禁抓站点兜底
+        （抓不到正文时改用摘要，并由下游标注「仅搜索摘要」）。
+        """
         try:
-            candidates = await self.page_fetcher(urls)
+            candidates = await self.page_fetcher(urls, snippets=snippets)
             if candidates:
                 await asyncio.to_thread(self.ingestion_sink.enqueue, namespace, candidates)
-                log.info(f"联网引用入审核库: 抓成 {len(candidates)}/{len(urls)} 条 (namespace={namespace})")
+                snippet_only = sum(
+                    1 for item in candidates
+                    if str(item.get("content_type") or "") == "text/search-snippet"
+                )
+                log.info(
+                    f"联网引用入审核库: 抓成 {len(candidates)}/{len(urls)} 条"
+                    f"（其中仅摘要 {snippet_only} 条）(namespace={namespace})"
+                )
         except Exception as exc:  # noqa: BLE001
             log.warning(f"联网引用入审核库失败: {exc}")
 

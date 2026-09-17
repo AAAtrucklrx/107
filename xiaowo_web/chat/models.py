@@ -49,3 +49,8 @@ class AnswerBundle:
     # `ReviewStore.enqueue_candidate` 硬性要求整页 `snapshot_text` → 必须补一次抓取，
     # 且不能阻塞回答，故只传 URL、由 manager 起后台任务。
     ingestion_urls: list[str] = field(default_factory=list)
+    # 联网引用的**检索摘要**（url → {"content","title"}，2026-09-17）。
+    # 有些站点 robots.txt 明令禁止抓取（实测 mp.weixin.qq.com 是 `Disallow: /`，微博同因），
+    # 抓正文必然失败；而检索器返回的摘要本身就是**原文片段**，可兜底入审核库，
+    # 但必须**显式标注"仅摘要"**（见 content_type/title），绝不冒充整页。
+    ingestion_snippets: dict[str, dict[str, str]] = field(default_factory=dict)
