@@ -52,14 +52,29 @@ class _Crawler:
         return None
 
 
-def _pipeline(tmp_path, crawler) -> EvidencePipeline:
+def _pipeline(tmp_path, crawler, search=None) -> EvidencePipeline:
     return EvidencePipeline(
         make_settings(tmp_path),
-        search=None,          # 本用例不触发检索
+        search=search,        # 默认 None：不触发检索
         crawler=crawler,
         url_guard=UrlGuard(lambda _host, _port: ["8.8.8.8"]),
         extractor=FixedExtractor([]),
     )
+
+
+class _Search:
+    """假百度搜索客户端：只实现纯搜索 references_only（2026-09-17 新增能力）。"""
+
+    def __init__(self, refs: list[dict] | None = None) -> None:
+        self.refs = refs or []
+        self.calls: list[tuple[str, str]] = []
+
+    async def references_only(self, query: str, *, site: str = "", limit: int = 8):
+        self.calls.append((query, site))
+        return self.refs
+
+    async def close(self) -> None:
+        return None
 
 
 LONG = "正文内容" * 80
@@ -99,6 +114,93 @@ def test_fetch_candidates_dedupes_and_caps(tmp_path) -> None:
     assert len(out) == 3
     out2 = asyncio.run(_pipeline(tmp_path, crawler).fetch_candidates_for_ingestion([urls[0], urls[0]]))
     assert len(out2) == 1
+
+
+def test_rich_snippet_prefers_pure_search(tmp_path) -> None:
+    """抓不到正文时优先用**纯搜索模式**取更肥的原文摘录（203 字 → 1000+ 字）。
+
+    实测：同一 endpoint 去掉 model 后 content 从固定 203 字变 1000~1499 字、耗时 0.5~1s，
+    且与真实网页做 12-gram 比对包含率 84~99%（逐字摘录，不是模型改写）。
+    """
+    url = "https://mp.weixin.qq.com/s?__biz=abc&mid=9&idx=1"
+    crawler = _Crawler({url: None})
+    short = "微信文章摘要，只有两百字出头。" * 12          # 智能模式给的短摘要
+    rich = "中国科学技术大学图书馆开放时间：东区、西区、高新区馆舍每周 7*16 小时。" * 20
+    search = _Search([{"url": url, "title": "图书馆开放时间", "content": rich}])
+    out = asyncio.run(
+        _pipeline(tmp_path, crawler, search).fetch_candidates_for_ingestion(
+            [url], snippets={url: {"content": short, "title": "图书馆开放时间"}}
+        )
+    )
+    assert len(out) == 1
+    cand = out[0]
+    assert cand["content_type"] == "text/search-snippet"
+    assert cand["snapshot_text"] == rich, "应当用纯搜索的更长摘录，而不是智能模式的短摘要"
+    assert f"仅搜索摘要 {len(rich)} 字" in cand["title"]
+    # 查询词用页面自身标题（不是用户问题），并带站点过滤
+    assert search.calls == [("图书馆开放时间", "mp.weixin.qq.com")]
+
+
+def test_rich_snippet_never_substitutes_another_page(tmp_path) -> None:
+    """同站但 URL 不同的返回**绝不能**顶替目标页——宁可退回短摘要。"""
+    url = "https://mp.weixin.qq.com/s?__biz=abc&mid=9&idx=1"
+    crawler = _Crawler({url: None})
+    short = "目标页自己的摘要内容。" * 20
+    search = _Search([{"url": "https://mp.weixin.qq.com/s?__biz=OTHER", "content": "别的页面" * 100}])
+    out = asyncio.run(
+        _pipeline(tmp_path, crawler, search).fetch_candidates_for_ingestion(
+            [url], snippets={url: {"content": short, "title": "标题"}}
+        )
+    )
+    assert len(out) == 1
+    assert out[0]["snapshot_text"] == short
+
+
+def test_navigation_page_snippet_is_dropped(tmp_path) -> None:
+    """导航/列表页摘要（实测 66/77/28 字，"公告 公告 公告 …"）必须被门槛挡掉。"""
+    url = "https://lib.ustc.edu.cn/2008/"
+    crawler = _Crawler({url: None})
+    nav = "公告 公告 公告 图书馆2023寒假开放安排 公告 图书馆2022暑期开放安排 公告 公告"
+    out = asyncio.run(
+        _pipeline(tmp_path, crawler, _Search([])).fetch_candidates_for_ingestion(
+            [url], snippets={url: {"content": nav, "title": "公告列表"}}
+        )
+    )
+    assert out == [], "导航页不该进审核库"
+
+
+def test_snippet_docs_skip_llm_cleaner(tmp_path) -> None:
+    """摘要类文档不走 LLM 清洗的「不超过原文 60%」——那对 1000 字摘录是二次伤害。"""
+    from xiaowo_web.review import ReviewStore
+    from xiaowo_web.worker import IngestionWorker
+
+    class _SpyCleaner:
+        called = 0
+
+        def clean(self, snapshot_text, metadata):
+            _SpyCleaner.called += 1
+            from xiaowo_web.worker.ingestion import CleanDraft
+            return CleanDraft(title="被压缩", scope="general", category="stable_general",
+                              content="压缩后的短文本", chunks=["压缩后的短文本"])
+
+    settings = make_settings(tmp_path)
+    store = ReviewStore(settings)
+    store.initialize()
+    body = "中国科学技术大学图书馆开放时间与研讨室预约方式。" * 40
+    store.enqueue_candidate("demo", {
+        "source_id": "s-snip", "normalized_url": "https://lib.ustc.edu.cn/a",
+        "final_url": "https://lib.ustc.edu.cn/a", "title": "图书馆开放时间",
+        "institution": "中国科学技术大学", "level": "official_primary",
+        "fetched_at": "2026-09-17T00:00:00Z", "content_type": "text/search-snippet",
+        "snapshot_text": body, "evidence_span_hash": "span-snip",
+    })
+    worker = IngestionWorker(store, cleaner=_SpyCleaner(), worker_id="w-snip")
+    assert worker.run_once() == "done"
+    assert _SpyCleaner.called == 0, "摘要类文档不该调用 LLM 清洗"
+    item = store.list_items("demo")[0]
+    detail = store.get_item("demo", item["item_id"])
+    joined = "".join(c["content_text"] for c in detail["chunks"])
+    assert len(joined) >= len(body) * 0.95, f"摘要被压缩了：{len(body)} → {len(joined)}"
 
 
 def test_manager_ingests_references_in_background(tmp_path) -> None:
@@ -145,7 +247,8 @@ def test_fetch_candidates_falls_back_to_search_snippet(tmp_path) -> None:
     抓不到正文时改用检索器返回的摘要，并**显式标注仅摘要**，绝不冒充整页。"""
     url = "https://mp.weixin.qq.com/s?__biz=abc&mid=1&idx=1"
     crawler = _Crawler({url: None})          # 抓取失败（适配器会归一化成 502）
-    snippet = "中国科学技术大学转专业政策：二年级可全校申请，三年级只能本院内转。" * 4
+    # 长度需 >= _SNIPPET_MIN_CHARS(200)：太短的（导航/列表页）会被门槛挡掉
+    snippet = "中国科学技术大学转专业政策：二年级可全校申请，三年级只能本院内转。" * 8
     out = asyncio.run(_pipeline(tmp_path, crawler).fetch_candidates_for_ingestion(
         [url], snippets={url: {"content": snippet, "title": "转专业政策解读"}}))
     assert len(out) == 1

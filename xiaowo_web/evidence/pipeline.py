@@ -168,9 +168,11 @@ def _smart_source_tier(host: str, title: str) -> str:
     return "third_party"
 
 
-# 检索摘要兜底的最小长度（2026-09-17）：智能搜索的 `references[].content` 是**固定
-# 203 字截断**，短于此值的多半是空片段或纯标题，没有入审核库的价值。
-_SNIPPET_MIN_CHARS = 60
+# 摘要兜底的最小长度（2026-09-17 复核：60 → 200）。
+# 实测偏短的返回基本都是**导航/列表页**——例如 66/77 字的「公告 公告 公告 图书馆2023寒假
+# 开放安排…」、28 字的「AIP ebook 正式 AMS…电子书」，换检索模式也救不了，不该进审核库。
+# 正常内容页的摘录（纯搜索模式）在 1000~1499 字，200 的门槛不会误伤。
+_SNIPPET_MIN_CHARS = 200
 
 
 class EvidencePipeline:
@@ -840,6 +842,49 @@ class EvidencePipeline:
             terminal_reason="AI_GENERATED",
         )
 
+    @staticmethod
+    def _url_key(url: str) -> str:
+        """URL 归一化键：忽略 scheme、末尾斜杠与 fragment，便于与纯搜索结果对齐。"""
+        parts = urlsplit(str(url or "").strip())
+        host = (parts.netloc or "").lower()
+        path = (parts.path or "").rstrip("/")
+        return f"{host}{path}?{parts.query}" if parts.query else f"{host}{path}"
+
+    async def _rich_snippet(
+        self, url: str, title: str, cache: dict[tuple[str, str], str]
+    ) -> str:
+        """对抓不到正文的 URL，用**纯搜索模式**取更长摘录（2026-09-17）。
+
+        - 查询词用**页面自身标题**（不是用户问题）：既能精准命中该页，也不把用户上下文
+          带进后台任务（"审核队列不得保存用户问题"的约定继续成立）。
+        - 加 `search_filter.match.site=[host]` 提高精度（仅 v2 生效）。
+        - **只认 URL 完全一致的返回**（归一化后），拿不到就返回空串，绝不拿同站别的页面顶替。
+        - 任何失败都静默返回空串：这是后台补料，不能影响已经返回给用户的回答。
+        """
+        target = self._url_key(url)
+        if not target:
+            return ""
+        host = urlsplit(str(url or "")).netloc.lower()
+        query = (title or "").strip()[:120] or str(url or "")[:120]
+        key = (query, host)
+        if key in cache:
+            return cache[key]
+        cache[key] = ""      # 先占位，避免同一批里重复请求
+        fetch = getattr(self.search, "references_only", None)
+        if fetch is None:    # 非百度 provider（searxng/bocha）没有这个能力
+            return ""
+        try:
+            refs = await fetch(query, site=host, limit=8)
+        except Exception as exc:  # noqa: BLE001
+            log.info(f"纯搜索补摘要失败 {url[:70]}: {exc}")
+            return ""
+        for ref in refs:
+            if self._url_key(str(ref.get("url") or "")) == target:
+                content = str(ref.get("content") or "").strip()
+                cache[key] = content
+                return content
+        return ""
+
     async def fetch_candidates_for_ingestion(
         self, urls: list[str], *, snippets: dict[str, dict[str, str]] | None = None,
         limit: int = 8, min_chars: int = 200,
@@ -866,6 +911,8 @@ class EvidencePipeline:
         # wap. / uc. / e. …），只按 URL 去重会把 6 份近重复文档全灌进审核队列
         # （2026-09-16 实测 6/8 条候选实为同一页）。用抓取结果的 content_hash 兜住。
         seen_content: set[str] = set()
+        # 纯搜索补摘要的缓存：同一 (标题, 站点) 只请求一次
+        rich_cache: dict[tuple[str, str], str] = {}
         snippet_map = {
             str(k).strip(): {
                 "content": str((v or {}).get("content") or "").strip(),
@@ -909,6 +956,13 @@ class EvidencePipeline:
                 # 抓不到正文（robots 禁抓／抓到空页／过短导航页）→ 检索摘要兜底
                 snippet = snippet_map.get(url) or {}
                 body = str(snippet.get("content") or "")
+                # 2026-09-17：先用**纯搜索模式**取更肥的原文摘录（实测 203 → 1000+ 字，
+                # 0.5~1s，同样不抓正文、不碰 robots）。拿不到就沿用智能模式的短摘要。
+                rich = await self._rich_snippet(
+                    url, str(snippet.get("title") or ""), rich_cache
+                )
+                if len(rich) > len(body):
+                    body = rich
                 if len(body) < _SNIPPET_MIN_CHARS:
                     continue
                 text = body

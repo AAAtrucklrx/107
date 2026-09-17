@@ -238,6 +238,53 @@ class BaiduSearchClient:
         references = [r for r in (payload.get("references") or []) if isinstance(r, dict)]
         return text, references
 
+    async def references_only(
+        self,
+        query: str,
+        *,
+        site: str = "",
+        limit: int = 8,
+        timeout: float = 20.0,
+    ) -> list[dict]:
+        """**纯搜索模式**（不传 `model`）：只要 references，不做 LLM 总结。
+
+        2026-09-17 实测（评估文档《小蜗_联网架构评估_纯搜索vs智能生成_20260917.md》§2）：
+
+        | | 传 model（智能搜索生成） | **不传 model（本方法）** |
+        |---|---|---|
+        | `references[].content` | 固定 **203 字**硬截断 | **1000~1499 字**（40 条里 0 条等于 203）|
+        | 耗时 | 22~43s | **0.5~1.0s** |
+        | `choices` | 有生成答案 | **空**（所以只能取证据，不能当答案）|
+
+        内容可靠性：与真实网页做 NFKC 归一化后 12-gram 比对**包含率 84~99%**
+        → 是网页原文的**逐字摘录**，不是模型改写。
+
+        `site` 非空时加 `search_filter.match.site`（仅 v2 生效；实测传 ustc.edu.cn
+        返回 6 条全在该校域下）。
+        """
+        body: dict = {
+            "messages": [{"role": "user", "content": query}],
+            "search_source": "baidu_search_v2",
+            "resource_type_filter": [{"type": "web", "top_k": max(1, min(limit, 30))}],
+            "stream": False,
+            "search_mode": "required",
+            # 注意：**不传 model** —— 这正是纯搜索模式（传了就是智能搜索生成）
+        }
+        if site:
+            body["search_filter"] = {"match": {"site": [site]}}
+        response = await self._client.post(
+            f"{self.base_url}/v2/ai_search/chat/completions",
+            headers={"X-Appbuilder-Authorization": f"Bearer {self._api_key}"},
+            timeout=timeout,
+            json=body,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        refs = payload.get("references") or []
+        if not isinstance(refs, list):
+            raise SidecarContractError("Baidu pure-search references contract is invalid")
+        return [r for r in refs if isinstance(r, dict)]
+
     async def search(self, query: str, *, limit: int = 10) -> SearchBatch:
         response = await self._client.post(
             f"{self.base_url}/v2/ai_search/web_search",

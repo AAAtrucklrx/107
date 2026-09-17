@@ -213,6 +213,17 @@ class IngestionWorker:
         self.retriever = retriever
         self.worker_id = worker_id or f"worker-{secrets.token_urlsafe(8)}"
 
+    def _cleaner_for(self, payload: dict):
+        """摘要类文档（`text/search-snippet`）**跳过 LLM 清洗**（2026-09-17）。
+
+        理由：`_CLEAN_PROMPT` 有"总长度不超过原文 60%"的规则，对整页正文合理，但对本来就
+        只有 1000~1500 字的检索摘录是**二次伤害**（实测 202 字摘要被压到 71~188 字）。
+        摘要已是检索器给出的干净原文摘录，用确定性清洗（只做规整与切块）即可保留证据。
+        """
+        if str(payload.get("content_type") or "") == "text/search-snippet":
+            return DeterministicCleaner()
+        return self.cleaner
+
     def _neighbors(self, snapshot: str, namespace: str) -> list[str]:
         """取已入库的相近片段，供"重复/冲突"判定；没有检索器就返回空。"""
         if self.retriever is None:
@@ -304,7 +315,7 @@ class IngestionWorker:
                 self._record_rejection(job, verdict, now=now)
                 self.store.fail_job(job, "OFF_TOPIC", permanent=True, now=now)
                 return "dead"
-            draft = self.cleaner.clean(snapshot, job.payload)
+            draft = self._cleaner_for(job.payload).clean(snapshot, job.payload)
             item_id = self.store.create_draft(
                 job,
                 title=draft.title,
