@@ -6,9 +6,14 @@
 
 小蜗 = 科大校园智能助手（107 杯比赛项目）：**React/Vite 四工作区 Web（FastAPI `/api/v1` + SSE）为主应用**，LangGraph 统一 QA（意图分类 → think ≤4 轮 → act 工具 **（单轮 ≤3 并行）** → compose），SQLite 双库 + ChromaDB 混合检索 + **结构化数据卡**（成绩/课表/考试/选课/活动/空教室/培养方案三件/日周视图/课程搜索、推荐、评课、对比等 15 类工具结果直接表格渲染，不经 LLM 重述）+ **语义答案缓存**（发布 hash 失效）+ **世界知识通道**（非校内常识 LLM 直接答+「非联网核实」免责）+ **今日弹窗**（课程+活动，登录即弹）+ 31 注册工具（think 提示目录 28 + `eco:` 生态）。校内服务（教务/CAS/青春科大 young/**DeepSeek 官网 LLM**）。Streamlit（`app_test.py`）仅作回退入口。
 
-## ⚠️ 当前状态（2026-09-15 复测）——动手前必看
+## ⚠️ 当前状态（2026-09-17 复检）——动手前必看
 
-- HEAD：`debef74`（fix(advisor+qa): 评论样本按「班」保底取样… 2026-09-15），main 分支，远端 `github.com/AAAtrucklrx/107`。
+- HEAD：`eca69af`（fix(ui): 走查收尾 —— 后台默认进知识审核 + 治理页待导出提案计数 + 未登录引导，2026-09-17），main 分支，远端 `github.com/AAAtrucklrx/107`，**服务器与 origin 一致（已全部推送）**。
+- **测试基线（2026-09-17）**：`pytest tests/web` **470 passed**、前端 `vitest run` **37 passed**、`npm run build` 成功；readiness 六项全绿、8 服务 RUNNING。
+- **联网问答链路（2026-09-17 定稿，与历史规格不同）**：`XIAOWO_WEB_ANSWER_MODE=pure` —— 本地优先 → 公众号与纯搜索**并行** → **纯搜索答得出就立刻答**（公众号只在纯搜索答不出时兜底）→ 自研合成 + 相关性闸门 + 可核验闸门。可核验闸门是**三级**：先让模型改一版 → 仍有残留就**就地对冲**（把那几个数字/日期标成「资料未给出」+ 末尾说明）→ 只有当答案里一个可核验事实都不剩才拒答，且拒答终态必须是 `EVIDENCE_INSUFFICIENT`（runner 据此回退本地）。旧的「百度智能搜索生成（smart）」路径保留可回退但**不再默认启用**（`XIAOWO_WEB_ANSWER_MODE=smart` 可切回）。
+- **反馈闭环（2026-09-17）**：回答下方 👍/👎 → `xiaowo_web/feedback_triage.py` 自动转动作（outdated→对该回答来源排队复抓；source_issue→生成来源规则建议，后台可导出 Git diff；helpful→直接办结；incorrect→附来源转人工）；审核人后台「回答反馈」处理，**未登录用户（`namespace='anonymous'`）的反馈同样可见可处理**（前端标「未登录用户」）。语义缓存命中时会**还原原始来源**，供核对与分诊。
+- **影子对比通道**：`XIAOWO_SHADOW_COMPARE`（默认关）对同一问题并行跑 A=智能搜索生成 / B=纯搜索+自研合成，结果落 `data/shadow_compare.db`，用于评估取舍。
+- **演示材料**：`docs/演示材料/小蜗_6分钟演示PPT_制作指导_给AI.md`（6 分钟现场演示剧本）+ `docs/演示材料/小蜗_全流程走查_20260917.md`（走查问题清单）；文档该信哪份见 `docs/文档索引与时效.md`。
 - **工作区干净**（2026-09-03 提交后）：无未提交改动；未跟踪项均为数据/环境产物（`data/`、`database/*.db-wal/shm`、`scripts/data/`、`scripts/tmp_*`、`.models/`、`.npm-cache/`、`deploy/server/logs|run/`、`deploy/sidecars/` 等，均不入 git）。
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
