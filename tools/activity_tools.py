@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import html as _html
 import re
 import time
 from datetime import datetime, timedelta
@@ -29,16 +30,10 @@ _detail_cache: dict = {}
 # 实体 → 卡片和详情里把标签原样显示出来（用户看到的"乱码"）。在**工具出口统一清洗**，
 # 这样 API、给 LLM 的工具摘要、推荐逻辑拿到的是同一份干净文本。
 _BLOCK_TAG_RE = re.compile(r"<\s*(?:br|/p|/div|/li|/h[1-6]|/tr|/table|/section)\s*/?\s*>", re.I)
-_ANY_TAG_RE = re.compile(r"<[^>]{0,200}>")
-_NAMED_ENTITY = {
-    "amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'", "nbsp": " ",
-    "ldquo": "“", "rdquo": "”", "lsquo": "‘", "rsquo": "’", "middot": "·",
-    "mdash": "—", "ndash": "–", "hellip": "…", "times": "×", "bull": "•",
-    "copy": "©", "reg": "®", "trade": "™", "deg": "°", "laquo": "«", "raquo": "»",
-    "ensp": " ", "emsp": " ", "thinsp": " ", "zwnj": "", "zwj": "",
-}
-_NAMED_RE = re.compile(r"&([a-zA-Z][a-zA-Z0-9]{1,9});")
-_NUMERIC_RE = re.compile(r"&#(x?[0-9a-fA-F]{1,7});")
+_ANY_TAG_RE = re.compile(r"<[^>]{0,2000}>")   # 长 href 的 <a> 常超 200 字符
+# 实体解码统一用标准库 html（覆盖全部 HTML5 命名实体）。手写表不够用 —— 实测有活动把
+# 颜文字写成 `（｡&ograve; &forall; &oacute;｡）`，这类不常见实体残留下来照样是"乱码"。
+_LEFTOVER_ENTITY_RE = re.compile(r"&[a-zA-Z][a-zA-Z0-9]{1,9};")
 
 
 def _plain_text(value) -> str:
@@ -53,21 +48,11 @@ def _plain_text(value) -> str:
     text = _BLOCK_TAG_RE.sub("\n", text)
     text = _ANY_TAG_RE.sub("", text)
 
-    def _named(match: "re.Match[str]") -> str:
-        return _NAMED_ENTITY.get(match.group(1).lower(), match.group(0))
-
-    def _numeric(match: "re.Match[str]") -> str:
-        raw = match.group(1)
-        try:
-            code = int(raw[1:], 16) if raw[:1] in "xX" else int(raw)
-            return chr(code) if 0 < code <= 0x10FFFF else match.group(0)
-        except (ValueError, OverflowError):
-            return match.group(0)
-
-    # 解两遍：兼容 `&amp;ldquo;` 这种二次转义
+    # 解两遍：兼容 `&amp;ldquo;` 这种二次转义（utf-8 下 html.unescape 不抛异常）
     for _ in range(2):
-        text = _NAMED_RE.sub(_named, text)
-        text = _NUMERIC_RE.sub(_numeric, text)
+        text = _html.unescape(text)
+    # 兜底：仍解不出的非法实体名（如 `&foo;`）直接丢掉，绝不让 `&xxx;` 显示给用户
+    text = _LEFTOVER_ENTITY_RE.sub("", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t\u00a0]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)

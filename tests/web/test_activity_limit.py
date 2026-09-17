@@ -72,6 +72,16 @@ def test_plain_text_keeps_full_length_and_decodes_numeric_entities():
     assert got.endswith("'中“"), f"数字实体解码异常: {got[-6:]!r}"  # &#39; 是 ASCII 撇号
 
 
+def test_plain_text_decodes_full_html5_entity_set():
+    """回归：颜文字里的 &ograve; &forall; &oacute; 也要解码（手写实体表覆盖不到）。"""
+    from tools.activity_tools import _plain_text
+
+    got = _plain_text("欢迎加群交流（｡&ograve; &forall; &oacute;｡）&foo;")
+    for raw in ("&ograve;", "&forall;", "&oacute;", "&foo;"):
+        assert raw not in got, f"残留: {raw}"
+    assert "ò" in got and "∀" in got and "ó" in got
+
+
 def test_activity_output_mapping_uses_plain_text_without_cap():
     """守门：输出映射必须走 _plain_text，且不得再出现 [:120] 截断。"""
     import inspect

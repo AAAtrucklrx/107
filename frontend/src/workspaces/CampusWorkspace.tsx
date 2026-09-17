@@ -83,8 +83,10 @@ function decodeRichText(value: string): string {
   text = text.replace(/<[^>]{0,200}>/g, "");
   // 实体解码（两遍，兼容 &amp;ldquo; 这类二次转义）
   for (let pass = 0; pass < 2; pass += 1) {
-    text = text.replace(/&([a-zA-Z][a-zA-Z0-9]{1,9});/g, (match, name: string) =>
-      RICH_ENTITIES[name.toLowerCase()] ?? match);
+    // 已知实体解码；**未知的也丢掉**：后端已用标准库解过，这里是兜底，
+    // 不能让 `&ograve;` 这类既不在表里、又长得像残留的东西显示给用户
+    text = text.replace(/&([a-zA-Z][a-zA-Z0-9]{1,9});/g, (_match, name: string) =>
+      RICH_ENTITIES[name.toLowerCase()] ?? "");
     text = text.replace(/&#(x?[0-9a-fA-F]{1,7});/g, (match, raw: string) => {
       const code = raw[0] === "x" || raw[0] === "X"
         ? Number.parseInt(raw.slice(1), 16)
