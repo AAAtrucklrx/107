@@ -41,6 +41,30 @@ def contains_sensitive_text(value: str) -> bool:
     return bool(_STUDENT_ID.search(value) or _CREDENTIAL.search(value) or _PERSONAL_TABLE.search(value))
 
 
+# 用户自述文本（反馈说明）里的**个人标识**（2026-09-17 修 P1-2）。
+# 与 `contains_sensitive_text` 的分工：那个判"能不能发到公网"（含成绩类片段、凭证 token），
+# 这个判"能不能落进反馈库"，只认真正的标识。
+_PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]{2,}")
+_ID_CARD = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
+
+
+def contains_personal_identity(value: str, *, student_id: str = "") -> bool:
+    """反馈说明里的个人标识扫描。
+
+    ⚠️ **不要**再用画像里的姓名/专业/年级做子串匹配：实测演示身份的姓名就是「测试」、
+    专业是「计算机科学与技术」、年级是「2025级」，于是说明里写「这是测试说明」会被
+    误判成"含个人信息"而 422 拒收（真实用户里"数学/物理/计算机"这类专业词同样会中招）。
+    现在只认：手机号 / 邮箱 / 身份证 / 本人学号（整串出现）。
+    """
+    if contains_sensitive_text(value):
+        return True
+    if _PHONE.search(value) or _EMAIL.search(value) or _ID_CARD.search(value):
+        return True
+    identifier = str(student_id or "").strip()
+    return len(identifier) >= 4 and identifier in value
+
+
 def sanitize_public_query(question: str, profile: dict[str, Any] | None = None) -> SanitizedQuery:
     if is_personal_query(question):
         raise QuerySafetyError("PERSONAL_QUERY", "个人数据问题禁止联网。")

@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChatWorkspace } from "./ChatWorkspace";
-import { streamRunEvents } from "../lib/api";
+import { ApiClientError, apiMutation, streamRunEvents } from "../lib/api";
 import type { PublicConfig, SessionPayload, SseEnvelope } from "../types";
 
 const putLocalConversation = vi.fn((_value: unknown) => Promise.resolve());
@@ -15,9 +15,19 @@ vi.mock("../lib/anonymousHistory", () => ({
   clearLocalConversations: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", () => {
+  // 反馈提交失败要断言 ApiClientError 的 message，mock 工厂里必须自带这个类
+  class ApiClientError extends Error {
+    constructor(public code: string, message: string, public status: number) {
+      super(message);
+      this.name = "ApiClientError";
+    }
+  }
+  return {
+  ApiClientError,
   apiDelete: vi.fn(),
-  apiGet: vi.fn(),
+  // 会话列表：返回合法结构，否则 reloadHistory 里 payload.items 会抛未处理的 promise 错
+  apiGet: vi.fn(() => Promise.resolve({ items: [] })),
   apiMutation: vi.fn(() => Promise.resolve({
     run_id: "run-fixture",
     conversation_id: null,
@@ -46,7 +56,8 @@ vi.mock("../lib/api", () => ({
       },
     });
   }),
-}));
+  };
+});
 
 const config: PublicConfig = {
   environment: "development", auth_mode: "anonymous", version: "test",
@@ -198,4 +209,53 @@ test("structured table scores and give-scores carry semantic cell levels", async
   // 内容不得被改写
   expect(screen.getByText("9.3")).toBeInTheDocument();
   expect(screen.getByText("杀手")).toBeInTheDocument();
+});
+
+
+test("反馈提交失败会说明原因并保持可重试（P1-2 回归）", async () => {
+  const user = userEvent.setup();
+  const personalSession: SessionPayload = {
+    ...session,
+    principal: {
+      ...session.principal,
+      id: "PB25111691",
+      auth_mode: "demo",
+      authenticated: true,
+      profile: { id: "PB25111691", name: "测试", major: "计算机科学与技术", grade: "2025级" },
+    },
+    capabilities: { ...session.capabilities, server_history: true, personal_academic: true },
+  };
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={personalSession} /></Tooltip.Provider>);
+  // 演示身份会自动弹「今日」弹窗，先关掉
+  await user.click(screen.getByRole("button", { name: "知道了" }));
+
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  await user.type(input, "公开校历是什么？");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(screen.getByText(/已核验的完整回答/)).toBeInTheDocument());
+
+  // 第一次提交：服务端 422（说明含个人信息）—— 必须看到原因且能重试
+  vi.mocked(apiMutation).mockImplementation((path: string) =>
+    String(path).includes("/feedback")
+      ? Promise.reject(new ApiClientError("FEEDBACK_SENSITIVE", "反馈说明包含个人或凭证信息，请删除后重试。", 422))
+      : Promise.resolve({
+        run_id: "run-fixture", conversation_id: null, requested_mode: "auto",
+        effective_mode: "auto", events_url: "/api/v1/chat/runs/run-fixture/events",
+      } as never),
+  );
+
+  await user.click(screen.getByRole("button", { name: "回答有问题" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.type(within(dialog).getByLabelText("补充说明（可选）"), "这是测试说明");
+  await user.click(within(dialog).getByRole("button", { name: "提交" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("反馈说明包含个人或凭证信息");
+  expect(within(dialog).getByRole("button", { name: "提交" })).toBeEnabled();
+  expect(screen.queryByText("反馈已记录")).not.toBeInTheDocument();
+
+  // 改好文案后重试成功
+  vi.mocked(apiMutation).mockImplementation(() => Promise.resolve({ feedback_id: 1 } as never));
+  await user.click(within(dialog).getByRole("button", { name: "提交" }));
+  await waitFor(() => expect(screen.getByText("反馈已记录")).toBeInTheDocument());
 });

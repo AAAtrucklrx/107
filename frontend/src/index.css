@@ -722,6 +722,13 @@ button:disabled {
   font-size: 12px;
 }
 
+.feedback-error {
+  margin: 10px 0 0;
+  color: var(--danger, #c0392b);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .feedback-success {
   display: flex;
   min-height: 130px;

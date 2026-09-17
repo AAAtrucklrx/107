@@ -514,15 +514,24 @@ function FeedbackDialog({
   const [category, setCategory] = useState(initialCategory);
   const [detail, setDetail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [error, setError] = useState<string | null>(null);
   if (!message.answerId || !message.runId) return null;
 
   const submit = async () => {
     setStatus("sending");
-    await apiMutation(`/answers/${message.answerId}/feedback`, csrfToken, {
-      method: "POST",
-      body: JSON.stringify({ run_id: message.runId, category, detail }),
-    });
-    setStatus("sent");
+    setError(null);
+    try {
+      await apiMutation(`/answers/${message.answerId}/feedback`, csrfToken, {
+        method: "POST",
+        body: JSON.stringify({ run_id: message.runId, category, detail }),
+      });
+      setStatus("sent");
+    } catch (reason) {
+      // 2026-09-17 修 P1-2：原来没有 try/catch —— 提交失败（如 422 说明含个人信息、
+      // 网络错误）会让弹窗永远停在「提交中」，按钮禁用且没有任何提示，用户只能关掉重来。
+      setStatus("idle");
+      setError(reason instanceof Error ? reason.message : "反馈提交失败，请稍后重试。");
+    }
   };
   const PositiveIcon = initialCategory === "helpful" ? ThumbsUp : ThumbsDown;
   return (
@@ -553,6 +562,7 @@ function FeedbackDialog({
               </select>
               <label className="field-label" htmlFor={`feedback-detail-${message.id}`}>补充说明（可选）</label>
               <textarea id={`feedback-detail-${message.id}`} maxLength={1000} value={detail} onChange={(event) => setDetail(event.target.value)} rows={4} />
+              {error && <p className="feedback-error" role="alert">{error}</p>}
               <div className="dialog-actions"><Dialog.Close className="secondary-button">取消</Dialog.Close><button className="command-button" disabled={status === "sending"} onClick={() => void submit()}>提交</button></div>
             </>
           )}

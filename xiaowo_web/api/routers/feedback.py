@@ -15,7 +15,7 @@ from xiaowo_web.feedback_triage import triage_feedback
 log = get_logger(__name__)
 from xiaowo_web.auth.models import Principal
 from xiaowo_web.errors import ApiError
-from xiaowo_web.evidence.privacy import contains_sensitive_text
+from xiaowo_web.evidence.privacy import contains_personal_identity
 
 
 router = APIRouter(prefix="/answers", tags=["feedback"])
@@ -35,14 +35,11 @@ async def create_feedback(
     ):
         raise ApiError(404, "ANSWER_NOT_FOUND", "没有找到当前会话中的该回答。")
     detail = payload.detail.strip()
-    profile_values = {
-        str(value).strip()
-        for value in principal.profile.values()
-        if value is not None and len(str(value).strip()) >= 2
-    }
-    if detail and (
-        contains_sensitive_text(detail)
-        or any(value in detail for value in profile_values)
+    # 2026-09-17 修 P1-2：原来把画像里所有 ≥2 字的值拿来做**子串**匹配，姓名「测试」/
+    # 专业「计算机科学与技术」/年级「2025级」都会把正常说明误判成"含个人信息"。
+    # 现在只扫真正的个人标识（见 `contains_personal_identity`）。
+    if detail and contains_personal_identity(
+        detail, student_id=str((principal.profile or {}).get("id") or "")
     ):
         raise ApiError(422, "FEEDBACK_SENSITIVE", "反馈说明包含个人或凭证信息，请删除后重试。")
     namespace = (

@@ -84,3 +84,32 @@ def test_unencrypted_detail_fails_closed_and_cross_session_answer_is_hidden(tmp_
         )
         assert hidden.status_code == 404
         assert hidden.json()["error"]["code"] == "ANSWER_NOT_FOUND"
+
+
+def test_feedback_detail_allows_profile_words_but_blocks_real_identifiers(tmp_path) -> None:
+    """P1-2 回归：姓名/专业/年级的子串不再误伤；手机/邮箱/本人学号仍然拦。"""
+    settings = make_settings(tmp_path, mode="demo", data_key="feedback-data-key")
+    app = create_app(settings, runner=ImmediateRunner())
+    with TestClient(app) as client:
+        csrf, _ = bootstrap(client)
+        # demo 登录会轮换会话与 csrf，必须用返回里的新 token
+        session = client.post("/api/v1/auth/demo", headers=mutation_headers(csrf)).json()
+        csrf = session["csrf_token"]
+        run_id, answer_id = _completed_answer(client, csrf)
+
+        def post(detail: str):
+            return client.post(
+                f"/api/v1/answers/{answer_id}/feedback",
+                json={"run_id": run_id, "category": "outdated", "detail": detail},
+                headers=mutation_headers(csrf),
+            )
+
+        # 演示画像就是 id=PB25111691 / name=测试 / major=计算机科学与技术 / grade=2025级
+        assert post("这是测试说明，开放时间与现在不一致").status_code == 200, "姓名子串不该误伤"
+        assert post("计算机科学与技术专业的课表有误").status_code == 200, "专业子串不该误伤"
+        assert post("2025级培养方案看起来过期了").status_code == 200, "年级子串不该误伤"
+
+        assert post("我的学号是 PB25111691").status_code == 422, "本人学号仍要拦"
+        assert post("请联系我 13800138000").status_code == 422, "手机号仍要拦"
+        assert post("邮箱是 someone@example.com").status_code == 422, "邮箱仍要拦"
+
