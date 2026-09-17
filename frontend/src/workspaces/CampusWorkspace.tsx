@@ -63,15 +63,38 @@ function activityTitle(item: CampusActivity): string {
   return String(item.title || item.name || "未命名活动");
 }
 
-/** 青春科大描述里的实体与换行标记转为可读文本（不使用 innerHTML，避免注入）。 */
+const RICH_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", middot: "·",
+  mdash: "—", ndash: "–", hellip: "…", times: "×", bull: "•",
+  copy: "©", reg: "®", trade: "™", deg: "°", laquo: "«", raquo: "»",
+};
+
+/** 富文本 → 可读纯文本（不使用 innerHTML，避免注入）。
+ *
+ *  2026-09-17 增强：后端已在工具出口清洗活动描述，这里是**兜底** —— 万一还有残留标签
+ *  或实体（历史快照、其它来源），也绝不让用户看到 `<p>`/`&ldquo;` 这种东西。
+ *  只处理文本，不解析 HTML，因此不存在注入面。
+ */
 function decodeRichText(value: string): string {
-  return value
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/&ldquo;/g, "“")
-    .replace(/&rdquo;/g, "”")
-    .replace(/&middot;/g, "·")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&");
+  let text = String(value ?? "");
+  // 块级/换行标签 → 换行，其余标签剥掉
+  text = text.replace(/<\s*(?:br|\/p|\/div|\/li|\/h[1-6]|\/tr)\s*\/?\s*>/gi, "\n");
+  text = text.replace(/<[^>]{0,200}>/g, "");
+  // 实体解码（两遍，兼容 &amp;ldquo; 这类二次转义）
+  for (let pass = 0; pass < 2; pass += 1) {
+    text = text.replace(/&([a-zA-Z][a-zA-Z0-9]{1,9});/g, (match, name: string) =>
+      RICH_ENTITIES[name.toLowerCase()] ?? match);
+    text = text.replace(/&#(x?[0-9a-fA-F]{1,7});/g, (match, raw: string) => {
+      const code = raw[0] === "x" || raw[0] === "X"
+        ? Number.parseInt(raw.slice(1), 16)
+        : Number.parseInt(raw, 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    });
+  }
+  return text.replace(/[ \t\u00a0]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function groupBy<T>(items: T[], getKey: (item: T) => string): Array<[string, T[]]> {

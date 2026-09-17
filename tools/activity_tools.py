@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 import time
 from datetime import datetime, timedelta
 
@@ -21,6 +22,56 @@ _CACHE_TTL = 600  # 秒
 _cache: dict = {"ts": 0.0, "acts": None, "err": ""}
 # 详情补全缓存（item_id -> detail dict，进程级；避免重复打平台）
 _detail_cache: dict = {}
+
+# ── 活动描述的富文本清洗（2026-09-17）────────────────────────────────────────
+# 背景：young 返回的 description 本身就是 HTML。实测 19 条报名中活动里 14 条含
+# `<p>/<strong>/<br />` 或 `&ldquo;/&middot;/&mdash;` 这类实体，而前端只认 `<br>` + 5 个
+# 实体 → 卡片和详情里把标签原样显示出来（用户看到的"乱码"）。在**工具出口统一清洗**，
+# 这样 API、给 LLM 的工具摘要、推荐逻辑拿到的是同一份干净文本。
+_BLOCK_TAG_RE = re.compile(r"<\s*(?:br|/p|/div|/li|/h[1-6]|/tr|/table|/section)\s*/?\s*>", re.I)
+_ANY_TAG_RE = re.compile(r"<[^>]{0,200}>")
+_NAMED_ENTITY = {
+    "amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'", "nbsp": " ",
+    "ldquo": "“", "rdquo": "”", "lsquo": "‘", "rsquo": "’", "middot": "·",
+    "mdash": "—", "ndash": "–", "hellip": "…", "times": "×", "bull": "•",
+    "copy": "©", "reg": "®", "trade": "™", "deg": "°", "laquo": "«", "raquo": "»",
+    "ensp": " ", "emsp": " ", "thinsp": " ", "zwnj": "", "zwj": "",
+}
+_NAMED_RE = re.compile(r"&([a-zA-Z][a-zA-Z0-9]{1,9});")
+_NUMERIC_RE = re.compile(r"&#(x?[0-9a-fA-F]{1,7});")
+
+
+def _plain_text(value) -> str:
+    """HTML 富文本 → 可读纯文本：块级标签转换行、剥掉其余标签、解实体、压空行。
+
+    顺序讲究：**先剥标签再解实体** —— 这样 `&lt;script&gt;` 解出来是字面文本，
+    不会被当成标签再剥一次（渲染端本来就转义，不存在注入面）。
+    """
+    text = str(value or "")
+    if not text:
+        return ""
+    text = _BLOCK_TAG_RE.sub("\n", text)
+    text = _ANY_TAG_RE.sub("", text)
+
+    def _named(match: "re.Match[str]") -> str:
+        return _NAMED_ENTITY.get(match.group(1).lower(), match.group(0))
+
+    def _numeric(match: "re.Match[str]") -> str:
+        raw = match.group(1)
+        try:
+            code = int(raw[1:], 16) if raw[:1] in "xX" else int(raw)
+            return chr(code) if 0 < code <= 0x10FFFF else match.group(0)
+        except (ValueError, OverflowError):
+            return match.group(0)
+
+    # 解两遍：兼容 `&amp;ldquo;` 这种二次转义
+    for _ in range(2):
+        text = _NAMED_RE.sub(_named, text)
+        text = _NUMERIC_RE.sub(_numeric, text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\u00a0]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _enrich_places(acts, max_fill: int = 4, gap: float = 0.6):
@@ -104,7 +155,7 @@ def _load_snapshot_activities():
             organizer=a.get("organizer", ""), category=a.get("category", ""),
             module=a.get("module", ""), fav_count=a.get("fav_count", 0),
             people_num=a.get("people_num", 0), service_hour=a.get("service_hour", ""),
-            description=a.get("description", ""),
+            description=_plain_text(a.get("description", "")),
             place_info=a.get("place_info", ""), xq=a.get("xq", ""),
             contact=a.get("contact", ""), form=a.get("form", ""),
         ) for a in snap.get("enrolment") or []]
@@ -285,7 +336,9 @@ def query_activities(keyword: str = "", category: str = "",
             "form": a.form,
             "people_num": a.people_num,
             "service_hour": a.service_hour,
-            "description": (a.description or "")[:120],
+            # 2026-09-17：清洗 HTML 且不再截断到 120 字（详情弹窗与卡片共用该字段；
+            # 卡片的三行截断交给 CSS -webkit-line-clamp，自带省略号）
+            "description": _plain_text(a.description),
             "reason": reasons.get(id(a), ""),
         } for a in out],
         "fetched_at": datetime.fromtimestamp(_cache["ts"]).strftime("%Y-%m-%d %H:%M"),

@@ -235,3 +235,45 @@ test("authenticated user submits a tool and sees rejection notification history"
   expect(screen.getAllByText(/说明不足，无法确认具体用途/).length).toBeGreaterThan(0);
   expect(screen.getByText("驳回原因：")).toBeInTheDocument();
 });
+
+
+test("活动描述里的 HTML 与实体不外露，详情显示完整正文（乱码/截断回归）", async () => {
+  const user = userEvent.setup();
+  const tail = "完整正文结尾：包含英文 SAIDS2026 与符号，验证不再被截断。";
+  const long = "<p><strong>演出时间：9月19日（周六）19:00</strong><br />"
+    + "活动书籍：伊恩&middot;瓦特《小说的兴起》</p>"
+    + "补充说明。".repeat(30)
+    + tail;
+  apiGetMock.mockImplementation((path: string) => {
+    if (path.startsWith("/campus/services")) return Promise.resolve(services);
+    if (path.startsWith("/campus/activities")) return Promise.resolve({
+      items: [{
+        id: "act-1", title: "原创话剧《种子》", name: "原创话剧《种子》",
+        category: "文艺演出", description: long,
+      }],
+      count: 1, total: 1, fetched_at: "2026-09-17 10:00",
+      source: { kind: "young_live", label: "青春科大", stale: false }, limitations: [],
+    });
+    if (path.startsWith("/campus/tools/notifications")) return Promise.resolve(notifications);
+    if (path.startsWith("/campus/tools")) return Promise.resolve(tools);
+    return Promise.reject(new Error(`Unexpected path: ${path}`));
+  });
+  render(<CampusWorkspace session={anonymousSession} />);
+  await screen.findByRole("heading", { name: "常用入口" });
+  await user.click(screen.getByRole("tab", { name: /活动/ }));
+
+  // 卡片摘要：标签剥掉、实体解码
+  const card = await screen.findByRole("button", { name: /原创话剧/ });
+  expect(card.textContent).not.toContain("<p>");
+  expect(card.textContent).not.toContain("<strong>");
+  expect(card.textContent).not.toContain("&middot;");
+  expect(card.textContent).toContain("演出时间：9月19日");
+  expect(card.textContent).toContain("伊恩·瓦特");
+
+  // 详情弹窗：显示完整正文（含 120 字之后的结尾）
+  await user.click(card);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).not.toContain("<strong>");
+  expect(dialog.textContent).toContain("SAIDS2026");
+});
+

@@ -42,3 +42,43 @@ def test_returns_at_least_one_for_empty_source():
     """数据源为空时也返回 >=1，保证可直接用于推荐器 top_n。"""
     assert _resolve_activity_limit(0, 0) >= 1
     assert _resolve_activity_limit(0, -5) >= 1
+
+
+# ── 活动描述清洗（2026-09-17：乱码与截断修复）─────────────────────────────────
+
+def test_plain_text_strips_html_tags_and_decodes_entities():
+    """回归：young 的活动描述是 HTML —— 标签与实体绝不能外露到界面。"""
+    from tools.activity_tools import _plain_text
+
+    raw = ("<p><strong>演出时间：9月19日（周六）19:00</strong><br />"
+           "活动书籍：伊恩&middot;瓦特《小说的兴起》</p>"
+           "&ldquo;挑战杯&rdquo;&mdash;2026")
+    got = _plain_text(raw)
+    assert "<" not in got and ">" not in got, f"标签未剥净: {got!r}"
+    assert "&middot;" not in got and "&ldquo;" not in got, f"实体未解码: {got!r}"
+    assert "演出时间：9月19日（周六）19:00" in got
+    assert "伊恩·瓦特" in got
+    assert "“挑战杯”—2026" in got
+    assert "\n" in got, "块级/<br> 标签应转成换行"
+
+
+def test_plain_text_keeps_full_length_and_decodes_numeric_entities():
+    """回归：不再截断到 120/200 字；数字实体（含十六进制）也要解码。"""
+    from tools.activity_tools import _plain_text
+
+    body = "补充说明。" * 40  # 200 字
+    got = _plain_text(body + "&#39;&#x4e2d;&amp;ldquo;")
+    assert len(got) > 150, f"正文被截断了: {len(got)}"
+    assert got.endswith("'中“"), f"数字实体解码异常: {got[-6:]!r}"  # &#39; 是 ASCII 撇号
+
+
+def test_activity_output_mapping_uses_plain_text_without_cap():
+    """守门：输出映射必须走 _plain_text，且不得再出现 [:120] 截断。"""
+    import inspect
+
+    from tools import activity_tools
+
+    src = inspect.getsource(activity_tools)
+    assert '"description": _plain_text(a.description),' in src
+    assert '(a.description or "")[:120]' not in src
+

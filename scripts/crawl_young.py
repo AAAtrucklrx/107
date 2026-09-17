@@ -7,6 +7,7 @@
 用法：py -3 scripts/crawl_young.py            # 全量
       py -3 scripts/crawl_young.py --public   # 仅公开列表（不需要个人接口成功）
 """
+from tools.activity_tools import _plain_text
 from __future__ import annotations
 
 import argparse
@@ -30,7 +31,7 @@ def _act_min(a) -> dict:
         "apply_start": a.apply_start, "apply_end": a.apply_end,
         "organizer": a.organizer, "category": a.category, "module": a.module,
         "fav_count": a.fav_count, "people_num": a.people_num,
-        "service_hour": a.service_hour, "description": a.description[:200],
+        "service_hour": a.service_hour, "description": _plain_text(a.description),
         "place_info": a.place_info, "xq": a.xq,
         "contact": a.contact, "form": a.form,
     }
