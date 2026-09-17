@@ -116,8 +116,43 @@ def test_unverifiable_answer_is_refused(tmp_path, patched) -> None:
     patched["unsupported"] = ["9999"]
     bundle = asyncio.run(_pipeline(tmp_path, PureSearch()).answer("中国科学技术大学图书馆开放时间？"))
     assert bundle.terminal_reason == "EVIDENCE_INSUFFICIENT"
-    assert "不足以支撑一份可靠回答" in bundle.markdown
+    assert "没有查到可靠的数据" in bundle.markdown
     assert any("无法核实" in item for item in bundle.limitations)
+
+
+def test_repair_removes_unsupported_numbers(tmp_path, monkeypatch) -> None:
+    """发现有依据缺失的**先改一版**（删掉/改成"未给出"），而不是整篇拒答。"""
+    import xiaowo_web.evidence.compose as compose_module
+
+    calls = {"repair": 0}
+
+    monkeypatch.setattr(compose_module, "compose_with_own_llm",
+                        lambda q, r: "图书馆每周开放 9*9 小时，电话 63607647。")
+    monkeypatch.setattr(compose_module, "injected_context", lambda: "")
+    monkeypatch.setattr(compose_module, "repair_answer",
+                        lambda q, r, prev, bad: calls.__setitem__("repair", calls["repair"] + 1)
+                        or "图书馆每周开放时间未在资料中给出，电话 63607647。")
+
+    answer, unsupported = compose_module.compose_and_verify("图书馆开放时间？", _REFS)
+    assert calls["repair"] == 1, "应触发一次修复"
+    assert unsupported == [], "修好之后不应再有无法核实的数字"
+    assert "9*9" not in answer and "63607647" in answer
+
+
+def test_repair_gives_up_after_one_attempt(tmp_path, monkeypatch) -> None:
+    """改一版仍不合格 → 返回剩余问题（由调用方给"没查到数据"的答复），不再反复重试。"""
+    import xiaowo_web.evidence.compose as compose_module
+
+    calls = {"repair": 0}
+    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r: "开放 9*9 小时。")
+    monkeypatch.setattr(compose_module, "injected_context", lambda: "")
+    monkeypatch.setattr(compose_module, "repair_answer",
+                        lambda q, r, prev, bad: calls.__setitem__("repair", calls["repair"] + 1)
+                        or "开放 8*8 小时。")
+
+    _answer, unsupported = compose_module.compose_and_verify("图书馆开放时间？", _REFS)
+    assert calls["repair"] == 1, "只改一次，不无限重试"
+    assert unsupported, "仍不合格时必须把问题交给调用方"
 
 
 def test_search_failure_returns_to_caller(tmp_path, patched) -> None:

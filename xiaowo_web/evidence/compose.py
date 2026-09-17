@@ -162,7 +162,51 @@ def judge_relevance(question: str, references: list[dict], *, max_chars: int = 4
     return False
 
 
-# ── 闸门二：可核验性（合成后） ──────────────────────────────────────────────
+# ── 闸门二：可核验性（合成后，带一次自动修复） ──────────────────────────────
+_REPAIR_PROMPT = """你是回答校对员。上一版回答里有若干**数字或日期在检索资料中找不到依据**。
+
+请改写这一版回答：
+- 对**没有依据**的那些数字/日期：直接删除，或改成「资料中未给出」这类如实说明；
+- 其余内容、结构与语气**保持不变**；
+- **不得新增**任何资料里没有的事实，也不要用你的常识补数字。
+
+只输出改写后的回答正文（不要解释你在改什么）。
+
+用户问题：{question}
+
+检索资料：
+{references}
+
+上一版回答：
+{previous}
+
+无依据的数字/日期：{facts}
+"""
+
+
+def repair_answer(question: str, references: list[dict], previous: str, unsupported: list[str]) -> str:
+    """让模型把"无依据的数字/日期"删掉或改成"未给出"（2026-09-17）。
+
+    为什么不在整篇拒答：用户要的是"这块没数据"这种答复，而不是什么都没有。
+    实测「期末考试安排」原本因 2 个无据日期被整篇拒答，改一版就能给出可用的回答。
+    """
+    from langchain_core.prompts import ChatPromptTemplate
+    from utils.llm_client import create_llm
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _REPAIR_PROMPT),
+        ("human", "请输出改写后的回答正文。"),
+    ])
+    result = (prompt | create_llm(temperature=0)).invoke({
+        "question": str(question or "")[:300],
+        "references": build_web_candidates_summary(references, limit=8),
+        "previous": str(previous or "")[:4000],
+        "facts": "、".join(unsupported[:10]),
+    })
+    return str(getattr(result, "content", result))
+
+
+
 def injected_context() -> str:
     """我们**主动注入**给合成的上下文（当前日期/星期/学期与教学周日期对照）。
 
@@ -185,18 +229,34 @@ def injected_context() -> str:
 
 
 def compose_and_verify(
-    question: str, references: list[dict]
+    question: str, references: list[dict], *, max_repair: int = 1
 ) -> tuple[str, list[str]]:
-    """自研合成 + 可核验性校验。返回 (答案, 未获证据支持的事实列表)。
+    """自研合成 + 可核验性校验（**先尝试自动修复，而不是整篇拒答**）。
 
     证据口径 = 检索披露的标题/URL/正文 **+ 我们注入的日期/学期上下文**。
-    未支持列表**非空**时调用方必须拒答/回退——宁可说"没查到"，也不展示无据内容。
+
+    发现无依据的数字/日期时：**先让模型改一版**（删掉或改成"资料中未给出"）再校验；
+    改过仍有问题才把剩余项返回给调用方。用户要的是"这块没数据"这种回答，
+    而不是什么都没有——所以修复优先于拒答。
     """
     answer = compose_with_own_llm(question, references)
     if not answer.strip():
         return "", []
     evidence = refs_evidence(references) + "\n" + injected_context()
-    return answer, unsupported_facts(answer, evidence)
+    unsupported = unsupported_facts(answer, evidence)
+    attempts = 0
+    while unsupported and attempts < max(0, max_repair):
+        attempts += 1
+        try:
+            repaired = repair_answer(question, references, answer, unsupported)
+        except Exception as exc:  # noqa: BLE001 —— 修复失败不该把整条链路打挂
+            log.warning(f"答案修复失败（保留原答案交由调用方判断）: {exc}")
+            break
+        if not repaired.strip():
+            break
+        answer = repaired
+        unsupported = unsupported_facts(answer, evidence)
+    return answer, unsupported
 
 
 def compose_with_own_llm(question: str, references: list[dict]) -> str:
