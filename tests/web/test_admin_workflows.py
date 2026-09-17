@@ -244,3 +244,42 @@ def test_failed_publish_can_be_retried_once_through_api(tmp_path) -> None:
         )
         assert repeated.status_code == 409
         assert repeated.json()["error"]["code"] == "REVIEW_STATE_INVALID"
+
+
+def test_generation_state_reports_pending_proposals(tmp_path) -> None:
+    """P2-4 回归：发布治理页要能看到"待导出的来源规则建议"条数。
+
+    反馈分诊（source_issue）会攒下这类建议，但以前没有全局入口 —— 只能逐条目翻详情，
+    等于没人知道要导出。
+    """
+    settings = make_settings(tmp_path, mode="demo", admin_ids="PB25111691")
+    app = create_app(settings, runner=ImmediateRunner())
+    with TestClient(app) as client:
+        csrf, _ = bootstrap(client)
+        session = client.post("/api/v1/auth/demo", headers=mutation_headers(csrf)).json()
+        csrf = session["csrf_token"]
+
+        state = client.get("/api/v1/admin/generations").json()
+        assert state["pending_proposals"] == 0, "没有建议时应该是 0（而不是缺字段）"
+
+        store = app.state.review_store
+        store.enqueue_candidate("demo", _candidate("trust-proposal"))
+        assert IngestionWorker(store, worker_id="cleaner-trust-proposal").run_once() == "done"
+        item = next(v for v in store.list_items("demo") if v["title"].endswith("trust-proposal"))
+        store.create_source_trust_proposal(
+            "demo",
+            str(item["item_id"]),
+            {
+                "host": "example.com",
+                "path_prefix": "/",
+                "level": "reliable_independent",
+                "institution": "示例来源机构",
+                "effective_from": "2026-09-17",
+                "rationale": "该来源与问题无关且内容易变，建议人工复核后调整来源等级。",
+            },
+            "tester",
+            "req-pending-proposals",
+        )
+
+        state = client.get("/api/v1/admin/generations").json()
+        assert state["pending_proposals"] >= 1, "写入建议后治理页要能看到条数"

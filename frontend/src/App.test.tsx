@@ -66,14 +66,24 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
-test("opens the isolated administrator route on tool review by default", async () => {
+test("opens knowledge review on the bare administrator route（P2-5）", async () => {
+  // 2026-09-17 改：裸 /admin 默认进「知识审核」（管理主战场），原来默认落常空的「工具审核」
   window.history.replaceState({}, "", "/admin");
   bootstrapMock.mockResolvedValue({ config, session: adminSession });
   render(<App />);
 
-  expect(await screen.findByText("工具审核工作区")).toBeInTheDocument();
+  expect(await screen.findByText("知识审核工作区")).toBeInTheDocument();
   expect(screen.getAllByText("管理后台")).toHaveLength(2);
-  expect(window.location.pathname).toBe("/admin");
+  expect(window.location.pathname).toBe("/admin/knowledge");
+});
+
+test("keeps the explicit tool review route", async () => {
+  window.history.replaceState({}, "", "/admin/tools");
+  bootstrapMock.mockResolvedValue({ config, session: adminSession });
+  render(<App />);
+
+  expect(await screen.findByText("工具审核工作区")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/admin/tools");
 });
 
 test("redirects the legacy review route to knowledge review", async () => {

@@ -1430,6 +1430,23 @@ button:disabled {
   animation: pulse 1.5s ease-out infinite;
 }
 
+.message-login-required {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.message-login-required small {
+  color: var(--muted);
+}
+
 .message-failure,
 .claim-conflict {
   display: flex;

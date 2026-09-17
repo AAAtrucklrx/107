@@ -259,3 +259,22 @@ test("反馈提交失败会说明原因并保持可重试（P1-2 回归）", asy
   await user.click(within(dialog).getByRole("button", { name: "提交" }));
   await waitFor(() => expect(screen.getByText("反馈已记录")).toBeInTheDocument());
 });
+
+
+test("匿名问个人数据时给登录引导而不是故障（P3-10 回归）", async () => {
+  const user = userEvent.setup();
+  vi.mocked(apiMutation).mockImplementation(() =>
+    Promise.reject(new ApiClientError("AUTH_REQUIRED", "个人学业问题需要先登录。", 401)),
+  );
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  await user.type(input, "我的GPA是多少");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+
+  const card = await screen.findByRole("note");
+  expect(card).toHaveTextContent("个人学业问题需要先登录。");
+  expect(card).toHaveTextContent("进入演示身份");
+  expect(screen.queryByText("本次回答未完成")).toBeNull();
+});
+

@@ -546,8 +546,21 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
             </section>
           )}
           <section className="trust-export-row">
-            <div><h2>来源规则变更</h2><code>config/source_trust.yaml · Git 审查生效</code></div>
-            <button className="secondary-button" type="button" disabled={busy} onClick={() => void exportTrustProposals()}><Download size={15} />导出 Git diff</button>
+            <div>
+              <h2>来源规则变更</h2>
+              <code>config/source_trust.yaml · Git 审查生效</code>
+              {/* P2-4：反馈分诊攒下的降级建议在这里露出条数，避免"提案没人知道要导出" */}
+              <span className="data-source">
+                待导出建议 {generation?.pending_proposals ?? 0} 条
+              </span>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={busy || generation?.pending_proposals === 0}
+              title={generation?.pending_proposals === 0 ? "当前没有待导出的来源规则建议" : "导出为 Git diff 送审"}
+              onClick={() => void exportTrustProposals()}
+            ><Download size={15} />导出 Git diff</button>
           </section>
         </div>
       </Tabs.Content>

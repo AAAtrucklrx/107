@@ -1,34 +1,7 @@
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import {
-  AlertTriangle,
-  ArrowDown,
-  Bot,
-  Brain,
-  CalendarRange,
-  Check,
-  ChevronDown,
-  Clipboard,
-  Database,
-  Globe2,
-  History,
-  Library,
-  Menu,
-  MessageSquarePlus,
-  Moon,
-  Pencil,
-  RotateCcw,
-  Search,
-  Send,
-  Sparkles,
-  Square,
-  Sun,
-  ThumbsDown,
-  ThumbsUp,
-  Trash2,
-  X,
-} from "lucide-react";
+import { AlertTriangle, ArrowDown, Bot, Brain, CalendarRange, Check, ChevronDown, Clipboard, Database, Globe2, History, Library, Menu, MessageSquarePlus, Moon, Pencil, RotateCcw, Search, Send, Sparkles, Square, Sun, ThumbsDown, ThumbsUp, Trash2, X, LogIn } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StarterPromptTile } from "../components/LaunchTile";
@@ -42,7 +15,7 @@ import {
   putLocalConversation,
   type LocalConversation,
 } from "../lib/anonymousHistory";
-import { apiDelete, apiGet, apiMutation, streamRunEvents } from "../lib/api";
+import { ApiClientError, apiDelete, apiGet, apiMutation, streamRunEvents } from "../lib/api";
 import type {
   AcademicSchedule,
   ChatMessage,
@@ -850,7 +823,14 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       setBusy(false);
       const message = reason instanceof Error ? reason.message : "请求失败，请重试。";
       setError(message);
-      updateAssistant(assistantId, (item) => ({ ...item, content: message, status: "failed" }));
+      // 2026-09-17 修 P3-10：匿名问个人数据时后端返回 401 AUTH_REQUIRED —— 这是**设计好的引导**，
+      // 不是故障。原来一律渲染成"本次回答未完成"，看着像坏了，而且没告诉用户怎么登录。
+      const loginRequired = reason instanceof ApiClientError && reason.code === "AUTH_REQUIRED";
+      updateAssistant(assistantId, (item) => ({
+        ...item,
+        content: message,
+        status: loginRequired ? "login_required" : "failed",
+      }));
     }
   }, [activeId, authenticated, busy, handleEvent, session.csrf_token, updateAssistant]);
 
@@ -1049,6 +1029,13 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   </div>
                 )}
                 {message.status === "failed" && <div className="message-failure"><AlertTriangle size={15} />本次回答未完成</div>}
+                {message.status === "login_required" && (
+                  <div className="message-login-required" role="note">
+                    <LogIn size={15} />
+                    <span>{message.content || "个人学业问题需要先登录。"}</span>
+                    <small>请点左下角头像 →「进入演示身份」或「科大统一认证」，登录后重试。</small>
+                  </div>
+                )}
                 {!!message.claims?.some((claim) => claim.status === "conflict") && (
                   <div className="claim-conflict"><AlertTriangle size={15} /><span><strong>信息存在分歧</strong>请结合下方来源核验，不以模型猜测替代证据。</span></div>
                 )}

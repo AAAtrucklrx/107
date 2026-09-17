@@ -249,7 +249,17 @@ async def generation_state(
     request: Request,
     principal: Annotated[Principal, Depends(require_reviewer)],
 ) -> dict:
-    return request.app.state.review_store.get_generation_state(_namespace(principal))
+    namespace = _namespace(principal)
+    payload = request.app.state.review_store.get_generation_state(namespace)
+    # 2026-09-17 修 P2-4：反馈分诊产生的"来源降级建议"以前没有全局入口，只能逐条目翻详情。
+    # 这里把待导出的条数一并返回，发布治理页据此显示并决定导出按钮是否可点。
+    try:
+        payload["pending_proposals"] = len(
+            request.app.state.review_store.list_source_trust_proposals(namespace)
+        )
+    except Exception:  # noqa: BLE001 —— 统计失败不该让治理页整体打不开
+        payload["pending_proposals"] = None
+    return payload
 
 
 @router.post("/generations/rollback")

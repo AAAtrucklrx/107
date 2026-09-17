@@ -28,7 +28,13 @@ function adminPageFromPath(): AdminPage | null {
     window.history.replaceState({}, "", "/admin/knowledge");
     return "knowledge";
   }
-  if (value === "admin" || value === "admin/tools") return "tools";
+  // 2026-09-17 修 P2-5：裸 /admin 默认进「知识审核」（管理主战场）。
+  // 原来默认落「工具审核」，而那是常空页，第一次进后台的人会以为后台没东西。
+  if (value === "admin") {
+    window.history.replaceState({}, "", "/admin/knowledge");
+    return "knowledge";
+  }
+  if (value === "admin/tools") return "tools";
   if (value === "admin/knowledge") return "knowledge";
   return null;
 }

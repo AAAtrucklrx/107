@@ -110,7 +110,8 @@ export interface ChatMessage {
   stage?: string;
   stageMessage?: string;
   stages?: string[];
-  status?: "streaming" | "completed" | "cancelled" | "failed";
+  /** login_required：后端 401 AUTH_REQUIRED（匿名问个人数据）——引导态，不是故障（P3-10） */
+  status?: "streaming" | "completed" | "cancelled" | "failed" | "login_required";
   sources?: Source[];
   claims?: Claim[];
   limitations?: string[];
@@ -533,6 +534,8 @@ export interface GenerationState {
   activated_at: number | null;
   can_rollback: boolean;
   publish_busy: boolean;
+  /** 待导出的来源降级建议条数（P2-4）；旧后端/取不到时为 undefined */
+  pending_proposals?: number | null;
 }
 
 export interface SourceTrustProposal {
