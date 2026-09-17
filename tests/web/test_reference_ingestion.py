@@ -111,7 +111,7 @@ def test_manager_ingests_references_in_background(tmp_path) -> None:
             calls.append((namespace, candidates))
             return []
 
-    async def _fetcher(urls: list[str], snippets=None):
+    async def _fetcher(urls: list[str], snippets=None, query=""):
         fetched.append(list(urls))
         return [{"snapshot_text": "正文", "evidence_span_hash": "h"}]
 
@@ -130,7 +130,7 @@ def test_manager_ingests_references_in_background(tmp_path) -> None:
 
 def test_manager_ingest_failure_is_swallowed(tmp_path) -> None:
     """后台补料失败绝不能冒泡（回答已经返回给用户了）。"""
-    async def _boom(_urls, snippets=None):
+    async def _boom(_urls, snippets=None, query=""):
         raise RuntimeError("crawl down")
 
     manager = ChatManager(

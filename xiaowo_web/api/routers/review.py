@@ -77,6 +77,21 @@ async def list_items(
     }
 
 
+@router.get("/stats")
+async def review_stats(
+    request: Request,
+    principal: Annotated[Principal, Depends(require_reviewer)],
+    window_seconds: Annotated[int, Query(ge=3600, le=30 * 24 * 60 * 60)] = 24 * 60 * 60,
+) -> dict:
+    """审核链路日报（2026-09-17）：进料 / 预审 / 自动批准 / draft 积压 / 线上文档数。
+
+    ⚠️ 必须声明在 `/{item_id}` **之前**，否则会被当成 item_id 吞掉。
+    """
+    return request.app.state.review_store.review_stats(
+        _namespace(principal), window_seconds=window_seconds
+    )
+
+
 @router.get("/{item_id}")
 async def detail(
     item_id: str,

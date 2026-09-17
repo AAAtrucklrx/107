@@ -10,8 +10,17 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
+from utils.logger import get_logger
+
+from xiaowo_web.auth.models import Principal
 from xiaowo_web.evidence.privacy import contains_sensitive_text
 from xiaowo_web.review import IngestionJob, ReviewStore
+
+log = get_logger(__name__)
+
+# 自动批准的固定有效期：90 天（用户 2026-09-17 批准）。只有 `policy`(90) 与
+# `stable_general`(180) 两个分类放得下 90 天，公告(7)/办事(30) 天然时效、不参与自动批准。
+_AUTO_APPROVE_TTL_DAYS = 90
 
 
 _PROMPT_INJECTION = re.compile(
@@ -190,11 +199,80 @@ class IngestionWorker:
         store: ReviewStore,
         cleaner: Cleaner | None = None,
         *,
+        pre_reviewer=None,
+        auto_approve: bool = False,
+        retriever=None,
         worker_id: str | None = None,
     ) -> None:
         self.store = store
         self.cleaner = cleaner or DeterministicCleaner()
+        # 进料预审（2026-09-17）：None = 不跑（判定与自动批准都不参与，行为与旧版一致）
+        self.pre_reviewer = pre_reviewer
+        self.auto_approve = bool(auto_approve)
+        # 已入库片段的检索器：给"重复/冲突"判定提供对照物
+        self.retriever = retriever
         self.worker_id = worker_id or f"worker-{secrets.token_urlsafe(8)}"
+
+    def _neighbors(self, snapshot: str, namespace: str) -> list[str]:
+        """取已入库的相近片段，供"重复/冲突"判定；没有检索器就返回空。"""
+        if self.retriever is None:
+            return []
+        try:
+            principal = Principal(
+                "",
+                "demo" if namespace == "demo" else "cas",
+                {},
+                False,
+                f"session-pre-review-{namespace}",
+            )
+            result = self.retriever.search(snapshot[:300], principal, limit=4)
+            return [str(item.get("text") or "") for item in (result.get("results") or [])]
+        except Exception:  # noqa: BLE001 —— 没有对照物也要能入库
+            return []
+
+    def _pre_review(self, snapshot: str, job: IngestionJob):
+        """跑预审；未配置或异常一律返回 None（= 不参与判定，也绝不放行自动批准）。"""
+        if self.pre_reviewer is None:
+            return None
+        try:
+            return self.pre_reviewer.review(
+                snapshot, dict(job.payload), self._neighbors(snapshot, job.namespace)
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _record_verdict(
+        self, job: IngestionJob, item_id: str, draft: CleanDraft, verdict, *, now=None
+    ) -> None:
+        """落审计；若开启了自动批准且满足全部条件，走**与人工同一条链路**批准并发布。"""
+        level = str(job.payload.get("level") or "")
+        self.store.record_pre_review(
+            job.namespace,
+            item_id,
+            detail=verdict.as_detail(level=level, category=draft.category),
+            request_id=f"pre-review:{job.job_id}",
+            now=now,
+        )
+        if not self.auto_approve or not verdict.auto_approve_eligible(
+            level=level, category=draft.category
+        ):
+            return
+        # 同一 snapshot 的多个 job（不同 evidence_span）会命中**同一条** review item：
+        # 前一个 job 已经批准过就静默跳过，别拿"状态不允许批准"当失败刷日志。
+        if self.store.item_status(job.namespace, item_id) not in {"draft", "in_review"}:
+            return
+        try:
+            self.store.auto_approve_item(
+                job.namespace,
+                item_id,
+                category=draft.category,
+                ttl_days=_AUTO_APPROVE_TTL_DAYS,
+                actor_key="system:auto",
+                request_id=f"auto-approve:{job.job_id}",
+                now=now,
+            )
+        except Exception as exc:  # noqa: BLE001 —— 自动批准失败不能弄丢已建好的 draft
+            log.warning("自动批准失败 item=%s: %s", item_id, exc)
 
     def run_once(self, *, now: float | None = None) -> str | None:
         job = self.store.claim_job(self.worker_id, now=now)
@@ -208,8 +286,15 @@ class IngestionWorker:
             if _PROMPT_INJECTION.search(snapshot):
                 self.store.fail_job(job, "PROMPT_INJECTION", permanent=True, now=now)
                 return "dead"
+            verdict = self._pre_review(snapshot, job)
+            if verdict is not None and verdict.off_topic:
+                # 相关性闸门（2026-09-17）：实测智能搜索对"助学贷款"整批返回 RAG/知网/
+                # 论文这类完全无关的内容。这类资料**根本不进审核队列**——否则人工要白筛
+                # 一遍，而且摘要兜底会把它们灌进来。失败码留在 job 上供日报统计。
+                self.store.fail_job(job, "OFF_TOPIC", permanent=True, now=now)
+                return "dead"
             draft = self.cleaner.clean(snapshot, job.payload)
-            self.store.create_draft(
+            item_id = self.store.create_draft(
                 job,
                 title=draft.title,
                 scope=draft.scope,
@@ -218,6 +303,8 @@ class IngestionWorker:
                 model_text=draft.content,
                 actor_key=self.worker_id,
             )
+            if verdict is not None:
+                self._record_verdict(job, item_id, draft, verdict, now=now)
             return "done"
         except Exception:
             return self.store.fail_job(job, "CLEANING_FAILED", now=now)

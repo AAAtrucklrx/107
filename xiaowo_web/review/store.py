@@ -98,6 +98,14 @@ class ReviewStore:
     @staticmethod
     def _migrate_schema(conn: sqlite3.Connection) -> None:
         """Apply additive migrations to databases created by older builds."""
+        audit_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(review_audit)").fetchall()
+        }
+        if "detail_json" not in audit_columns:
+            # 预审理由存放位（2026-09-17）：原来 review_audit 只有 action/object/hash，
+            # 没有地方放"为什么这么判"，加一列自由 JSON。
+            conn.execute("ALTER TABLE review_audit ADD COLUMN detail_json TEXT")
         snapshot_columns = {
             str(row["name"])
             for row in conn.execute("PRAGMA table_info(web_snapshots)").fetchall()
@@ -942,6 +950,198 @@ class ReviewStore:
                 now=now,
             )
             conn.commit()
+
+    def item_status(self, namespace: str, item_id: str) -> str | None:
+        """只取条目状态（轻量，不读快照）：供自动批准前的一次幂等判断。"""
+        self._validate_namespace(namespace)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM review_items WHERE namespace = ? AND item_id = ?",
+                (namespace, item_id),
+            ).fetchone()
+        return None if row is None else str(row["status"])
+
+    def record_pre_review(
+        self,
+        namespace: str,
+        item_id: str,
+        *,
+        detail: dict[str, Any],
+        request_id: str,
+        now: float | None = None,
+    ) -> None:
+        """把进料预审的四项判定与理由写进 `review_audit`（`action='pre_review'`）。
+
+        `detail` 由调用方（ingestion worker）用 `PreReviewVerdict.as_detail()` 生成——
+        这里刻意只收 dict，避免 review 层反向依赖 worker 层。
+        """
+        self._validate_namespace(namespace)
+        with self._write_lock, self._connect() as conn:
+            self._audit(
+                conn,
+                namespace=namespace,
+                actor_key="system:pre-review",
+                action="pre_review",
+                object_type="review_item",
+                object_id=item_id,
+                request_id=request_id,
+                now=time.time() if now is None else now,
+                detail=detail,
+            )
+            conn.commit()
+
+    def auto_approve_item(
+        self,
+        namespace: str,
+        item_id: str,
+        *,
+        category: str,
+        ttl_days: int,
+        actor_key: str,
+        request_id: str,
+        now: float | None = None,
+    ) -> None:
+        """系统自动批准：**与人工完全同一条链路**（逐块批准 → approve_item → 排队发布）。
+
+        调用方必须先确认 `PreReviewVerdict.auto_approve_eligible()`；这里再校验一次分类
+        是否允许该 TTL，防止绕过 `_TTL_LIMITS`。额外写一条 `action='auto_approve'` 审计，
+        便于日报统计"自动批准了多少条"。
+        """
+        self._validate_namespace(namespace)
+        self._validate_category(category)
+        if ttl_days < 1 or ttl_days > _TTL_LIMITS[category]:
+            raise ValueError("ttl exceeds category maximum")
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT rc.chunk_id, rc.approval_status
+                FROM review_chunks rc
+                JOIN review_versions rv ON rv.version_id = rc.version_id
+                WHERE rc.item_id = ?
+                  AND rv.version_number = (
+                      SELECT current_version FROM review_items WHERE item_id = ?
+                  )
+                ORDER BY rc.position
+                """,
+                (item_id, item_id),
+            ).fetchall()
+        for row in rows:
+            if str(row["approval_status"]) == "approved":
+                continue
+            self.set_chunk_approval(
+                namespace,
+                item_id,
+                str(row["chunk_id"]),
+                True,
+                actor_key=actor_key,
+                request_id=request_id,
+                approval_status="approved",
+            )
+        self.approve_item(
+            namespace,
+            item_id,
+            category=category,
+            ttl_days=ttl_days,
+            actor_key=actor_key,
+            request_id=request_id,
+        )
+        with self._write_lock, self._connect() as conn:
+            self._audit(
+                conn,
+                namespace=namespace,
+                actor_key=actor_key,
+                action="auto_approve",
+                object_type="review_item",
+                object_id=item_id,
+                request_id=request_id,
+                now=time.time() if now is None else now,
+                detail={"category": category, "ttl_days": ttl_days},
+            )
+            conn.commit()
+
+    def review_stats(
+        self,
+        namespace: str,
+        *,
+        now: float | None = None,
+        window_seconds: int = 24 * 60 * 60,
+    ) -> dict[str, Any]:
+        """审核链路日报（2026-09-17）：进料 / 预审 / 自动批准 / draft 积压 / 线上文档数。
+
+        供管理页卡片使用；全部按 namespace 隔离，窗口默认 24 小时。
+        """
+        self._validate_namespace(namespace)
+        timestamp = time.time() if now is None else now
+        since = timestamp - max(60, int(window_seconds))
+        with self._connect() as conn:
+            statuses = {
+                str(row["status"]): int(row["n"])
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM review_items WHERE namespace = ? GROUP BY status",
+                    (namespace,),
+                )
+            }
+            ingested = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM ingestion_jobs WHERE namespace = ? AND created_at >= ?",
+                    (namespace, since),
+                ).fetchone()[0]
+            )
+            dead = {
+                str(row["last_error_code"] or "UNKNOWN"): int(row["n"])
+                for row in conn.execute(
+                    "SELECT last_error_code, COUNT(*) AS n FROM ingestion_jobs "
+                    "WHERE namespace = ? AND created_at >= ? AND status = 'dead' "
+                    "GROUP BY last_error_code",
+                    (namespace, since),
+                )
+            }
+            pre_reviewed = auto_eligible = auto_approved = 0
+            for row in conn.execute(
+                "SELECT action, detail_json FROM review_audit "
+                "WHERE namespace = ? AND created_at >= ? "
+                "AND action IN ('pre_review', 'auto_approve')",
+                (namespace, since),
+            ):
+                if str(row["action"]) == "auto_approve":
+                    auto_approved += 1
+                    continue
+                pre_reviewed += 1
+                raw = row["detail_json"]
+                if not raw:
+                    continue
+                try:
+                    if json.loads(str(raw)).get("auto_approve_eligible") is True:
+                        auto_eligible += 1
+                except (TypeError, ValueError):
+                    continue
+            active_documents = 0
+            active = conn.execute(
+                "SELECT generation_id FROM publish_generations "
+                "WHERE namespace = ? AND status = 'active'",
+                (namespace,),
+            ).fetchone()
+            if active is not None:
+                active_documents = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM publish_documents WHERE generation_id = ?",
+                        (str(active["generation_id"]),),
+                    ).fetchone()[0]
+                )
+        return {
+            "namespace": namespace,
+            "window_seconds": int(window_seconds),
+            "items": statuses,
+            "draft_backlog": statuses.get("draft", 0) + statuses.get("in_review", 0),
+            "active_items": statuses.get("active", 0),
+            "ingested": ingested,
+            "dead": dead,
+            "off_topic": dead.get("OFF_TOPIC", 0),
+            "pre_reviewed": pre_reviewed,
+            "auto_eligible": auto_eligible,
+            "auto_approved": auto_approved,
+            "active_documents": active_documents,
+        }
 
     def approve_item(
         self,
@@ -2394,13 +2594,14 @@ class ReviewStore:
         now: float,
         before_hash: str | None = None,
         after_hash: str | None = None,
+        detail: dict[str, Any] | None = None,
     ) -> None:
         conn.execute(
             """
             INSERT INTO review_audit(
                 audit_id, namespace, actor_key, action, object_type, object_id,
-                before_hash, after_hash, request_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                before_hash, after_hash, request_id, created_at, detail_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "audit-" + secrets.token_urlsafe(16),
@@ -2413,6 +2614,7 @@ class ReviewStore:
                 after_hash,
                 request_id,
                 now,
+                json.dumps(detail, ensure_ascii=False) if detail else None,
             ),
         )
 

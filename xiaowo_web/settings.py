@@ -115,6 +115,12 @@ class WebSettings:
     ingestion_worker_enabled: bool
     # ingest 清洗器：true（默认）= LLM 语义清洗（失败自动回退确定性）；false = 仅确定性归一化
     ingest_llm_clean: bool = True
+    # 进料 LLM 预审（2026-09-17）：四项判定 + 相关性闸门。默认开——它只做判定与
+    # 过滤，判定不出来（unknown）时资料照常进人工队列，不会误放行。
+    review_pre_review: bool = True
+    # 分级自动批准（2026-09-17）：**默认关**。开启前先用管理页日报对照几天，
+    # 确认预审判定可靠（自动批准会直接进线上知识库）。
+    review_auto_approve: bool = False
     # Web evidence extraction is capability-gated: a configured model must
     # pass the runtime probe before the web gate opens.
     evidence_extractor_enabled: bool = True
@@ -227,6 +233,10 @@ class WebSettings:
                 crawl4ai_url=source.get("XIAOWO_CRAWL4AI_URL", "http://127.0.0.1:11235").rstrip("/"),
                 ingestion_worker_enabled=_env_bool(source, "XIAOWO_INGESTION_WORKER_ENABLED"),
                 ingest_llm_clean=_env_bool(source, "XIAOWO_INGEST_LLM_CLEAN", default=True),
+                review_pre_review=_env_bool(source, "XIAOWO_REVIEW_PRE_REVIEW", default=True),
+                review_auto_approve=_env_bool(
+                    source, "XIAOWO_REVIEW_AUTO_APPROVE", default=False
+                ),
                 evidence_extractor_enabled=_env_bool(
                     source, "XIAOWO_EVIDENCE_EXTRACTOR_ENABLED", default=True,
                 ),

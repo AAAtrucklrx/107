@@ -135,7 +135,8 @@ CREATE TABLE IF NOT EXISTS review_audit (
     before_hash TEXT,
     after_hash TEXT,
     request_id TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    detail_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_review_audit_object
