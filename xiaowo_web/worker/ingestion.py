@@ -47,19 +47,34 @@ class Cleaner(Protocol):
 
 
 def _chunk_paragraphs(text: str) -> list[str]:
-    """按空行分段、过滤碎段、合并到 1200 字以内的知识块。"""
+    """按空行分段、过滤碎段、合并到 1200 字以内的知识块。
+
+    ⚠️ 超长单段必须**切片**而不是截断（2026-09-17 修）：检索摘录常是 1000~1500 字的
+    单段文本，原实现 `buffer = paragraph[:_MAX_CHUNK_CHARS]` 会把超出部分**直接丢掉**
+    （实测 1251 字摘要只入库 1200 字）。切片后总长度与原文一致，只是分成多块。
+    """
     paragraphs = [re.sub(r"\s+", " ", part).strip() for part in re.split(r"\n{2,}", text)]
     paragraphs = [part for part in paragraphs if len(part) >= 20]
     chunks: list[str] = []
     buffer = ""
     for paragraph in paragraphs:
+        if len(paragraph) > _MAX_CHUNK_CHARS:
+            # 先把超长段切成整块，避免任何字符被丢弃
+            if buffer:
+                chunks.append(buffer)
+                buffer = ""
+            while len(paragraph) > _MAX_CHUNK_CHARS:
+                chunks.append(paragraph[:_MAX_CHUNK_CHARS])
+                paragraph = paragraph[_MAX_CHUNK_CHARS:]
+            if not paragraph:
+                continue
         candidate = f"{buffer}\n\n{paragraph}".strip() if buffer else paragraph
         if len(candidate) <= _MAX_CHUNK_CHARS:
             buffer = candidate
         else:
             if buffer:
                 chunks.append(buffer)
-            buffer = paragraph[:_MAX_CHUNK_CHARS]
+            buffer = paragraph
     if buffer:
         chunks.append(buffer)
     return chunks

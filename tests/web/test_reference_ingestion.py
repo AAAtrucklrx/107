@@ -203,6 +203,18 @@ def test_snippet_docs_skip_llm_cleaner(tmp_path) -> None:
     assert len(joined) >= len(body) * 0.95, f"摘要被压缩了：{len(body)} → {len(joined)}"
 
 
+def test_long_single_paragraph_is_split_not_truncated(tmp_path) -> None:
+    """超长单段必须切片，绝不截断丢字（实测 1251 字摘要只入库 1200 字的坑）。"""
+    from xiaowo_web.worker.ingestion import _MAX_CHUNK_CHARS, _chunk_paragraphs
+
+    body = "中国科学技术大学图书馆开放时间与研讨室预约方式说明。" * 60   # 单段，约 1500 字
+    chunks = _chunk_paragraphs(body)
+    assert len(chunks) >= 2, chunks
+    assert all(len(c) <= _MAX_CHUNK_CHARS for c in chunks)
+    # 关键：拼接后不应丢字（允许因空白规整产生的极小差异）
+    assert len("".join(chunks)) >= len(body) - 5, f"{len(body)} → {len(''.join(chunks))}"
+
+
 def test_manager_ingests_references_in_background(tmp_path) -> None:
     """manager 用注入的 page_fetcher 抓整页，再交给 ingestion_sink（namespace 正确）。"""
     calls: list[tuple[str, list[dict]]] = []
