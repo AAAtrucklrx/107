@@ -118,17 +118,20 @@ function chunkApprovalStatus(chunk: ReviewChunk): "pending" | "approved" | "reje
   return chunk.approval_status ?? (Boolean(chunk.approved) ? "approved" : "pending");
 }
 
-function ReviewQueue({ items, selected, filter, onFilter, onSelect }: {
+function ReviewQueue({ items, selected, filter, onFilter, onSelect, hasMore, loadingMore, onLoadMore }: {
   items: ReviewItemSummary[];
   selected: string | null;
   filter: string;
   onFilter: (value: string) => void;
   onSelect: (item: ReviewItemSummary) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
     <aside className="review-queue">
       <div className="review-queue__header">
-        <div><strong>审核队列</strong><span>{items.length} 条内容</span></div>
+        <div><strong>审核队列</strong><span>已加载 {items.length} 条{hasMore ? "（还有更多）" : ""}</span></div>
         <label className="queue-filter" aria-label="按状态筛选"><ListFilter size={15} />
           <select value={filter} onChange={(event) => onFilter(event.target.value)}>
             <option value="">全部状态</option>
@@ -149,6 +152,13 @@ function ReviewQueue({ items, selected, filter, onFilter, onSelect }: {
             <ChevronRight size={16} />
           </button>
         ))}
+        {/* 后端默认每页 50 条并返回 next_cursor；前端原来完全没用分页，
+            于是条目超过 50 后就**再也看不到、审不了**（2026-09-17 修）。 */}
+        {hasMore && (
+          <button className="secondary-button review-queue__more" type="button" disabled={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? "加载中…" : "加载更多"}
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -170,6 +180,8 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   const [ttl, setTtl] = useState(7);
   const [proposal, setProposal] = useState<SourceTrustProposal | null>(null);
   const [stats, setStats] = useState<ReviewStats | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [feedback, setFeedback] = useState<Array<{
     id: number;
     answer_id: string;
@@ -203,20 +215,52 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
     }
   }, []);
 
-  const loadItems = useCallback(async (status = filter) => {
+  const loadItems = useCallback(async (status = filter, keep: ReviewItemSummary | null = null) => {
     setError(null);
     setLoading(true);
     try {
       const query = status ? `?status=${encodeURIComponent(status)}` : "";
-      const payload = await apiGet<{ items: ReviewItemSummary[]; namespace: string }>(`/admin/review-items${query}`);
-      setItems(payload.items);
-      if (detail && !payload.items.some((item) => item.item_id === detail.item_id)) setDetail(null);
+      const payload = await apiGet<{ items: ReviewItemSummary[]; namespace: string; next_cursor?: string | null }>(`/admin/review-items${query}`);
+      // ⚠️ 2026-09-17 修「审核完就跳出」：任何审核动作都会改条目状态
+      // （开始审核/批准或排除分块 → in_review，批准 → pending_publish，拒绝 → rejected；
+      // 后端 `set_chunk_approval` 里也有一句 `UPDATE review_items SET status='in_review'`），
+      // 于是条目立刻不再匹配当前筛选。**绝不能因此清空详情面板**——那会把审核流程打断
+      // （用户反馈"审核过多直接跳出"，筛选「待审核」时必现）。
+      // 现在改为：把刚处理完的条目按**最新状态**钉在列表最前面，详情继续显示决定结果。
+      const pinned = keep && !payload.items.some((item) => item.item_id === keep.item_id)
+        ? [keep, ...payload.items]
+        : payload.items;
+      setItems(pinned);
+      setNextCursor(payload.next_cursor ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "无法加载审核队列。" );
     } finally {
       setLoading(false);
     }
-  }, [detail, filter]);
+  }, [filter]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (filter) params.set("status", filter);
+      params.set("cursor", nextCursor);
+      const payload = await apiGet<{ items: ReviewItemSummary[]; namespace: string; next_cursor?: string | null }>(
+        `/admin/review-items?${params.toString()}`,
+      );
+      setItems((current) => {
+        const seen = new Set(current.map((item) => item.item_id));
+        return [...current, ...payload.items.filter((item) => !seen.has(item.item_id))];
+      });
+      setNextCursor(payload.next_cursor ?? null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法加载更多条目。" );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filter, nextCursor]);
 
   const openItem = useCallback(async (item: ReviewItemSummary) => {
     setError(null);
@@ -256,7 +300,8 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
       await apiMutation(path, session.csrf_token, { method: "POST", body: JSON.stringify(body) });
       const refreshed = await apiGet<ReviewItemDetail>(`/admin/review-items/${detail.item_id}`);
       setDetail(refreshed);
-      await Promise.all([loadItems(filter), loadGeneration(), loadStats()]);
+      // 把刷新后的本条传给 loadItems：即使它已离开当前筛选，也要钉在列表里、详情不清空
+      await Promise.all([loadItems(filter, refreshed), loadGeneration(), loadStats()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "审核操作失败。" );
     } finally {
@@ -452,6 +497,9 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
           filter={filter}
           onFilter={(value) => { setFilter(value); setDetail(null); void loadItems(value); }}
           onSelect={(item) => void openItem(item)}
+          hasMore={Boolean(nextCursor)}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadMore()}
         />
         <main className="review-detail">
           {!detail ? (

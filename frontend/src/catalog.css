@@ -5497,3 +5497,8 @@ body::after {
   background: var(--success-soft);
   color: var(--success);
 }
+.review-queue__more {
+  width: calc(100% - 20px);
+  margin: 8px 10px;
+  justify-content: center;
+}

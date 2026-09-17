@@ -123,6 +123,71 @@ beforeEach(() => {
   });
 });
 
+test("队列超过一页时能继续加载（修「审核过多看不到」）", async () => {
+  // 回归：后端每页只给 50 条并返回 next_cursor，前端原来完全不用分页 →
+  // 条目超过 50 后再也看不到、审不了。
+  const user = userEvent.setup();
+  const second = { ...detail, item_id: "item-demo-2", title: "第二条公开资料", updated_at: 1787788700 };
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/review-items?") && path.includes("cursor=")) {
+      return Promise.resolve({ items: [second], namespace: "demo", next_cursor: null });
+    }
+    if (path.startsWith("/admin/review-items")) {
+      return Promise.resolve({ items: [detail], namespace: "demo", next_cursor: "cur-1" });
+    }
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false,
+    });
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({ items: [] });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  render(<ReviewWorkspace session={session} />);
+  expect(await screen.findByRole("button", { name: /科大新栏目公开资料/ })).toBeTruthy();
+  expect(screen.getByText(/还有更多/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /第二条公开资料/ })).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "加载更多" }));
+  expect(await screen.findByRole("button", { name: /第二条公开资料/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "加载更多" })).toBeNull();
+});
+
+
+test("审核动作后详情不被清空，条目被钉在列表里（修「审核完就跳出」）", async () => {
+  // 回归：任何审核动作都会改状态（开始审核/批准或排除分块 → in_review、批准 →
+  // pending_publish、拒绝 → rejected），条目随即离开当前筛选。旧实现会让队列刷新
+  // 顺手把详情面板清空 → 审核流程被打断（用户反馈"审核过多直接跳出"）。
+  const user = userEvent.setup();
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("button", { name: /科大新栏目公开资料/ }));
+  await waitFor(() => expect(screen.getByRole("heading", { name: "科大新栏目公开资料" })).toBeTruthy());
+
+  // 模拟：审核后该条目离开了当前筛选（队列不再返回它），详情接口返回新状态
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/review-items/item-demo")) {
+      return Promise.resolve({ ...detail, status: "rejected" });
+    }
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [], namespace: "demo" });
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false,
+    });
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({ items: [] });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  await user.click(screen.getByRole("button", { name: "拒绝" }));
+
+  await waitFor(() => expect(screen.queryByText("选择一条内容开始核验")).toBeNull());
+  expect(screen.getByRole("heading", { name: "科大新栏目公开资料" })).toBeTruthy();
+  // 并且该条目被钉在队列列表里（以最新状态显示）
+  expect(screen.getAllByText(/已拒绝/).length).toBeGreaterThanOrEqual(1);
+});
+
+
 test("daily card and pre-review verdict render with real numbers", async () => {
   const user = userEvent.setup();
   render(<ReviewWorkspace session={session} />);
