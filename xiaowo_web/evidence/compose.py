@@ -12,7 +12,7 @@
 | 闸门 | 时机 | 判定 | 不通过时 |
 |---|---|---|---|
 | **相关性** | 合成**前** | refs 是否与问题相关、足以回答 | 不合成，走 B3 诚实拒答（→ runner 回退本地） |
-| **可核验性** | 合成**后** | 答案里的数字/日期是否都在 refs 里 | 同样拒答/回退，**绝不展示无据答案** |
+| **可核验性** | 合成**后** | 答案里的数字/日期是否都在 refs 里 | 先修复 → 再就地对冲（标「资料未给出」）→ 仍不合格才拒答/回退 |
 
 ⚠️ 可核验性只覆盖**数字/日期类**事实（人名/地名抓不到，那要靠判官或人工）。
 """
@@ -52,6 +52,15 @@ def build_web_candidates_summary(references: list[dict], *, limit: int = 8) -> s
 # ── 可核验性：答案里的数字/日期必须能在证据里找到 ────────────────────────────
 _FACT_RE = re.compile(r"\d[\d:：./\-*×xX]{1,}\d|\d{3,}")
 _WS_RE = re.compile(r"\s+")
+
+# 对冲标记（2026-09-17）：把"证据里没有的数字/日期"**就地**换成它，
+# 而不是把整篇回答作废。说明句里**不能出现数字**——否则下一次可核验校验会把它
+# 自己当成"无据事实"，又变成拒答。
+_NEUTRAL_TAG = "（资料未给出）"
+_HEDGE_NOTE = (
+    "\n\n> 注：上文标注为「资料未给出」的数字/日期，在本次检索到的资料里没有依据，"
+    "小蜗不补写；请以学校官方发布为准。"
+)
 
 
 def _normalize(text: str) -> str:
@@ -228,16 +237,58 @@ def injected_context() -> str:
         return ""
 
 
+def neutralize_unsupported(answer: str, unsupported: list[str]) -> tuple[str, list[str]]:
+    """把残留的无据数字/日期**就地**换成「（资料未给出）」，返回 (新文本, 实际替换的 token)。
+
+    为什么不对冲就要整篇拒答：实测「中国科学技术大学推免保研条件」纯搜索拿到 8 条 /
+    6303 字高度相关的原文，合成基本可用，只因多写了一个资料里没有的比例，就被整篇作废
+    成 98 字拒答。用户要的答复是"这块没数据"，那就**只把没数据的那个数字标出来**。
+    """
+    text = str(answer or "")
+    hit: list[str] = []
+    for token in unsupported or []:
+        token = str(token or "")
+        if token and token not in _NEUTRAL_TAG and token in text:
+            text = text.replace(token, _NEUTRAL_TAG, 1)
+            hit.append(token)
+    return text, hit
+
+
+def _hedge_residual(answer: str, unsupported: list[str], evidence: str) -> tuple[str, list[str]]:
+    """反复对冲直到没有残留（同一个 token 可能在正文里出现多次），最多 3 轮。"""
+    text = str(answer or "")
+    hits: dict[str, None] = {}
+    bad = list(unsupported or [])
+    for _ in range(3):
+        if not bad:
+            break
+        text, done = neutralize_unsupported(text, bad)
+        if not done:
+            break
+        for token in done:
+            hits[token] = None
+        bad = unsupported_facts(text, evidence)
+    return text, list(hits)
+
+
 def compose_and_verify(
-    question: str, references: list[dict], *, max_repair: int = 1
+    question: str,
+    references: list[dict],
+    *,
+    max_repair: int = 1,
+    report: list[str] | None = None,
 ) -> tuple[str, list[str]]:
-    """自研合成 + 可核验性校验（**先尝试自动修复，而不是整篇拒答**）。
+    """自研合成 + 可核验性校验（**先修复、再对冲，最后才拒答**）。
+
+    三级处理（第三级 2026-09-17 加）：
+
+    1. 合成后发现有依据缺失的数字/日期 → **先让模型改一版**（删掉或写"资料中未给出"）；
+    2. 改过仍有残留 → **就地对冲**：把那几个 token 换成「（资料未给出）」并在末尾加一句
+       说明；只要答案里**还有至少 1 个可核验的事实**就照常展示；
+    3. 残留对冲不掉、或答案里的数字**全都是**无据的（说明数字就是它的全部内容）才拒答。
 
     证据口径 = 检索披露的标题/URL/正文 **+ 我们注入的日期/学期上下文**。
-
-    发现无依据的数字/日期时：**先让模型改一版**（删掉或改成"资料中未给出"）再校验；
-    改过仍有问题才把剩余项返回给调用方。用户要的是"这块没数据"这种回答，
-    而不是什么都没有——所以修复优先于拒答。
+    `report` 非空时把"对冲了几处"写回去，供调用方记进 limitations。
     """
     answer = compose_with_own_llm(question, references)
     if not answer.strip():
@@ -256,6 +307,25 @@ def compose_and_verify(
             break
         answer = repaired
         unsupported = unsupported_facts(answer, evidence)
+    if unsupported:
+        hedged, hit = _hedge_residual(answer, unsupported, evidence)
+        supported = len(evidence_facts(answer)) - len(unsupported)
+        residual = unsupported_facts(hedged, evidence)
+        if hit and not residual and supported >= 1:
+            answer = hedged + _HEDGE_NOTE
+            if report is not None:
+                report.append(
+                    f"答案里有 {len(hit)} 处具体数字/日期在检索资料中没有依据，"
+                    "已就地标注为「资料未给出」。"
+                )
+            # 可观测：以后能数出"对冲"多久发生一次（拒答率下降的代价就是它）
+            log.info(
+                f"可核验性对冲：{len(hit)} 处无据数字/日期已标注为「资料未给出」"
+                f"（{'、'.join(hit[:3])}）"
+            )
+            unsupported = []
+        else:
+            unsupported = residual or unsupported
     return answer, unsupported
 
 

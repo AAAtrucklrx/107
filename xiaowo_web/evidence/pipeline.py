@@ -1026,14 +1026,17 @@ class EvidencePipeline:
             )
         # 合成 + 闸门二
         self._stage(on_stage, "answering", "正在依据检索结果生成回答")
+        hedge_notes: list[str] = []
         try:
             answer, unsupported = await asyncio.to_thread(
-                compose_and_verify, question, references
+                compose_and_verify, question, references, report=hedge_notes
             )
         except Exception as exc:  # noqa: BLE001
             limitations_acc.append("联网答案合成失败，已回退通用检索。")
             log.info(f"自研合成失败: {exc}")
             return None
+        # 对冲说明（"哪几处数字没依据"）要透出给用户，不能只写在正文里
+        limitations_acc.extend(hedge_notes)
         if not answer.strip():
             limitations_acc.append("联网答案合成为空，未予采用。")
             return None

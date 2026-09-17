@@ -80,8 +80,9 @@ def patched(monkeypatch):
 
     monkeypatch.setattr(pipeline_module, "judge_relevance",
                         lambda question, refs, **kw: state["relevant"])
+    # 替身必须收 **kw：生产代码会传 report=[] 让合成把"对冲了几处"写回限制说明
     monkeypatch.setattr(pipeline_module, "compose_and_verify",
-                        lambda question, refs: (state["answer"], list(state["unsupported"])))
+                        lambda question, refs, **kw: (state["answer"], list(state["unsupported"])))
     return state
 
 
@@ -187,3 +188,75 @@ def test_mode_pure_uses_pure_branch(tmp_path, patched) -> None:
     bundle = asyncio.run(_pipeline(tmp_path, search, mode="pure").answer("中国科学技术大学图书馆开放时间？"))
     assert search.calls, "pure 模式必须调用纯搜索"
     assert bundle.terminal_reason in {"AI_GENERATED", "EVIDENCE_INSUFFICIENT"}
+
+
+# ── 对冲式闸门（2026-09-17 第三级：不整篇拒答，只标注没依据的数字） ──────────────
+
+def test_hedge_marks_unsupported_numbers(tmp_path, monkeypatch) -> None:
+    """修复后仍有残留 → 就地把无据数字换成「资料未给出」，有依据的部分照常给。"""
+    import xiaowo_web.evidence.compose as compose_module
+
+    monkeypatch.setattr(compose_module, "compose_with_own_llm",
+                        lambda q, r: "图书馆每周开放 9*9 小时，电话 63607647。")
+    monkeypatch.setattr(compose_module, "injected_context", lambda: "")
+    monkeypatch.setattr(compose_module, "repair_answer",
+                        lambda q, r, prev, bad: "图书馆每周开放 9*9 小时，电话 63607647。")
+
+    report: list[str] = []
+    answer, unsupported = compose_module.compose_and_verify("图书馆开放时间？", _REFS, report=report)
+    assert unsupported == [], "对冲之后不应再有无法核实的数字"
+    assert "9*9" not in answer, "无据数字必须被换掉"
+    assert "资料未给出" in answer
+    assert "63607647" in answer, "有依据的电话必须保留"
+    assert report and "没有依据" in report[0], "对冲几处要写回 report 供 limitations 使用"
+
+
+def test_hedge_refuses_when_nothing_verifiable_left(tmp_path, monkeypatch) -> None:
+    """答案里的数字**全是**无据的 → 数字就是它的全部内容，仍交回调用方拒答。"""
+    import xiaowo_web.evidence.compose as compose_module
+
+    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r: "开放 9*9 小时。")
+    monkeypatch.setattr(compose_module, "injected_context", lambda: "")
+    monkeypatch.setattr(compose_module, "repair_answer", lambda q, r, prev, bad: "开放 8*8 小时。")
+
+    _answer, unsupported = compose_module.compose_and_verify("图书馆开放时间？", _REFS)
+    assert unsupported, "一个可核验事实都不剩时必须把问题交给调用方"
+
+
+def test_hedge_note_has_no_digits() -> None:
+    """末尾说明里不能有数字 —— 否则会被自己的可核验校验当成新的无据事实。"""
+    import re as _re
+    import xiaowo_web.evidence.compose as compose_module
+
+    assert not _re.search(r"\d", compose_module._HEDGE_NOTE)
+
+
+def test_hedge_replaces_every_occurrence(tmp_path, monkeypatch) -> None:
+    """同一个无据数字出现多次时要全部替换，否则残留仍会被判不合格。"""
+    import xiaowo_web.evidence.compose as compose_module
+
+    monkeypatch.setattr(compose_module, "compose_with_own_llm",
+                        lambda q, r: "开放 9*9 小时（9*9），电话 63607647。")
+    monkeypatch.setattr(compose_module, "injected_context", lambda: "")
+    monkeypatch.setattr(compose_module, "repair_answer", lambda q, r, prev, bad: "")
+
+    answer, unsupported = compose_module.compose_and_verify("图书馆开放时间？", _REFS)
+    assert unsupported == []
+    assert "9*9" not in answer
+
+
+def test_hedge_note_reaches_limitations(tmp_path, monkeypatch) -> None:
+    """合成写回的对冲说明要进 limitations（用户能看到"哪几处没依据"）。"""
+    import xiaowo_web.evidence.pipeline as pipeline_module
+
+    def _fake_compose(question, refs, report=None):
+        if report is not None:
+            report.append("答案里有 1 处具体数字/日期在检索资料中没有依据，已就地标注为「资料未给出」。")
+        return "图书馆每周开放时间未在资料中给出，电话 63607647。", []
+
+    monkeypatch.setattr(pipeline_module, "judge_relevance", lambda question, refs, **kw: True)
+    monkeypatch.setattr(pipeline_module, "compose_and_verify", _fake_compose)
+
+    bundle = asyncio.run(_pipeline(tmp_path, PureSearch()).answer("中国科学技术大学图书馆开放时间？"))
+    assert bundle.terminal_reason == "AI_GENERATED"
+    assert any("没有依据" in item for item in bundle.limitations)
