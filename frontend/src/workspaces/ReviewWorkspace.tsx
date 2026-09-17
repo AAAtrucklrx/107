@@ -29,6 +29,7 @@ import type {
   ReviewChunk,
   ReviewItemDetail,
   ReviewItemSummary,
+  ReviewFeedback,
   ReviewStats,
   ReviewStatus,
   SessionPayload,
@@ -67,6 +68,28 @@ function preReviewLabel(field: keyof typeof preReviewLabels, value: string): str
   const table = preReviewLabels[field] as Record<string, string>;
   return table[value] ?? value;
 }
+
+// 反馈类型/状态的中文口径（2026-09-17）。反馈此前只写不读、状态永远停在 open。
+const feedbackCategoryLabels: Record<string, string> = {
+  helpful: "有帮助",
+  incorrect: "内容不正确",
+  outdated: "信息已过期",
+  source_issue: "来源有问题",
+  other: "其他",
+};
+
+const feedbackStatusLabels: Record<string, string> = {
+  open: "待处理",
+  in_progress: "处理中",
+  handled: "已办结",
+  ignored: "已忽略",
+};
+
+const feedbackActions: Array<{ status: ReviewFeedback["status"]; label: string }> = [
+  { status: "in_progress", label: "标为处理中" },
+  { status: "handled", label: "标为已办结" },
+  { status: "ignored", label: "忽略" },
+];
 
 const categories: Array<{ value: ReviewCategory; label: string; maxTtl: number }> = [
   { value: "announcement", label: "公告", maxTtl: 7 },
@@ -182,15 +205,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [feedback, setFeedback] = useState<Array<{
-    id: number;
-    answer_id: string;
-    run_id: string;
-    category: string;
-    detail: string;
-    status: string;
-    created_at: string;
-  }>>([]);
+  const [feedback, setFeedback] = useState<ReviewFeedback[]>([]);
 
   const loadGeneration = useCallback(async () => {
     setGenerationLoading(true);
@@ -284,12 +299,36 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
     void loadStats();
   }, []); // queue ownership changes remount this workspace
 
+  const loadFeedback = useCallback(async () => {
+    const payload = await apiGet<{ items: ReviewFeedback[] }>("/admin/feedback?limit=100");
+    setFeedback(payload.items);
+  }, []);
+
   useEffect(() => {
     if (workspaceView !== "feedback") return;
-    void apiGet<{ items: typeof feedback }>("/admin/feedback?limit=100")
-      .then((payload) => setFeedback(payload.items))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "无法读取回答反馈。"));
-  }, [workspaceView]);
+    void loadFeedback().catch((reason) =>
+      setError(reason instanceof Error ? reason.message : "无法读取回答反馈。")
+    );
+  }, [workspaceView, loadFeedback]);
+
+  const updateFeedback = useCallback(async (id: number, status: ReviewFeedback["status"]) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiMutation(`/admin/feedback/${id}`, session.csrf_token, {
+        method: "PATCH",
+        body: JSON.stringify({ status, resolution: "" }),
+      });
+      setNotice(`反馈 #${id} 已标为「${feedbackStatusLabels[status] ?? status}」。`);
+      await loadFeedback();
+      await loadStats();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "更新反馈状态失败。" );
+    } finally {
+      setBusy(false);
+    }
+  }, [loadFeedback, loadStats, session.csrf_token]);
 
   const mutate = useCallback(async (path: string, body: Record<string, unknown> = {}) => {
     if (!detail) return;
@@ -420,12 +459,50 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
       {notice && <div className="review-operation-notice" role="status"><Check size={14} />{notice}</div>}
       <Tabs.Content className="review-view-content" value="feedback">
         <div className="feedback-review-list">
-          <div className="content-source-row"><span>{feedback.length} 条待查看反馈</span><span className="data-source">保留 30 天</span></div>
+          <div className="content-source-row">
+            <span>{feedback.filter((item) => item.status === "open").length} 条待处理 / 共 {feedback.length} 条</span>
+            <span className="data-source">保留 30 天</span>
+          </div>
           {feedback.length === 0 ? <WorkspaceEmpty title="当前没有回答反馈" detail="新的反馈会在此处进入核验队列。" /> : feedback.map((item) => (
-            <article className="feedback-review-item" key={item.id}>
-              <div><span className="review-status review-status--in_review">{item.category}</span><time>{formatTimestamp(item.created_at)}</time></div>
+            <article className="feedback-review-item" data-status={item.status} key={item.id}>
+              <div>
+                <span className={`review-status review-status--fb-${item.status}`}>{feedbackStatusLabels[item.status] ?? item.status}</span>
+                <span className="review-status review-status--in_review">{feedbackCategoryLabels[item.category] ?? item.category}</span>
+                <time>{formatTimestamp(item.created_at)}</time>
+              </div>
               <p>{item.detail || "用户仅提交了反馈分类，没有补充说明。"}</p>
-              <small>回答 {item.answer_id.slice(0, 10)} · 运行 {item.run_id.slice(0, 10)}</small>
+              {item.resolution && <p className="feedback-review-item__resolution">处理记录：{item.resolution}</p>}
+              {item.sources && item.sources.length > 0 && (
+                <details className="feedback-review-item__sources">
+                  <summary>该次回答的来源 {item.sources.length} 条（反馈闭环依据）</summary>
+                  <ul>
+                    {item.sources.map((source, index) => (
+                      <li key={`${item.id}-${index}`}>
+                        <span>{source.title || source.domain || "未命名来源"}</span>
+                        {source.domain && <code>{source.domain}</code>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <div className="feedback-review-item__actions">
+                {feedbackActions.map((action) => (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    key={action.status}
+                    disabled={busy || item.status === action.status}
+                    onClick={() => void updateFeedback(item.id, action.status)}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+              <small>
+                回答 {item.answer_id.slice(0, 10)} · 运行 {item.run_id.slice(0, 10)}
+                {item.handled_by ? ` · 处理人 ${item.handled_by}` : ""}
+                {item.handled_at ? ` ${formatTimestamp(item.handled_at)}` : ""}
+              </small>
             </article>
           ))}
         </div>
@@ -487,6 +564,11 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
             <div data-tone={stats.dead?.SENSITIVE_CONTENT ? "danger" : undefined}><dt>敏感拦下</dt><dd>{stats.dead?.SENSITIVE_CONTENT ?? 0}</dd></div>
             <div data-tone={stats.draft_backlog ? "warning" : undefined}><dt>待审积压</dt><dd>{stats.draft_backlog}</dd></div>
             <div><dt>线上文档</dt><dd>{stats.active_documents}</dd></div>
+            {stats.feedback && (
+              <div data-tone={stats.feedback.open ? "warning" : undefined}>
+                <dt>待处理反馈</dt><dd>{stats.feedback.open}</dd>
+              </div>
+            )}
           </dl>
         </section>
       )}

@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from utils.logger import get_logger
 
@@ -976,6 +977,46 @@ class ReviewStore:
                 now=now,
             )
             conn.commit()
+
+    @staticmethod
+    def _url_key(url: str) -> str:
+        """URL 归一化键（忽略 scheme/末尾斜杠/fragment），用于把反馈来源对回审核条目。"""
+        parts = urlsplit(str(url or "").strip())
+        host = (parts.netloc or "").lower()
+        path = (parts.path or "").rstrip("/")
+        return f"{host}{path}?{parts.query}" if parts.query else f"{host}{path}"
+
+    def find_item_id_by_url(self, namespace: str, url: str) -> str | None:
+        """按来源 URL 找审核条目（反馈闭环用：来源可能已入库，也可能没入）。"""
+        self._validate_namespace(namespace)
+        target = self._url_key(url)
+        if not target:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT ri.item_id FROM review_items ri
+                JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id
+                WHERE ri.namespace = ? AND ws.normalized_url = ? LIMIT 1
+                """,
+                (namespace, str(url).strip()),
+            ).fetchone()
+            if row is not None:
+                return str(row["item_id"])
+            rows = conn.execute(
+                """
+                SELECT ri.item_id, ws.normalized_url, ws.final_url FROM review_items ri
+                JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id
+                WHERE ri.namespace = ?
+                """,
+                (namespace,),
+            ).fetchall()
+        for candidate in rows:
+            if self._url_key(str(candidate["normalized_url"])) == target:
+                return str(candidate["item_id"])
+            if self._url_key(str(candidate["final_url"])) == target:
+                return str(candidate["item_id"])
+        return None
 
     def item_status(self, namespace: str, item_id: str) -> str | None:
         """只取条目状态（轻量，不读快照）：供自动批准前的一次幂等判断。"""

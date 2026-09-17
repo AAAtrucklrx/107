@@ -5545,3 +5545,56 @@ body::after {
     max-height: none;
   }
 }
+
+/* 回答反馈闭环（2026-09-17）：状态色、处理记录、来源清单与操作区 */
+.review-status--fb-open { border: 1px solid var(--warning); background: var(--warning-soft); color: var(--warning); }
+.review-status--fb-in_progress { border: 1px solid var(--primary); background: var(--primary-soft); color: var(--primary); }
+.review-status--fb-handled { border: 1px solid var(--success); background: var(--success-soft); color: var(--success); }
+.review-status--fb-ignored { border: 1px solid var(--line-strong); background: var(--surface-muted); color: var(--muted); }
+
+.feedback-review-item[data-status="handled"],
+.feedback-review-item[data-status="ignored"] {
+  opacity: 0.82;
+}
+
+.feedback-review-item__resolution {
+  margin: 6px 0 0;
+  border-left: 3px solid var(--success);
+  background: var(--success-soft);
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.feedback-review-item__sources {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.feedback-review-item__sources summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.feedback-review-item__sources ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.feedback-review-item__sources li {
+  margin-bottom: 3px;
+  overflow-wrap: anywhere;
+}
+
+.feedback-review-item__sources code {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.feedback-review-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}

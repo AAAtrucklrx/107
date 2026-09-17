@@ -188,6 +188,56 @@ test("审核动作后详情不被清空，条目被钉在列表里（修「审�
 });
 
 
+test("反馈页签显示来源清单并能流转状态（修「只能看不能办」）", async () => {
+  // 反馈此前只写不读、status 永远停在 open、管理页没有任何按钮。
+  const user = userEvent.setup();
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/feedback")) {
+      return Promise.resolve({
+        items: [{
+          id: 7,
+          answer_id: "answer-abcdefghij",
+          run_id: "run-abcdefghij",
+          category: "outdated",
+          status: "open",
+          created_at: "2026-09-17T03:00:00Z",
+          handled_by: null,
+          handled_at: null,
+          resolution: "",
+          detail: "开放时间好像变了。",
+          sources: [
+            { title: "图书馆公告", display_url: "https://lib.ustc.edu.cn/a", domain: "lib.ustc.edu.cn" },
+            { title: "另一篇", display_url: "https://lib.ustc.edu.cn/b", domain: "lib.ustc.edu.cn" },
+          ],
+        }],
+      });
+    }
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false,
+    });
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("tab", { name: /回答反馈/ }));
+
+  expect(await screen.findByText("信息已过期")).toBeTruthy();
+  expect(screen.getByText("待处理")).toBeTruthy();
+  expect(screen.getByText(/该次回答的来源 2 条/)).toBeTruthy();
+  expect(screen.getByText("1 条待处理 / 共 1 条")).toBeTruthy();
+
+  await user.click(screen.getByRole("button", { name: "标为已办结" }));
+  await waitFor(() => expect(apiMutationMock).toHaveBeenCalled());
+  const call = apiMutationMock.mock.calls.find((item) => item[0] === "/admin/feedback/7");
+  expect(call).toBeTruthy();
+  expect(call?.[2]).toMatchObject({ method: "PATCH" });
+  expect(JSON.parse(String(call?.[2]?.body))).toEqual({ status: "handled", resolution: "" });
+});
+
+
 test("daily card and pre-review verdict render with real numbers", async () => {
   const user = userEvent.setup();
   render(<ReviewWorkspace session={session} />);

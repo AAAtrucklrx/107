@@ -87,9 +87,18 @@ async def review_stats(
 
     ⚠️ 必须声明在 `/{item_id}` **之前**，否则会被当成 item_id 吞掉。
     """
-    return request.app.state.review_store.review_stats(
+    stats = request.app.state.review_store.review_stats(
         _namespace(principal), window_seconds=window_seconds
     )
+    # 用户反馈质量信号（2026-09-17）：反馈存在会话库（web_store），审核日报也一并展示。
+    # 这是唯一一处"用户主动告诉我们哪里不对"的信号，之前完全没被统计。
+    web_store = getattr(request.app.state, "store", None)
+    if web_store is not None:
+        try:
+            stats["feedback"] = web_store.feedback_stats(_namespace(principal))
+        except Exception:  # noqa: BLE001 —— 统计失败不影响审核日报本体
+            stats["feedback"] = None
+    return stats
 
 
 @router.get("/{item_id}")

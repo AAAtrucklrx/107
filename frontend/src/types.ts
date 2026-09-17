@@ -474,6 +474,29 @@ export interface ReviewItemDetail extends ReviewItemSummary {
   auto_approved?: boolean;
 }
 
+export interface ReviewFeedbackSource {
+  source_id?: string;
+  title?: string;
+  display_url?: string;
+  domain?: string;
+  level?: string;
+}
+
+export interface ReviewFeedback {
+  id: number;
+  answer_id: string;
+  run_id: string;
+  category: string;
+  status: "open" | "in_progress" | "handled" | "ignored";
+  created_at: string;
+  handled_by?: string | null;
+  handled_at?: string | null;
+  resolution?: string;
+  detail?: string;
+  /** 该次回答实际用到的来源（反馈闭环的依据，2026-09-17） */
+  sources?: ReviewFeedbackSource[];
+}
+
 export interface ReviewStats {
   namespace: "demo" | "production";
   window_seconds: number;
@@ -487,6 +510,18 @@ export interface ReviewStats {
   auto_eligible: number;
   auto_approved: number;
   active_documents: number;
+  /** 用户反馈质量信号（2026-09-17）；会话库统计失败时为 null */
+  feedback?: {
+    total: number;
+    open: number;
+    in_progress: number;
+    handled: number;
+    ignored: number;
+    by_status: Record<string, number>;
+    by_category: Record<string, number>;
+    recent: number;
+    window_days: number;
+  } | null;
 }
 
 export interface GenerationState {

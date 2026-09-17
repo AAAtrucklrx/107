@@ -70,6 +70,14 @@ class WebStore:
                 conn.execute(
                     "ALTER TABLE answer_feedback ADD COLUMN namespace TEXT NOT NULL DEFAULT 'anonymous'"
                 )
+            for column, ddl in (
+                ("handled_by", "ALTER TABLE answer_feedback ADD COLUMN handled_by TEXT"),
+                ("handled_at", "ALTER TABLE answer_feedback ADD COLUMN handled_at REAL"),
+                ("resolution", "ALTER TABLE answer_feedback ADD COLUMN resolution TEXT"),
+                ("sources_json", "ALTER TABLE answer_feedback ADD COLUMN sources_json TEXT"),
+            ):
+                if column not in feedback_columns:
+                    conn.execute(ddl)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_answer_feedback_namespace ON answer_feedback(namespace, created_at DESC, id DESC)"
             )
@@ -774,6 +782,153 @@ class WebStore:
             for row in rows
         )
 
+    # 反馈状态机（2026-09-17）：open（待处理）→ in_progress（已转动作/需人工核对）
+    # → handled（办结）/ ignored（忽略）。原来的 status 永远停在 'open'、无人能改。
+    FEEDBACK_STATUSES = ("open", "in_progress", "handled", "ignored")
+
+    def answer_sources(self, run_id: str, answer_id: str) -> list[dict[str, Any]]:
+        """取该次回答**实际用到的来源清单**（反馈闭环的依据）。
+
+        `answer.completed` 事件里存了 sources（含 display_url/domain/level）。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM web_chat_events "
+                "WHERE run_id = ? AND event_type = 'answer.completed'",
+                (run_id,),
+            ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if str(payload.get("answer_id") or "") != answer_id:
+                continue
+            return [s for s in (payload.get("sources") or []) if isinstance(s, dict)]
+        return []
+
+    def get_feedback(self, feedback_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM answer_feedback WHERE id = ?", (int(feedback_id),)
+            ).fetchone()
+        return None if row is None else self._feedback_row(row)
+
+    @staticmethod
+    def _feedback_row(row: sqlite3.Row) -> dict[str, Any]:
+        keys = set(row.keys())
+        raw_sources = row["sources_json"] if "sources_json" in keys else None
+        try:
+            sources = json.loads(raw_sources) if raw_sources else []
+        except (TypeError, ValueError):
+            sources = []
+        return {
+            "id": row["id"],
+            "answer_id": row["answer_id"],
+            "run_id": row["run_id"],
+            "category": row["category"],
+            "status": row["status"],
+            "created_at": _utc_iso(row["created_at"]),
+            "handled_by": (row["handled_by"] if "handled_by" in keys else None),
+            "handled_at": (_utc_iso(row["handled_at"]) if "handled_at" in keys and row["handled_at"] else None),
+            "resolution": (row["resolution"] if "resolution" in keys else None) or "",
+            "sources": sources if isinstance(sources, list) else [],
+        }
+
+    def update_feedback_status(
+        self,
+        feedback_id: int,
+        *,
+        status: str,
+        handled_by: str,
+        resolution: str = "",
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        """更新反馈处理状态（人工在管理页操作）。"""
+        if status not in self.FEEDBACK_STATUSES:
+            raise ValueError("invalid feedback status")
+        timestamp = time.time() if now is None else now
+        with self._write_lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE answer_feedback
+                SET status = ?, handled_by = ?, handled_at = ?,
+                    resolution = COALESCE(NULLIF(?, ''), resolution)
+                WHERE id = ?
+                """,
+                (status, handled_by, timestamp, resolution.strip()[:500], int(feedback_id)),
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                raise KeyError("feedback not found")
+        row = self.get_feedback(feedback_id)
+        assert row is not None
+        return row
+
+    def set_feedback_triage(
+        self,
+        feedback_id: int,
+        *,
+        status: str,
+        resolution: str,
+        handled_by: str = "system:triage",
+        now: float | None = None,
+    ) -> None:
+        """预分诊写入（用户提交后自动转动作时调用），不覆盖人工已填的 resolution。"""
+        if status not in self.FEEDBACK_STATUSES:
+            raise ValueError("invalid feedback status")
+        timestamp = time.time() if now is None else now
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE answer_feedback SET status = ?, resolution = ?, handled_by = ?, handled_at = ? "
+                "WHERE id = ? AND status = 'open'",
+                (status, resolution[:500], handled_by, timestamp, int(feedback_id)),
+            )
+            conn.commit()
+
+    def feedback_stats(self, namespace: str, *, window_days: int = 30) -> dict[str, Any]:
+        """反馈质量信号（2026-09-17）：按状态/分类计数 + 近 N 天量。
+
+        用途：日报卡片上显示"用户反馈了多少、哪类问题最多"——这是唯一一处**用户主动
+        告诉我们哪里不对**的信号，之前完全没被统计。
+        """
+        if namespace not in {"demo", "production"}:
+            raise ValueError("invalid reviewer feedback namespace")
+        cutoff = time.time() - window_days * 24 * 60 * 60
+        with self._connect() as conn:
+            by_status = {
+                str(row["status"]): int(row["n"])
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM answer_feedback WHERE namespace = ? GROUP BY status",
+                    (namespace,),
+                )
+            }
+            by_category = {
+                str(row["category"]): int(row["n"])
+                for row in conn.execute(
+                    "SELECT category, COUNT(*) AS n FROM answer_feedback WHERE namespace = ? GROUP BY category",
+                    (namespace,),
+                )
+            }
+            recent = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM answer_feedback WHERE namespace = ? AND created_at >= ?",
+                    (namespace, cutoff),
+                ).fetchone()[0]
+            )
+        return {
+            "namespace": namespace,
+            "total": sum(by_status.values()),
+            "by_status": by_status,
+            "by_category": by_category,
+            "open": by_status.get("open", 0),
+            "in_progress": by_status.get("in_progress", 0),
+            "handled": by_status.get("handled", 0),
+            "ignored": by_status.get("ignored", 0),
+            "window_days": window_days,
+            "recent": recent,
+        }
+
     def create_feedback(
         self,
         *,
@@ -782,6 +937,7 @@ class WebStore:
         category: str,
         detail: str,
         namespace: str = "anonymous",
+        sources: list[dict[str, Any]] | None = None,
         now: float | None = None,
     ) -> int:
         timestamp = time.time() if now is None else now
@@ -794,8 +950,9 @@ class WebStore:
             cursor = conn.execute(
                 """
                 INSERT INTO answer_feedback(
-                    answer_id, run_id, namespace, category, detail, status, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+                    answer_id, run_id, namespace, category, detail, status, created_at, expires_at,
+                    sources_json
+                ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?)
                 """,
                 (
                     answer_id,
@@ -805,6 +962,7 @@ class WebStore:
                     sealed_detail,
                     timestamp,
                     timestamp + 30 * 24 * 60 * 60,
+                    json.dumps(sources or [], ensure_ascii=False)[:20000],
                 ),
             )
             conn.commit()
@@ -821,7 +979,8 @@ class WebStore:
             raise ValueError("invalid reviewer feedback namespace")
         page_size = min(max(limit, 1), 200)
         sql = """
-            SELECT id, answer_id, run_id, category, detail, status, created_at
+            SELECT id, answer_id, run_id, category, detail, status, created_at,
+                   handled_by, handled_at, resolution, sources_json
             FROM answer_feedback
             WHERE namespace = ?
         """
@@ -841,13 +1000,8 @@ class WebStore:
         page = rows[:page_size]
         items = [
             {
-                "id": row["id"],
-                "answer_id": row["answer_id"],
-                "run_id": row["run_id"],
-                "category": row["category"],
+                **self._feedback_row(row),
                 "detail": self._cipher.open(row["detail"]) if row["detail"] else "",
-                "status": row["status"],
-                "created_at": _utc_iso(row["created_at"]),
             }
             for row in page
         ]

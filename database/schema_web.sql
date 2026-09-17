@@ -96,7 +96,13 @@ CREATE TABLE IF NOT EXISTS answer_feedback (
     detail TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     created_at REAL NOT NULL,
-    expires_at REAL NOT NULL
+    expires_at REAL NOT NULL,
+    -- 处理闭环（2026-09-17）：谁在处理、处理结论、处理时间，以及**该次回答的来源清单**
+    -- （来源清单是反馈→复抓/降级提案的依据；反馈天生带 run_id，能回溯到用了哪些来源）
+    handled_by TEXT,
+    handled_at REAL,
+    resolution TEXT,
+    sources_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_answer_feedback_expiry

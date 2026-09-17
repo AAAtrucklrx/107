@@ -11,7 +11,12 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 
 from xiaowo_web.api.dependencies import require_reviewer, require_reviewer_mutation
 from xiaowo_web.api.pagination import decode_cursor, encode_cursor
-from xiaowo_web.api.schemas import CampusToolApproval, CampusToolRejection, CampusToolUnpublish
+from xiaowo_web.api.schemas import (
+    AnswerFeedbackStatusUpdate,
+    CampusToolApproval,
+    CampusToolRejection,
+    CampusToolUnpublish,
+)
 from xiaowo_web.auth.models import Principal
 from xiaowo_web.campus.tool_store import CampusToolError
 from xiaowo_web.errors import ApiError
@@ -205,6 +210,36 @@ async def list_feedback(
         "next_cursor": encode_cursor(*next_anchor) if next_anchor else None,
         "namespace": namespace,
     }
+
+
+@router.patch("/feedback/{feedback_id}")
+async def update_feedback(
+    feedback_id: int,
+    payload: AnswerFeedbackStatusUpdate,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_reviewer_mutation)],
+) -> dict:
+    """反馈处理状态流转（2026-09-17）。
+
+    此前 `status` 永远是初始的 `'open'`——全库没有任何代码会改它，管理页也没有按钮，
+    于是反馈读完就烂在那里。现在审核人可以把每条反馈标成处理中/已办结/已忽略。
+    """
+    namespace = _namespace(principal)
+    try:
+        updated = await asyncio.to_thread(
+            request.app.state.store.update_feedback_status,
+            feedback_id,
+            status=payload.status,
+            handled_by=principal.principal_id,
+            resolution=payload.resolution,
+        )
+    except KeyError as exc:
+        raise ApiError(404, "FEEDBACK_NOT_FOUND", "没有找到该反馈。") from exc
+    except ValueError as exc:
+        raise ApiError(422, "FEEDBACK_STATUS_INVALID", "反馈状态不合法。") from exc
+    if updated.get("namespace") not in {None, namespace}:
+        raise ApiError(403, "FORBIDDEN", "该反馈不属于当前审核空间。")
+    return updated
 
 
 @router.get("/generations")

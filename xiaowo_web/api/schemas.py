@@ -71,6 +71,15 @@ class AnswerFeedbackCreate(BaseModel):
     detail: str = Field(default="", max_length=1000)
 
 
+class AnswerFeedbackStatusUpdate(BaseModel):
+    """反馈处理状态流转（2026-09-17）：待处理 → 处理中 → 已办结/已忽略。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["open", "in_progress", "handled", "ignored"]
+    resolution: str = Field(default="", max_length=500)
+
+
 class SourceTrustProposalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

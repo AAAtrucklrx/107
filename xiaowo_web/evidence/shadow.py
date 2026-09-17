@@ -58,6 +58,25 @@ def unsupported_facts(answer: str, evidence: str) -> list[str]:
     return [f for f in evidence_facts(answer) if f not in haystack]
 
 
+# 判官/离线分析要能核对"答案是否超出证据"，所以证据**正文也要存**（不是只存 URL）。
+# 每条留 1500 字：与喂给合成的上限一致，够核对又不会把库撑大。
+_EVIDENCE_KEEP_CHARS = 1500
+
+
+def refs_payload(references: list[dict]) -> list[dict]:
+    """落库用的证据载荷：标题 + URL + 正文（截断），供判官/离线分析复核。"""
+    payload: list[dict] = []
+    for ref in references or []:
+        if not isinstance(ref, dict):
+            continue
+        payload.append({
+            "title": str(ref.get("title") or "")[:200],
+            "url": str(ref.get("url") or "")[:500],
+            "content": str(ref.get("content") or "")[:_EVIDENCE_KEEP_CHARS],
+        })
+    return payload
+
+
 def refs_evidence(references: list[dict]) -> str:
     """一次检索**披露出来的全部内容**：标题 + URL + 正文。
 
@@ -271,7 +290,7 @@ class ShadowComparer:
             "a_latency": a_latency,
             "a_ref_count": len(a_references or []),
             "a_ref_chars": sum(len(str(r.get("content") or "")) for r in (a_references or [])),
-            "a_refs": [str(r.get("url") or "") for r in (a_references or [])],
+            "a_refs": refs_payload(a_references),
             "a_limitations": list(a_limitations or []),
         }
         a_evidence = refs_evidence(a_references)
@@ -289,7 +308,7 @@ class ShadowComparer:
                 b_compose_latency=round(compose_latency, 2),
                 b_ref_count=len(refs),
                 b_ref_chars=sum(len(str(r.get("content") or "")) for r in refs),
-                b_refs=[str(r.get("url") or "") for r in refs],
+                b_refs=refs_payload(refs),
                 b_verifiable=verifiable_ratio(answer, b_evidence),
                 b_unsupported=unsupported_facts(answer, b_evidence),
             )

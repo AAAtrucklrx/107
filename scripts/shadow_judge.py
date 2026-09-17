@@ -102,10 +102,13 @@ def _evidence_for(refs_json: str, *, limit: int = 6) -> str:
         refs = []
     lines = []
     for index, ref in enumerate(refs[:limit], start=1):
-        title = str(ref.get("title") or "")[:60]
-        url = str(ref.get("url") or "")
-        content = _clip(str(ref.get("content") or ""), _EVIDENCE_CHARS)
-        lines.append(f"[{index}] {title} {url}\n{content}")
+        if isinstance(ref, dict):
+            title = str(ref.get("title") or "")[:60]
+            url = str(ref.get("url") or "")
+            content = _clip(str(ref.get("content") or ""), _EVIDENCE_CHARS)
+        else:      # 兼容早期只存 URL 的记录
+            title, url, content = "", str(ref), ""
+        lines.append(f"[{index}] {title} {url}\n{content}".strip())
     return "\n\n".join(lines) or "（无）"
 
 
