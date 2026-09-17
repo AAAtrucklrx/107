@@ -49,8 +49,21 @@ class RefetchWorker:
                 raise SidecarContractError("refetch response lacks safety proof")
             content_hash = hashlib.sha256(page.markdown.encode("utf-8")).hexdigest()
             if content_hash == job.original_snapshot_hash:
+                # 内容没变：但若快照文件丢了就顺手补写回去（2026-09-17）。
+                # 此时 sha256(content) == original_snapshot_hash 已成立 → 补写出的文件
+                # 与原文件逐字节一致，不违反快照不可变原则。失败不影响主流程。
+                restored = False
+                try:
+                    restored = await asyncio.to_thread(
+                        self.store.restore_snapshot_if_missing,
+                        job.namespace,
+                        job.item_id,
+                        page.markdown,
+                    )
+                except Exception:  # noqa: BLE001 —— 补写失败只是继续降级
+                    restored = False
                 self.store.complete_refetch_job(job, "unchanged", now=now)
-                return "unchanged"
+                return "snapshot_restored" if restored else "unchanged"
             trust = self.trust_store.classify(final)
             self.store.enqueue_candidate(job.namespace, {
                 "source_id": "refetch-" + hashlib.sha256(

@@ -45,6 +45,77 @@ def _draft(store: ReviewStore, suffix: str, text: str) -> str:
     return str(item["item_id"])
 
 
+def test_refetch_restores_missing_snapshot(tmp_path) -> None:
+    """refetch 内容未变但快照文件丢失时，必须**补写回去**（原来只标 unchanged → 永不愈合）。
+
+    补写之所以安全：unchanged 分支已确认 sha256(重抓内容) == 原 snapshot_hash，
+    所以写出的文件与原文件逐字节一致。
+    """
+    settings = make_settings(tmp_path)
+    store = ReviewStore(settings)
+    store.initialize()
+    original = "公开通知正文，用于验证快照补写链路。"
+    item_id = _draft(store, "restore", original)
+    evidence_dir = store.data_dir          # 权威来源，别自己拼目录名
+    with sqlite3.connect(settings.review_db_path) as conn:
+        relative = conn.execute(
+            "SELECT ws.content_path FROM review_items ri "
+            "JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id WHERE ri.item_id = ?",
+            (item_id,),
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE web_snapshots SET content_path = '' WHERE snapshot_id = "
+            "(SELECT snapshot_id FROM review_items WHERE item_id = ?)",
+            (item_id,),
+        )
+    (evidence_dir / relative).unlink()          # 文件也没了 → 模拟"快照丢失"
+    assert store.get_item("demo", item_id)["snapshot_available"] is False
+
+    store.queue_refetch("demo", item_id, "tester", "req-restore")
+    worker = RefetchWorker(
+        store, _Crawler(original), url_guard=_AllowPublicGuard(),
+        worker_id="refetch-restore",
+    )
+    assert asyncio.run(worker.run_once()) == "snapshot_restored"
+    detail = store.get_item("demo", item_id)
+    assert detail["snapshot_available"] is True
+    assert detail["raw_snapshot"] == original
+
+
+def test_refetch_does_not_fake_snapshot_on_hash_mismatch(tmp_path) -> None:
+    """内容对不上原哈希时**绝不**补写冒充原文（宁可继续降级）。"""
+    settings = make_settings(tmp_path)
+    store = ReviewStore(settings)
+    store.initialize()
+    item_id = _draft(store, "mismatch", "原始正文。")
+    with sqlite3.connect(settings.review_db_path) as conn:
+        conn.execute(
+            "UPDATE web_snapshots SET content_path = '' WHERE snapshot_id = "
+            "(SELECT snapshot_id FROM review_items WHERE item_id = ?)",
+            (item_id,),
+        )
+    assert store.restore_snapshot_if_missing("demo", item_id, "完全不同的内容") is False
+    assert store.get_item("demo", item_id)["snapshot_available"] is False
+
+
+def test_web_snapshots_drops_dead_removed_at_column(tmp_path) -> None:
+    """removed_at 是死列（无人读写、无过滤）→ 迁移要把它删掉。"""
+    settings = make_settings(tmp_path)
+    store = ReviewStore(settings)
+    store.initialize()
+
+    def columns() -> set[str]:
+        with sqlite3.connect(settings.review_db_path) as conn:
+            return {str(row[1]) for row in conn.execute("PRAGMA table_info(web_snapshots)")}
+
+    assert "removed_at" not in columns(), "新库就不该有这一列"
+    with sqlite3.connect(settings.review_db_path) as conn:   # 模拟老库
+        conn.execute("ALTER TABLE web_snapshots ADD COLUMN removed_at REAL")
+    assert "removed_at" in columns()
+    ReviewStore(settings).initialize()                        # 再跑一次迁移
+    assert "removed_at" not in columns()
+
+
 def test_read_snapshot_rejects_blank_and_directory(tmp_path) -> None:
     """空路径/非文件必须抛 FileNotFoundError，不能是 IsADirectoryError。
 

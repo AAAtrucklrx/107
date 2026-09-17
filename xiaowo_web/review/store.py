@@ -98,6 +98,14 @@ class ReviewStore:
     @staticmethod
     def _migrate_schema(conn: sqlite3.Connection) -> None:
         """Apply additive migrations to databases created by older builds."""
+        snapshot_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(web_snapshots)").fetchall()
+        }
+        if "removed_at" in snapshot_columns:
+            # 死列清理（2026-09-17）：全库无人读写、也没有任何查询用它过滤——"已删除"的
+            # 快照照样会被读取，留着只会让人误以为有删除语义。SQLite >= 3.35 支持 DROP。
+            conn.execute("ALTER TABLE web_snapshots DROP COLUMN removed_at")
         columns = {
             str(row["name"])
             for row in conn.execute("PRAGMA table_info(review_chunks)").fetchall()
@@ -2217,6 +2225,55 @@ class ReviewStore:
         if not path.is_relative_to(self.data_dir.resolve()):
             raise ValueError("snapshot path escapes evidence data directory")
         return path
+
+    def restore_snapshot_if_missing(
+        self,
+        namespace: str,
+        item_id: str,
+        content: str,
+    ) -> bool:
+        """内容与原快照**逐字节相同**时，把缺失的快照文件补写回去（2026-09-17）。
+
+        只给 `RefetchWorker` 的 `unchanged` 分支用：那一步已经确认
+        `sha256(content) == web_snapshots.snapshot_hash`，所以补写出来的文件与原文件
+        **逐字节一致**——不违反快照不可变原则，也不改变"原文 ↔ 已审切块"的对应关系。
+
+        背景：`refetch` 原先在 `unchanged` 时只把 job 标成 unchanged、**不重写文件**，
+        于是快照文件丢失的条目永远无法自愈（2026-09-17 查实）。这里补上那一段。
+
+        Returns:
+            是否真的补写了（快照本来就可用 / 内容对不上原哈希时返回 False）。
+        """
+        self._validate_namespace(namespace)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT ws.snapshot_id, ws.snapshot_hash, ws.content_path
+                FROM review_items ri
+                JOIN web_snapshots ws ON ws.snapshot_id = ri.snapshot_id
+                WHERE ri.namespace = ? AND ri.item_id = ?
+                """,
+                (namespace, item_id),
+            ).fetchone()
+        if row is None:
+            return False
+        try:
+            if self._resolve_snapshot_path(row["content_path"]).is_file():
+                return False  # 快照还在，什么都不用做
+        except (FileNotFoundError, ValueError, OSError):
+            pass
+        digest = _digest(content)
+        if digest != str(row["snapshot_hash"]):
+            # 内容对不上原哈希 → **绝不**拿它冒充原文，继续保持降级态
+            return False
+        relative = self._write_immutable_snapshot(digest, content)
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE web_snapshots SET content_path = ? WHERE snapshot_id = ?",
+                (relative, str(row["snapshot_id"])),
+            )
+            conn.commit()
+        return True
 
     def _write_immutable_snapshot(self, snapshot_hash: str, content: str) -> str:
         relative = Path("raw") / snapshot_hash[:2] / f"{snapshot_hash}.txt"

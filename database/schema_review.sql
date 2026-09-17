@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS web_snapshots (
     content_path TEXT,
     content_type TEXT NOT NULL,
     fetched_at TEXT,
-    removed_at REAL,
     created_at REAL NOT NULL,
     UNIQUE(namespace, snapshot_hash)
 );
