@@ -73,12 +73,14 @@ def test_smart_answer_returns_generated_text(tmp_path) -> None:
     # 提示词（含指令）现在作为单条 user 内容传入——该端点不支持 system 角色
     call = search.calls[0]
     assert call["query"].endswith("用户问题：\n2026年中秋节放假安排")
-    assert "结论先行" in call["query"]
+    # 只留"后处理补不回来"的防幻觉指令；长度/结论先行/表格/来源行一律后处理
+    assert "只依据检索结果回答" in call["query"]
+    assert "结论先行" not in call["query"]
     assert call["model"] == "ernie-4.5-turbo-128k"
 
 
 def test_smart_prompt_scopes_campus_questions_and_drops_abbreviation(tmp_path) -> None:
-    """校内问句：检索词用全称 + 只采用本校官方来源 + 全文禁用简称。
+    """校内问句：检索词用全称前置 + 无关即拒答，且整条提示词必须保持极简。
 
     实测（2026-09-16）：「科大」会把百度带偏到科大讯飞／天津科技大学"AI科大"，
     本校来源 0/8、答案答成天津科技大学；改用全称并把关键词前置后升到 2/8。
@@ -87,9 +89,14 @@ def test_smart_prompt_scopes_campus_questions_and_drops_abbreviation(tmp_path) -
     asyncio.run(_pipeline(tmp_path, search).answer("最新的转专业政策是什么？"))
     content = search.calls[0]["query"]
     assert content.startswith("检索关键词：中国科学技术大学 转专业")
-    assert "只采用中国科学技术大学的官方信息" in content
+    assert "只依据检索结果回答" in content
     assert "未找到本校相关信息" in content
     assert "科大" not in content, "简称会被检索器匹配到别校"
+    assert len(content) < 400, (
+        "端点不支持 system 角色，整条消息都参与检索：写进去的每条格式要求都是检索噪音。"
+        "实测 729 字的全套规则会把 8 条引用全带成 www.docin.com（本校 0 条），"
+        "砍到 159 字后本校引用 0→10。新增指令前请先证明它后处理补不回来。"
+    )
 
 
 def test_general_question_keeps_neutral_prompt(tmp_path) -> None:
@@ -97,8 +104,11 @@ def test_general_question_keeps_neutral_prompt(tmp_path) -> None:
     search = SmartSearch(text="答复")
     asyncio.run(_pipeline(tmp_path, search).answer("2026年中秋节放假安排"))
     content = search.calls[0]["query"]
-    assert content.startswith("你是「小蜗」")
-    assert "只采用中国科学技术大学的官方信息" not in content
+    assert content.startswith("只依据检索结果回答")
+    assert "不得改答其他学校" not in content, "通用问句不得被套上本校约束"
+    assert "中国科学技术大学" not in content, "通用问句不得被注入本校全称"
+    assert "未找到相关信息" in content
+    assert len(content) < 400
 
 
 def test_smart_answer_uses_real_references_as_sources(tmp_path) -> None:
