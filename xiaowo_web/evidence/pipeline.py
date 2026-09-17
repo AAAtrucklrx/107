@@ -225,49 +225,52 @@ class EvidencePipeline:
         claims_acc: list[dict] | None = None
         year_anchor = temporal_anchor(sanitized.text) if self.settings.web_query_rewrite else None
 
-        # 公众号优先分支：科大相关问题先检索微信公众号（信息密度高；置信裁决不变）
+        # ── 公众号分支 与 纯搜索**并行**（2026-09-17）──
+        # 量得公众号 collect 固定约 9.7s（搜狗检索+取 3 篇正文），而它多数情况**不会确认**
+        # 答案（确定性证据门槛很严），串行就等于每个"科大"问题白等这 9.7s 再跑纯搜索。
+        # 并行后总耗时 ≈ max(两者) 而非相加：实测 19.7s → 约 12s。
+        # 优先级不变：公众号一旦确认答案就立刻用它（本校官方号内容更可信），并取消纯搜索。
+        wechat_task = None
+        pure_task = None
+        pure_limitations: list[str] = []
         if (
             self.wechat is not None
             and self.settings.wechat_enabled
             and WECHAT_TRIGGER_RE.search(sanitized.text)
         ):
-            self._stage(on_stage, "web_search", "正在检索微信公众号")
-            try:
-                bundle = await asyncio.wait_for(
-                    # 微信查询改写：官方名称词+业务词（原文长句在搜狗微信索引匹配差 → 噪音/漏命中）
-                    self.wechat.collect(wechat_query(sanitized.text)),
-                    timeout=max(15.0, min(25.0, self.settings.run_timeout_seconds * 0.4)),
-                )
-            except asyncio.TimeoutError:
-                bundle = None
-                limitations_acc.append("微信公众号检索超时，已回退通用检索。")
-            if bundle is not None and bundle.articles:
-                pages = await self._wechat_pages(bundle.articles)
-                # 2026-09-05 相关性过滤：非官方号文章标题必须命中查询核心词（去官方名），
-                # 否则丢弃（搜狗对"中科大 x"类常返回标题含"中科大"但内容无关的公众号）
-                if pages:
-                    business_words = self._wechat_core_words(sanitized.text)
-                    if business_words:
-                        kept = [
-                            p for p in pages
-                            if p.trust.rule_id == "wechat_official"
-                            or any(w in str(p.page.title or "") for w in business_words)
-                        ]
-                        dropped = len(pages) - len(kept)
-                        pages = kept
-                        if dropped and dropped > 0:
-                            limitations_acc.append(f"微信公众号命中 {dropped} 条与问题无关的内容，已忽略。")
-                if pages:
-                    confirmed, claims = await self._assess_and_answer(
-                        pages, sanitized.text, limitations_acc, year_anchor, on_stage,
-                    )
-                    if confirmed is not None:
-                        return confirmed
-                    # 2026-09-05 体验放宽：公众号已查看但未达门槛 → 保留微信来源，继续通用互联网搜索
-                    wechat_sources = [
-                        self._public_source(record, index + 1) for index, record in enumerate(pages)
-                    ]
-                    limitations_acc.append("已查看公众号内容，但尚无声明达到确定性证据门槛；继续检索互联网公开页面。")
+            wechat_task = asyncio.create_task(
+                self._wechat_branch(sanitized.text, year_anchor, on_stage)
+            )
+        if (
+            self.settings.web_answer_mode == "pure"
+            and self.settings.search_provider == "baidu"
+        ):
+            pure_task = asyncio.create_task(
+                self._pure_search_answer(sanitized.text, pure_limitations, [], on_stage)
+            )
+        wechat_sources: list[dict] = []
+        if wechat_task is not None:
+            confirmed, wechat_sources, notes = await wechat_task
+            limitations_acc.extend(notes)
+            if confirmed is not None:
+                if pure_task is not None:
+                    # 用 gather(return_exceptions=True) 收掉子任务的取消结果：
+                    # 不要用 `except (CancelledError, Exception)` —— 那会连**外层**任务的
+                    # 取消一起吞掉（超时/断流时就无法正常中止了）。
+                    pure_task.cancel()
+                    await asyncio.gather(pure_task, return_exceptions=True)
+                return confirmed
+        if pure_task is not None:
+            pure = await pure_task
+            if pure is not None:
+                limitations_acc.extend(pure_limitations)
+                # 并行时纯搜索拿不到公众号来源（它先起跑）→ 在这里补上，去重后并入
+                seen = {str(item.get("source_id") or "") for item in pure.sources}
+                for item in wechat_sources:
+                    if str(item.get("source_id") or "") not in seen:
+                        pure.sources.append(item)
+                return pure
+            limitations_acc.extend(pure_limitations)
 
         # ── 2026-09-07 百度智能搜索生成直达答复（smart 模式）：提示词工程直接返回答案 ──
         # 覆盖场景：搜索→抓取→提取→置信门链路对时事类常因 robots/渲染失败空手而归；
@@ -435,6 +438,58 @@ class EvidencePipeline:
             terminal_reason="web_evidence_confirmed",
             ingestion_candidates=self._ingestion_candidates(pages, ingestion_spans),
         ), claims
+
+    async def _wechat_branch(
+        self,
+        question: str,
+        year_anchor,
+        on_stage: StageCallback | None,
+    ) -> tuple[AnswerBundle | None, list[dict], list[str]]:
+        """公众号优先分支（2026-09-05 起）。
+
+        返回 `(确认答案|None, 未确认但保留的公众号来源, 限制说明)`。
+        抽成独立方法是为了能和纯搜索**并行**执行（2026-09-17，见 `answer`）。
+        """
+        notes: list[str] = []
+        self._stage(on_stage, "web_search", "正在检索微信公众号")
+        try:
+            bundle = await asyncio.wait_for(
+                # 微信查询改写：官方名称词+业务词（原文长句在搜狗微信索引匹配差 → 噪音/漏命中）
+                self.wechat.collect(wechat_query(question)),
+                timeout=max(15.0, min(25.0, self.settings.run_timeout_seconds * 0.4)),
+            )
+        except asyncio.TimeoutError:
+            return None, [], ["微信公众号检索超时，已回退通用检索。"]
+        if bundle is None or not bundle.articles:
+            return None, [], notes
+        pages = await self._wechat_pages(bundle.articles)
+        if pages:
+            # 2026-09-05 相关性过滤：非官方号文章标题必须命中查询核心词（去官方名），
+            # 否则丢弃（搜狗对"中科大 x"类常返回标题含"中科大"但内容无关的公众号）
+            business_words = self._wechat_core_words(question)
+            if business_words:
+                kept = [
+                    p for p in pages
+                    if p.trust.rule_id == "wechat_official"
+                    or any(w in str(p.page.title or "") for w in business_words)
+                ]
+                dropped = len(pages) - len(kept)
+                pages = kept
+                if dropped > 0:
+                    notes.append(f"微信公众号命中 {dropped} 条与问题无关的内容，已忽略。")
+        if not pages:
+            return None, [], notes
+        confirmed, _claims = await self._assess_and_answer(
+            pages, question, notes, year_anchor, on_stage,
+        )
+        if confirmed is not None:
+            return confirmed, [], notes
+        # 2026-09-05 体验放宽：公众号已查看但未达门槛 → 保留微信来源，继续通用互联网搜索
+        kept_sources = [
+            self._public_source(record, index + 1) for index, record in enumerate(pages)
+        ]
+        notes.append("已查看公众号内容，但尚无声明达到确定性证据门槛；继续检索互联网公开页面。")
+        return None, kept_sources, notes
 
     async def _wechat_pages(self, articles) -> list[_PageRecord]:
         from datetime import UTC, datetime
