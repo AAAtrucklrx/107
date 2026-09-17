@@ -23,6 +23,7 @@ from xiaowo_web.evidence.models import (
     ValidatedUrl,
 )
 from xiaowo_web.evidence.privacy import QuerySafetyError, sanitize_public_query
+from xiaowo_web.evidence.compose import compose_and_verify, judge_relevance
 from xiaowo_web.evidence.rewrite import (
     WECHAT_TRIGGER_RE,
     QueryRewriter,
@@ -174,6 +175,14 @@ def _smart_source_tier(host: str, title: str) -> str:
 # 正常内容页的摘录（纯搜索模式）在 1000~1499 字，200 的门槛不会误伤。
 _SNIPPET_MIN_CHARS = 200
 
+# 「合成结果无法核验」的专用拒答文案（2026-09-17）：与 B3 的"没有合格来源"不同——
+# 这里检索是有结果的，只是合成出来的数字/日期在检索结果里找不到依据，所以不展示。
+_UNVERIFIED_ANSWER = (
+    "本次联网检索到的内容**不足以支撑一份可靠回答**：生成结果里有无法在检索结果中核实的"
+    "数字或日期，小蜗不展示未经核实的内容。\n\n"
+    "建议换个更具体的问法，或通过官方渠道核实（学校官网、教务处，或学院教学秘书）。"
+)
+
 
 class EvidencePipeline:
     def __init__(
@@ -264,6 +273,16 @@ class EvidencePipeline:
         # 覆盖场景：搜索→抓取→提取→置信门链路对时事类常因 robots/渲染失败空手而归；
         # smart 由百度云端完成检索+生成，一次返回答案（无引用，来源标注提醒）。
         # 仅 provider=baidu 且 web_answer_mode=smart 时启用；失败自动回退经典链路。
+        if (
+            self.settings.web_answer_mode == "pure"
+            and self.settings.search_provider == "baidu"
+        ):
+            pure = await self._pure_search_answer(
+                sanitized.text, limitations_acc, wechat_sources, on_stage,
+            )
+            if pure is not None:
+                return pure
+
         if (
             self.settings.web_answer_mode == "smart"
             and self.settings.search_provider == "baidu"
@@ -750,6 +769,35 @@ class EvidencePipeline:
             limitations_acc.append("百度智能搜索生成暂不可用，已回退通用检索。")
             return None
         text = _scrub_unreliable_sources(text)
+        return self._references_bundle(
+            question=question,
+            answer_text=text,
+            references=references,
+            limitations_acc=limitations_acc,
+            wechat_sources=wechat_sources,
+            origin_note=(
+                "来自百度智能搜索生成（AI 检索）；未附独立引用，请以教务系统为准。"
+                "未附独立引用，请以教务系统为准。"
+            ),
+        )
+
+    def _references_bundle(
+        self,
+        *,
+        question: str,
+        answer_text: str,
+        references: list[dict],
+        limitations_acc: list[str],
+        wechat_sources: list[dict],
+        origin_note: str,
+        refusal: bool = False,
+    ) -> AnswerBundle:
+        """把「答案文本 + 本轮 references」组装成 AnswerBundle（两条联网路径共用）。
+
+        包含来源准入分层、B3（无合格来源且确过滤了垃圾站 → 整篇替换为诚实答复）、
+        B4（校内问句无官方来源必须示警）、进料 URLs/摘要透传。2026-09-17 从
+        `_smart_answer` 抽出，供「纯搜索 + 自研合成」复用，避免两套逻辑漂移。
+        """
         # B1/B2：接住**真实返回的 references** 并按域名分层。
         # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
         # 进料（2026-09-16）：把 references 的 URL 交给上层后台任务抓整页入库。
@@ -801,10 +849,8 @@ class EvidencePipeline:
         for item in wechat_sources:
             if str(item.get("source_id") or "") not in seen:
                 sources.append(item)
-        limitations_acc.append(
-            f"来自百度智能搜索生成（AI 检索）；本次命中本校官方来源 {official_n} 条，"
-            "未附独立引用，请以教务系统为准。"
-        )
+        limitations_acc.append(origin_note)
+        limitations_acc.append(f"本次命中本校官方来源 {official_n} 条。")
         if dropped["blocked"]:
             limitations_acc.append(
                 f"本次检索到 {dropped['blocked']} 条无关或不良站点，"
@@ -821,6 +867,23 @@ class EvidencePipeline:
                 f"其中 {wechat_n} 条为微信公众号文章：智能搜索未提供账号名，无法核实发布方，"
                 "已标注为未核实来源，请以官方渠道为准。"
             )
+        # 闸门拒答（2026-09-17）：与 B3 一样**不展示来源**，并把终态标成 EVIDENCE_INSUFFICIENT
+        # —— 这一步至关重要：runner 的本地回退是以该终态为条件的（实测漏掉会把
+        # 88 字的拒答直接推给用户，而不是回退本地知识库）。
+        if refusal:
+            return AnswerBundle(
+                markdown=answer_text,
+                claims=[{
+                    "claim_id": "c1", "text": answer_text,
+                    "kind": "factual", "status": "insufficient", "evidence": [],
+                }],
+                sources=[],
+                ingestion_urls=ref_urls,
+                ingestion_snippets=ref_snippets,
+                web_references=references,
+                limitations=limitations_acc,
+                terminal_reason="EVIDENCE_INSUFFICIENT",
+            )
         # B4：校内事务问句若一条官方来源都没有，必须显式示警
         if official_n == 0 and campus_search_keywords(question):
             limitations_acc.append(
@@ -828,10 +891,10 @@ class EvidencePipeline:
                 "请勿据此办理事务；相关事务请以教务系统或本校官方文件为准。"
             )
         return AnswerBundle(
-            markdown=text,
+            markdown=answer_text,
             claims=[{
                 "claim_id": "c1",
-                "text": text,
+                "text": answer_text,
                 "kind": "factual",
                 "status": "generated",
                 "evidence": [],
@@ -842,6 +905,107 @@ class EvidencePipeline:
             web_references=references,
             limitations=limitations_acc,
             terminal_reason="AI_GENERATED",
+        )
+
+    async def _pure_search_answer(
+        self,
+        question: str,
+        limitations_acc: list[str],
+        wechat_sources: list[dict],
+        on_stage: StageCallback | None,
+    ) -> AnswerBundle | None:
+        """纯搜索取原文摘录 → 两道闸门 → **自研合成**（2026-09-17，`web_answer_mode=pure`）。
+
+        与 `_smart_answer` 的差别：端点**不做总结**（不传 `model`），把 1000~1500 字/条的
+        原文摘录交给我们（实测：智能生成只给固定 203 字、耗时 22~43s；纯搜索 0.5~1s）。
+
+        为什么答案要自己合成：端点那份答案是**黑盒**，实测其数字大量不在它披露给我们的
+        证据里（可核验比例 0.342），我们无法校验；自己合成才能做下面两道闸门。
+
+        1. **相关性闸门（合成前）**：refs 与问题无关就不合成。实测「食堂开放时间」这题
+           纯搜索返回的全是教务处选课/竞赛，智能生成会靠自己的严格提示词拒答，而我们
+           自己合成时必须显式提供同等保护——否则会像实测那样"垃圾证据也硬编"。
+        2. **可核验性闸门（合成后）**：答案里的数字/日期必须都在 refs 里（归一化后比对，
+           含全角/乘号），有一条不达标就拒答。
+
+        任一道不过 → 与旧路径完全一致的 `_NO_RELIABLE_SOURCE_ANSWER` +
+        `terminal_reason=EVIDENCE_INSUFFICIENT`，由 runner 回退本地知识库。
+        """
+        self._stage(on_stage, "web_search", "正在联网检索（纯搜索）")
+        # ⚠️ 检索词用**原问题**，不要用 `campus_search_keywords`（2026-09-17 实测）：
+        # 那套关键词是为**智能生成**模式设计的，会把「教务处」「官方」拼进去，导致纯搜索
+        # 几乎全部命中"教务处首页/新闻"，把真正讲问题的页面挤出前 8 名。同一问题对比：
+        #   「学籍证明怎么办」→ 关键词式：教务处首页+信息公开年报（无关）
+        #                       原问题式：「离校生如何办理毕业证明、成绩证明及学位证明?」
+        #   「食堂开放时间」  → 关键词式：选课通知/竞赛新闻（无关）
+        #                       原问题式：「迎新特辑｜中国科学技术大学食堂攻略」
+        # 原问题式在实测 4/4 题上命中质量明显更好。
+        query = str(question or "").strip()[:120]
+        try:
+            references = await asyncio.wait_for(
+                self.search.references_only(query, limit=8), timeout=30.0
+            )
+        except Exception as exc:  # noqa: BLE001 —— 失败交给调用方回退经典链路
+            limitations_acc.append("联网检索暂不可用，已回退通用检索。")
+            log.info(f"纯搜索失败: {exc}")
+            return None
+        references = [r for r in (references or []) if isinstance(r, dict)]
+        if not references:
+            limitations_acc.append("联网检索没有返回结果。")
+            return None
+        # 闸门一：相关性（判不出来按不相关处理 = fail-closed）
+        relevant = await asyncio.to_thread(judge_relevance, question, references)
+        if not relevant:
+            limitations_acc.append(
+                "本次检索到的内容与问题不相关，已改为固定答复；"
+                "如需最新信息请以官方渠道为准。"
+            )
+            return self._references_bundle(
+                question=question,
+                answer_text=_NO_RELIABLE_SOURCE_ANSWER,
+                references=references,
+                limitations_acc=limitations_acc,
+                wechat_sources=wechat_sources,
+                origin_note="联网检索结果与问题不相关，未据此作答。",
+                refusal=True,
+            )
+        # 合成 + 闸门二
+        self._stage(on_stage, "answering", "正在依据检索结果生成回答")
+        try:
+            answer, unsupported = await asyncio.to_thread(
+                compose_and_verify, question, references
+            )
+        except Exception as exc:  # noqa: BLE001
+            limitations_acc.append("联网答案合成失败，已回退通用检索。")
+            log.info(f"自研合成失败: {exc}")
+            return None
+        if not answer.strip():
+            limitations_acc.append("联网答案合成为空，未予采用。")
+            return None
+        if unsupported:
+            limitations_acc.append(
+                f"合成答案里有 {len(unsupported)} 处数字/日期无法在检索结果中核实"
+                f"（如 {'、'.join(unsupported[:3])}），已改为固定答复，不展示无依据内容。"
+            )
+            return self._references_bundle(
+                question=question,
+                answer_text=_UNVERIFIED_ANSWER,
+                references=references,
+                limitations_acc=limitations_acc,
+                wechat_sources=wechat_sources,
+                origin_note="合成答案存在无法核实的数字/日期，未予采用。",
+                refusal=True,
+            )
+        return self._references_bundle(
+            question=question,
+            answer_text=answer,
+            references=references,
+            limitations_acc=limitations_acc,
+            wechat_sources=wechat_sources,
+            origin_note=(
+                "来自联网检索（百度纯搜索的原文摘录）+ 小蜗自研合成；"
+                "每个日期与数字均可在下方来源中核对。"
+            ),
         )
 
     @staticmethod
