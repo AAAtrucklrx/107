@@ -55,3 +55,6 @@ frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
 .pytest_cache/
+
+# 临时/一次性脚本（2026-09-17：曾被 git add -A 误提交 105 个，撤回并忽略）
+scripts/tmp_*.py
