@@ -802,7 +802,14 @@ class ReviewStore:
                 (item_id,),
             ).fetchall()
         payload = dict(item)
-        payload["raw_snapshot"] = self.read_snapshot(payload["content_path"])
+        try:
+            payload["raw_snapshot"] = self.read_snapshot(payload["content_path"])
+            payload["snapshot_available"] = True
+        except (FileNotFoundError, ValueError, OSError):
+            # 历史快照读不到**不能**让管理页 500：如实置空并标记，其余治理字段照常返回，
+            # 由前端提示「原文快照不可用（历史数据）」。
+            payload["raw_snapshot"] = ""
+            payload["snapshot_available"] = False
         payload["versions"] = [dict(row) for row in versions]
         payload["chunks"] = [dict(row) for row in chunks]
         payload.pop("content_path", None)
@@ -2187,10 +2194,29 @@ class ReviewStore:
     # Snapshot and helpers ------------------------------------------------------
 
     def read_snapshot(self, relative_path: str) -> str:
-        path = (self.data_dir / relative_path).resolve()
+        """读取快照正文；**空路径或非文件一律 `FileNotFoundError`**。
+
+        ⚠️ 不能直接 `path.read_text()`：2026-09-02 早期有一批 `content_path=''` 的历史
+        快照（实测 96 条快照里 17 条，对应 88 个审核项里 17 个、多数仍是 `active`），
+        空路径会被 `(data_dir / "").resolve()` 解析成 **`data_dir` 目录本身** →
+        `IsADirectoryError` → 管理页 review-item 接口 500（2026-09-17 查实）。
+        读取方按用途处理：`get_item` 降级为「快照不可用」；`create_draft` 让它抛错
+        （那是真正的数据完整性问题，由 worker 落 `CLEANING_FAILED`）。
+        """
+        path = self._resolve_snapshot_path(relative_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"snapshot unavailable: {relative_path!r}")
+        return path.read_text(encoding="utf-8")
+
+    def _resolve_snapshot_path(self, relative_path: str) -> Path:
+        """快照相对路径 → 绝对路径（含目录逃逸校验；空路径直接拒）。"""
+        raw = str(relative_path or "").strip()
+        if not raw:
+            raise FileNotFoundError("snapshot has no content path")
+        path = (self.data_dir / raw).resolve()
         if not path.is_relative_to(self.data_dir.resolve()):
             raise ValueError("snapshot path escapes evidence data directory")
-        return path.read_text(encoding="utf-8")
+        return path
 
     def _write_immutable_snapshot(self, snapshot_hash: str, content: str) -> str:
         relative = Path("raw") / snapshot_hash[:2] / f"{snapshot_hash}.txt"

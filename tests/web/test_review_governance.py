@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import sqlite3
+
+import pytest
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -41,6 +43,44 @@ def _draft(store: ReviewStore, suffix: str, text: str) -> str:
     assert IngestionWorker(store, worker_id=f"cleaner-{suffix}").run_once() == "done"
     item = next(value for value in store.list_items("demo") if value["title"].endswith(suffix))
     return str(item["item_id"])
+
+
+def test_read_snapshot_rejects_blank_and_directory(tmp_path) -> None:
+    """空路径/非文件必须抛 FileNotFoundError，不能是 IsADirectoryError。
+
+    空路径会被解析成 data_dir **目录本身**——这正是管理页 500 的根因。
+    """
+    store = ReviewStore(make_settings(tmp_path))
+    store.initialize()
+    for bad in ("", "   ", ".", "raw"):
+        with pytest.raises(FileNotFoundError):
+            store.read_snapshot(bad)
+    with pytest.raises(ValueError):
+        store.read_snapshot("../../etc/passwd")
+
+
+def test_get_item_survives_missing_snapshot(tmp_path) -> None:
+    """历史快照（content_path 为空）不能让管理页 500，要降级并如实标记。"""
+    settings = make_settings(tmp_path)
+    store = ReviewStore(settings)
+    store.initialize()
+    legacy = _draft(store, "legacy", "公开通知正文，用于复现历史快照缺失。")
+    with sqlite3.connect(settings.review_db_path) as conn:
+        conn.execute(
+            "UPDATE web_snapshots SET content_path = '' WHERE snapshot_id = "
+            "(SELECT snapshot_id FROM review_items WHERE item_id = ?)",
+            (legacy,),
+        )
+    detail = store.get_item("demo", legacy)
+    assert detail is not None
+    assert detail["raw_snapshot"] == ""
+    assert detail["snapshot_available"] is False
+    # 其余治理字段必须照常返回（不能因为快照缺失整条不可用）
+    assert detail["versions"] and detail["chunks"]
+    assert detail["normalized_url"].startswith("https://")
+    # 正常条目仍是可用态
+    fresh = _draft(store, "fresh", "正常正文。")
+    assert store.get_item("demo", fresh)["snapshot_available"] is True
 
 
 def _login(client: TestClient) -> str:
