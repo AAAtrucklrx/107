@@ -50,11 +50,14 @@ class ChatManager:
         store: WebStore,
         runner: QaRunner,
         ingestion_sink: Any | None = None,
+        page_fetcher: Any | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.runner = runner
         self.ingestion_sink = ingestion_sink
+        # 联网引用 → 整页候选 的抓取器（EvidencePipeline.fetch_candidates_for_ingestion）
+        self.page_fetcher = page_fetcher
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_runs)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._ingestion_tasks: set[asyncio.Task[None]] = set()
@@ -313,6 +316,32 @@ class ChatManager:
             )
             self._ingestion_tasks.add(task)
             task.add_done_callback(self._ingestion_tasks.discard)
+
+        # 联网引用进料（2026-09-16）：smart 只给片段，交给后台抓整页再入审核库
+        ref_urls = [str(u).strip() for u in (getattr(bundle, "ingestion_urls", None) or []) if str(u).strip()]
+        if (
+            finished is not None
+            and ref_urls
+            and self.ingestion_sink is not None
+            and self.page_fetcher is not None
+        ):
+            namespace = "demo" if request.principal.auth_mode == "demo" else "production"
+            task = asyncio.create_task(
+                self._ingest_references(namespace, ref_urls),
+                name=f"review-ingest-refs:{request.run_id}",
+            )
+            self._ingestion_tasks.add(task)
+            task.add_done_callback(self._ingestion_tasks.discard)
+
+    async def _ingest_references(self, namespace: str, urls: list[str]) -> None:
+        """后台把联网引用的页面抓成整页后入审核库（失败不影响已返回的回答）。"""
+        try:
+            candidates = await self.page_fetcher(urls)
+            if candidates:
+                await asyncio.to_thread(self.ingestion_sink.enqueue, namespace, candidates)
+                log.info(f"联网引用入审核库: 抓成 {len(candidates)}/{len(urls)} 条 (namespace={namespace})")
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"联网引用入审核库失败: {exc}")
 
     async def _enqueue_candidates(self, namespace: str, candidates: list[dict[str, Any]]) -> None:
         try:

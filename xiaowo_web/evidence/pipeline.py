@@ -32,7 +32,11 @@ from xiaowo_web.evidence.rewrite import (
     temporal_anchor,
     wechat_query,
 )
+from utils.logger import get_logger
+
 from xiaowo_web.evidence.wechat import WechatClient
+
+log = get_logger(__name__)
 from xiaowo_web.evidence.trust import SourceTrustStore, registered_domain
 from xiaowo_web.evidence.url_security import UrlGuard, UrlSafetyError
 from xiaowo_web.settings import WebSettings
@@ -753,6 +757,10 @@ class EvidencePipeline:
         text = _scrub_unreliable_sources(text)
         # B1/B2：接住**真实返回的 references** 并按域名分层。
         # 原实现丢弃 references、硬造一条 qianfan.baidubce.com 的假来源（2026-09-16 修）。
+        # 进料（2026-09-16）：把 references 的 URL 交给上层后台任务抓整页入库。
+        # 这里只传 URL —— 入库要整页正文，而抓取不能阻塞回答。去重、限流都在下游。
+        ref_urls = [str(r.get("url") or "").strip() for r in references]
+        ref_urls = [u for u in ref_urls if u]
         sources, official_n, dropped = self._smart_sources(references)
         # B3（收窄版，2026-09-16）：**没有任何合格来源、且确实过滤掉了 blocked 站**
         # → 说明本轮检索结果全是无关/低质站点，整篇替换为固定诚实答复，不复述检索垃圾。
@@ -770,6 +778,7 @@ class EvidencePipeline:
                     "kind": "factual", "status": "insufficient", "evidence": [],
                 }],
                 sources=[],
+                ingestion_urls=ref_urls,
                 limitations=limitations_acc,
                 terminal_reason="EVIDENCE_INSUFFICIENT",
             )
@@ -816,9 +825,66 @@ class EvidencePipeline:
                 "evidence": [],
             }],
             sources=sources,
+            ingestion_urls=ref_urls,
             limitations=limitations_acc,
             terminal_reason="AI_GENERATED",
         )
+
+    async def fetch_candidates_for_ingestion(
+        self, urls: list[str], *, limit: int = 8, min_chars: int = 200,
+    ) -> list[dict]:
+        """把联网答案引用的 URL 抓成**可入审核库的候选**（供上层后台任务调用）。
+
+        为什么必须单独抓一次：smart 的 `references` 只给 `content` 片段，而
+        `ReviewStore.enqueue_candidate` 硬性要求 `snapshot_text`（整页正文）+
+        `evidence_span_hash`。这里复用**与经典链路同一套安全轨道**
+        （`url_guard` 校验 → Crawl4AI 抓取 → `trust_store` 分级），只补齐这两个字段。
+
+        逐条失败只跳过、绝不抛出：这是后台补料，不能影响已经返回给用户的回答。
+        """
+        candidates: list[dict] = []
+        seen: set[str] = set()
+        # 内容指纹去重：实测同一份天气预报被 6 个不同子域返回（weather.com.cn / baidu. /
+        # wap. / uc. / e. …），只按 URL 去重会把 6 份近重复文档全灌进审核队列
+        # （2026-09-16 实测 6/8 条候选实为同一页）。用抓取结果的 content_hash 兜住。
+        seen_content: set[str] = set()
+        for raw in (urls or [])[:limit]:
+            url = str(raw or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            try:
+                validated = await asyncio.to_thread(self.url_guard.validate, url)
+                page = await self.crawler.crawl(validated.normalized_url)
+                if page is None:
+                    continue
+                final = await asyncio.to_thread(self.url_guard.validate, page.final_url)
+                trust = self.trust_store.classify(final)
+            except Exception as exc:  # noqa: BLE001 —— 单条失败不影响其余
+                log.info(f"进料抓取跳过 {url[:80]}: {exc}")
+                continue
+            text = str(getattr(page, "markdown", "") or "")
+            if len(text) < min_chars:      # 过短的多半是抓取失败或纯导航页
+                continue
+            fingerprint = str(getattr(page, "content_hash", "") or "")
+            if fingerprint:
+                if fingerprint in seen_content:
+                    continue
+                seen_content.add(fingerprint)
+            candidates.append({
+                "snapshot_text": text,
+                "evidence_span_hash": hashlib.sha256(url.encode("utf-8")).hexdigest(),
+                "source_id": "ref-" + hashlib.sha256(final.normalized_url.encode("utf-8")).hexdigest()[:12],
+                "normalized_url": final.normalized_url,
+                "final_url": final.normalized_url,
+                "title": str(getattr(page, "title", "") or final.normalized_url)[:200],
+                "institution": trust.institution,
+                "level": trust.level,
+                "fetched_at": (getattr(page, "fetched_at", None)
+                               or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
+                "content_type": str(getattr(page, "content_type", "") or "text/html"),
+            })
+        return candidates
 
     @staticmethod
     def _smart_sources(references: list[dict]) -> tuple[list[dict], int, dict[str, int]]:

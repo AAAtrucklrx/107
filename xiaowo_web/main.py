@@ -112,11 +112,15 @@ def create_app(
                 resolved_health_provider = SidecarHealthProvider(search_client, crawl_client)
         else:
             resolved_runner = local_runner
+    # 审核入库 sink：manager（经典链路候选）与 pipeline（联网引用抓整页）共用
+    ingestion_sink = ReviewIngestionSink(resolved_review_store)
     chat_manager = ChatManager(
         resolved_settings,
         store,
         resolved_runner,
-        ingestion_sink=ReviewIngestionSink(resolved_review_store),
+        ingestion_sink=ingestion_sink,
+        page_fetcher=(evidence_pipeline.fetch_candidates_for_ingestion
+                      if evidence_pipeline is not None else None),
     )
 
     @asynccontextmanager

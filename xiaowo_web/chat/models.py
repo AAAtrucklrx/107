@@ -44,3 +44,8 @@ class AnswerBundle:
     #    `top_score` **不能**用来区分"答得出/答不出"（实测两组分数几乎重叠：
     #    答得出 0.50~0.60，答不出 0.44~0.58），不要据此设阈值。
     retrieval: dict[str, Any] = field(default_factory=dict)
+    # 联网引用里、待**后台抓整页后入审核库**的 URL（2026-09-16）。
+    # 为什么不是直接给 ingestion_candidates：smart 的 references 只给片段，而
+    # `ReviewStore.enqueue_candidate` 硬性要求整页 `snapshot_text` → 必须补一次抓取，
+    # 且不能阻塞回答，故只传 URL、由 manager 起后台任务。
+    ingestion_urls: list[str] = field(default_factory=list)
