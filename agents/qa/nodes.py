@@ -860,11 +860,43 @@ _MAJOR_GUESS_REJECT = (
 )
 
 
+# 功能字/语气词：专业名里不会出现（含"下/期"以挡住"下学期"这类）
+_MAJOR_FUNCTION_CHARS = (
+    "请", "根", "据", "按", "照", "结", "合", "参", "基", "于", "利",
+    "我", "你", "帮", "查", "看", "给", "想", "要", "需", "推", "荐", "哪", "什",
+    "么", "怎", "如", "何", "可", "该", "时", "候", "的",
+    "了", "吗", "呢", "或", "把", "被", "让", "对", "从", "到",
+    "就", "都", "也", "还", "再", "下", "期",
+)
+# ⚠️ 这些字**特意不**当功能字，因为它们是真实专业名的一部分：
+#    - "与/及/和"：计算机科学与技术、信息与计算科学、核工程与核技术
+#    - "应"：数学与应用数学、应用物理学、应用化学
+#    - "案/养/培"：档案学、营养学（"培养/方案"由拒绝词与停用词兜底）
+#    - "用/考"：应用数学、应用物理学、考古学
+# 学科特征：专业名至少要沾一个（"生物医学工程"→生物/医/工程，"人工智能"→智能）
+_MAJOR_NAME_HINTS = (
+    "学", "工程", "技术", "科学", "医", "药", "护", "管理", "经济", "法", "教育",
+    "艺术", "外语", "英语", "数学", "物理", "化学", "生物", "统计", "金融", "传播",
+    "哲学", "历史", "材料", "环境", "核", "电子", "计算机", "自动化", "软件", "网络",
+    "信息", "智能", "数据", "安全", "土木", "机械", "能源", "地球", "大气", "海洋",
+    "天文", "心理", "新闻", "图书", "建筑", "交通", "设计", "音乐", "体育", "美术",
+)
+
+
 def _looks_like_major(name: str) -> bool:
-    """猜出来的名字像不像专业名（排除"帮我对比一下""培养""转去生医部要补哪些"这类）。"""
+    """猜出来的名字像不像专业名。
+
+    实测坑（2026-09-18）：只有拒绝词表时，`"请根据我的培养方案…"` 会猜出"请根据我"，
+    工具于是回"库里没有叫「请根据我」的专业/学院"。所以除了拒绝词，还必须
+    ① 不含功能字 ② 至少含一个学科特征字。
+    """
     if len(name) < 2 or name in _MAJOR_STOPWORDS:
         return False
-    return not any(word in name for word in _MAJOR_GUESS_REJECT)
+    if any(word in name for word in _MAJOR_GUESS_REJECT):
+        return False
+    if any(ch in name for ch in _MAJOR_FUNCTION_CHARS):
+        return False
+    return any(hint in name for hint in _MAJOR_NAME_HINTS)
 
 
 def _guess_major_from_query(query: str) -> str | None:
@@ -1004,6 +1036,8 @@ def _direct_tool_route(state: QaState) -> dict | None:
                               or own_major),
                     "grade": own_grade}
             reason = f"培养方案个人数据确定性路由（{tool_name} → {args['major']}）"
+            # 本人方案分支同样要排课：问"推荐下学期课程"时必须按学期给出该修的课
+            plan_call = _plan_semester_call(query, args["major"], own_grade)
         calls = [{"tool": tool_name, "args": args}] + ([plan_call] if plan_call else [])
         if plan_call:
             reason += f" + {plan_call['tool']}(year_index={plan_call['args']['year_index']})"
@@ -2896,7 +2930,14 @@ def _build_tool_summary(results: list[dict]) -> str:
                              f"{c.get('required', '')} {c.get('term', '')} [{c.get('category', '')}]")
         elif tool == "plan_semester" and isinstance(res.get("terms"), list):
             terms = res["terms"]
+            target_term = str(res.get("target_term") or "")
             lines.append(f"[{tool}] 第 {res.get('year_index')} 学年规划，总学分 {res.get('total_credits')}（{_src(res)}）:")
+            if target_term:
+                lines.append(
+                    f"  ⚠️ 用户问的是「下一个学期」，即 **{target_term}**：回答必须以 {target_term} 的课程"
+                    f"为主（{target_term} 之外的学期只能当背景/参考），不得把同一学年的另一个学期"
+                    f"当成「下学期」。"
+                )
             for t in terms:
                 lines.append(f"- {t['term']} 学期 {len(t['courses'])} 门:")
                 for c in t["courses"][:60]:

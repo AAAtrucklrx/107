@@ -389,6 +389,25 @@ def _parse_term_year(term: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _next_term_label(year_index: int) -> str:
+    """调用方按"下一个学期"的学年序号调用时，方案里对应的学期标签。
+
+    当前学期是秋季（`2026-2027-1`）→ 下学期是同属该学年的春季（"2春"）；
+    当前是春季 → 下学期进入下一学年的秋季（"3秋"）。口径与
+    `agents.qa.nodes._next_term_year_index` 一致（那边决定传哪个 year_index）。
+    """
+    try:
+        from config import SEMESTER
+
+        name = str(SEMESTER.get("name") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+    digit = name.rsplit("-", 1)[-1] if "-" in name else ""
+    if digit not in {"1", "2"}:
+        return ""
+    return f"{int(year_index)}春" if digit == "1" else f"{int(year_index)}秋"
+
+
 @tool
 def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
                   personal_tree: Optional[dict | list] = None) -> dict:
@@ -402,8 +421,12 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
         personal_tree: 登录后个人方案模块树（可选）
 
     Returns:
-        {"year_index", "terms": [{"term": "2秋", "courses": [...]}], "total_credits"}
+        {"year_index", "terms": [{"term": "2秋", "courses": [...]}], "total_credits",
+         "target_term": "2春"}
         term 无学年前缀的（如 "" 或 "空"）归入「未标注」分组。
+        `target_term` = 按当前学期推定的**下一个学期**标签：一年里两组学期（秋/春）都在
+        `terms` 里，`target_term` 指明哪一组才是"下学期"（2026-09-18 加：此前模型会把
+        2秋 当成"下学期"）。
     """
     issue = _lookup_issue(major, grade, personal_tree)
     if issue is not None:
@@ -437,6 +460,7 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
     )
     return {
         "year_index": year_index,
+        "target_term": _next_term_label(year_index),
         "terms": ordered,
         "total_credits": round(total, 1),
         "personal": prog.get("personal", False),

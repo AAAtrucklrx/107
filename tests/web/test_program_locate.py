@@ -223,3 +223,64 @@ def test_route_unknown_major_still_goes_to_program_tool() -> None:
     assert out is not None and out["decision"] == "call_tool"
     assert out["tool_calls"][0]["args"]["major"] == "生物医学工程"
     assert out["tool_calls"][0]["tool"] in {"get_my_program", "get_program_progress"}
+
+# ---------- 专业名猜测的判据（回归：不要再猜出"请根据我"） ----------
+
+def test_looks_like_major_rejects_function_phrases() -> None:
+    assert nodes._looks_like_major("请根据我") is False
+    assert nodes._looks_like_major("帮我对比一下") is False
+    assert nodes._looks_like_major("下学期") is False
+    assert nodes._looks_like_major("培养") is False
+    assert nodes._looks_like_major("") is False
+
+
+def test_looks_like_major_accepts_real_majors() -> None:
+    for name in ("生物医学工程", "临床医学", "计算机科学与技术", "信息与计算科学",
+                 "人工智能", "核工程与核技术", "数学与应用数学", "英语",
+                 # 这几个字面里含"常用功能字"但其实是合法专业名（逐个踩过）
+                 "应用物理学", "考古学", "档案学", "营养学"):
+        assert nodes._looks_like_major(name) is True, name
+
+
+def test_guess_major_from_natural_prompt_is_none() -> None:
+    """实测回归：「请根据我的培养方案和已修课程推荐下学期课程。」曾被猜成"请根据我"。"""
+    assert nodes._guess_major_from_query("请根据我的培养方案和已修课程推荐下学期课程。") is None
+    assert nodes._guess_major_from_query("生物医学工程的培养方案") == "生物医学工程"
+
+
+def test_route_my_program_next_term_adds_plan_semester() -> None:
+    """本人方案的"推荐下学期课程"：进度 + 按学期排课（major 必须是本人专业）。"""
+    out = nodes._direct_tool_route(_route_state("请根据我的培养方案和已修课程推荐下学期课程。"))
+    assert out is not None and out["decision"] == "call_tool"
+    calls = [(c["tool"], c["args"]["major"]) for c in out["tool_calls"]]
+    assert calls == [("get_program_progress", "计算机科学与技术"),
+                     ("plan_semester", "计算机科学与技术")], calls
+    plan = out["tool_calls"][1]["args"]
+    assert plan["year_index"] == 2, "2025 级在 2026 秋（大二）提问 → 下个学期属第 2 学年"
+
+# ---------- 下一个学期要指明是哪一组学期 ----------
+
+def test_plan_semester_marks_next_term(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(program_tools, "_cdb", _catalog(tmp_path))
+    out = plan_semester.invoke({"major": "中国科大-协和医学英才班", "grade": "2025级", "year_index": 2})
+    from config import SEMESTER
+
+    digit = str(SEMESTER["name"]).rsplit("-", 1)[-1]
+    assert out["target_term"] == ("2春" if digit == "1" else "2秋"), \
+        "秋季提问时，'下学期'是同属该学年的春季"
+    assert [t["term"] for t in out["terms"]] == ["2春"]
+
+
+def test_plan_semester_summary_marks_next_term() -> None:
+    summary = nodes._build_tool_summary([{
+        "tool": "plan_semester", "status": "done",
+        "result": {
+            "year_index": 2, "total_credits": 7.0, "target_term": "2春", "source": "generic",
+            "terms": [
+                {"term": "2秋", "courses": [{"name": "图论", "credit": 3.0, "required": "必修", "category": "专业基础"}]},
+                {"term": "2春", "courses": [{"name": "操作系统原理与设计", "credit": 4.0, "required": "必修", "category": "专业基础"}]},
+            ],
+        },
+    }])
+    assert "2春" in summary
+    assert "不得把同一学年的另一个学期" in summary, "必须提醒模型别把 2秋 当'下学期'"
