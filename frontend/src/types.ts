@@ -483,6 +483,18 @@ export interface ReviewFeedbackSource {
   level?: string;
 }
 
+/** 反馈对应的问答原文（后端 /admin/feedback/{id}/transcript）—— 2026-09-17 */
+export interface ReviewFeedbackTranscript {
+  feedback_id: number;
+  run_id: string;
+  question: string;
+  answer: string;
+  mode?: string;
+  sources?: ReviewFeedbackSource[];
+  limitations?: string[];
+  created_at?: string | null;
+}
+
 export interface ReviewFeedback {
   id: number;
   answer_id: string;

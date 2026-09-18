@@ -30,6 +30,7 @@ import type {
   ReviewItemDetail,
   ReviewItemSummary,
   ReviewFeedback,
+  ReviewFeedbackTranscript,
   ReviewStats,
   ReviewStatus,
   SessionPayload,
@@ -206,6 +207,10 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [feedback, setFeedback] = useState<ReviewFeedback[]>([]);
+  // 反馈的"提问与回答原文"：按需拉取（懒加载），"loading" / "error" 是状态位
+  const [transcripts, setTranscripts] = useState<
+    Record<number, ReviewFeedbackTranscript | "loading" | "error">
+  >({});
 
   const loadGeneration = useCallback(async () => {
     setGenerationLoading(true);
@@ -310,6 +315,18 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
       setError(reason instanceof Error ? reason.message : "无法读取回答反馈。")
     );
   }, [workspaceView, loadFeedback]);
+
+  const loadTranscript = useCallback(async (feedbackId: number) => {
+    setTranscripts((prev) => ({ ...prev, [feedbackId]: "loading" }));
+    try {
+      const payload = await apiGet<ReviewFeedbackTranscript>(
+        `/admin/feedback/${feedbackId}/transcript`,
+      );
+      setTranscripts((prev) => ({ ...prev, [feedbackId]: payload }));
+    } catch {
+      setTranscripts((prev) => ({ ...prev, [feedbackId]: "error" }));
+    }
+  }, []);
 
   const updateFeedback = useCallback(async (id: number, status: ReviewFeedback["status"]) => {
     setBusy(true);
@@ -490,6 +507,52 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                   </ul>
                 </details>
               )}
+              {/* 2026-09-17：审核人最需要"用户问了什么、当时怎么答的" —— 折叠块懒加载 */}
+              <details
+                className="feedback-review-item__transcript"
+                onToggle={(event) => {
+                  const opened = (event.target as HTMLDetailsElement).open;
+                  if (opened && transcripts[item.id] === undefined) void loadTranscript(item.id);
+                }}
+              >
+                <summary>查看提问与回答</summary>
+                {(() => {
+                  const transcript = transcripts[item.id];
+                  if (transcript === undefined || transcript === "loading") {
+                    return <p className="feedback-transcript__hint">正在读取该次问答…</p>;
+                  }
+                  if (transcript === "error") {
+                    return (
+                      <p className="feedback-transcript__hint">
+                        原文不可用（可能已超出保留期，或该环境未配置反馈数据密钥）。
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="feedback-transcript">
+                      <h4>
+                        提问
+                        {transcript.created_at ? ` · ${formatTimestamp(transcript.created_at)}` : ""}
+                        {transcript.mode ? ` · ${transcript.mode}` : ""}
+                      </h4>
+                      <p className="feedback-transcript__question">
+                        {transcript.question || "（未记录提问）"}
+                      </p>
+                      <h4>回答原文</h4>
+                      <pre className="feedback-transcript__answer">
+                        {transcript.answer || "（未记录回答）"}
+                      </pre>
+                      {transcript.limitations && transcript.limitations.length > 0 && (
+                        <ul className="feedback-transcript__limits">
+                          {transcript.limitations.map((text, index) => (
+                            <li key={`${item.id}-limit-${index}`}>{text}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
+              </details>
               <div className="feedback-review-item__actions">
                 {feedbackActions.map((action) => (
                   <button

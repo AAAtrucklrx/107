@@ -807,6 +807,66 @@ class WebStore:
             return [s for s in (payload.get("sources") or []) if isinstance(s, dict)]
         return []
 
+    def run_transcript(self, run_id: str, answer_id: str = "") -> dict[str, Any] | None:
+        """按 run_id 取该次问答的**提问与回答原文**（审核人处理反馈时看，2026-09-17）。
+
+        数据来自 `web_messages`（由 `append_exchange` 写入，正文加密存储）：
+        `role='user'` 是提问、`role='assistant'` 是回答（metadata 带 answer_id/sources/limitations）。
+        只凭 feedback 里的 run_id/answer_id 就能复原"用户在问什么、小蜗答了什么"——
+        这是判断反馈是否成立最需要的信息（以前后台只有分类 + 用户的一句说明 + 来源清单）。
+
+        原文超出保留期 / 解密不可用时返回 None，调用方如实告知，不编造。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT message_id, role, content_value, metadata_json, created_at "
+                "FROM web_messages WHERE run_id = ? "
+                "ORDER BY created_at ASC, message_id ASC",
+                (str(run_id or ""),),
+            ).fetchall()
+        if not rows:
+            return None
+        question = ""
+        answer = ""
+        first_answer = ""
+        metadata: dict[str, Any] = {}
+        created_at: float | None = None
+        for row in rows:
+            try:
+                content = self._cipher.open(row["content_value"]) if row["content_value"] else ""
+            except Exception:  # noqa: BLE001 —— 解密失败（例如换过数据密钥）不该让详情整体打不开
+                content = ""
+            if row["role"] == "user" and not question:
+                question = str(content or "")
+                created_at = float(row["created_at"] or 0) or None
+                continue
+            if row["role"] != "assistant":
+                continue
+            try:
+                meta = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                meta = {}
+            if not first_answer:
+                # 兜底：answer_id 对不上（历史数据/多次重答）时至少给最后一条回答
+                first_answer = str(content or "")
+            if answer_id and str(meta.get("answer_id") or "") == str(answer_id):
+                answer = str(content or "")
+                metadata = meta
+                break
+        if not answer:
+            answer = first_answer
+        if not question and not answer:
+            return None
+        return {
+            "run_id": str(run_id or ""),
+            "question": question,
+            "answer": answer,
+            "mode": str(metadata.get("mode") or ""),
+            "sources": [s for s in (metadata.get("sources") or []) if isinstance(s, dict)],
+            "limitations": [str(x) for x in (metadata.get("limitations") or [])],
+            "created_at": _utc_iso(created_at) if created_at else None,
+        }
+
     def get_feedback(self, feedback_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(

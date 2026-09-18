@@ -156,3 +156,37 @@ def test_anonymous_feedback_is_visible_and_actionable_for_reviewers(tmp_path) ->
         stats = reviewer.get("/api/v1/admin/review-items/stats").json()
         assert stats["feedback"]["anonymous"] >= 1
 
+
+def test_reviewer_can_read_question_and_answer_behind_feedback(tmp_path) -> None:
+    """2026-09-17：审核人点开反馈要能看到【提问 + 回答原文】。
+
+    以前后台只有分类、用户的一句说明和来源清单 —— 判断不了反馈是否成立。
+    """
+    settings = make_settings(
+        tmp_path, mode="demo", data_key="feedback-data-key", admin_ids="PB25111691"
+    )
+    app = create_app(settings, runner=ImmediateRunner())
+    with TestClient(app) as client:
+        csrf, _ = bootstrap(client)
+        session = client.post("/api/v1/auth/demo", headers=mutation_headers(csrf)).json()
+        csrf = session["csrf_token"]
+        run_id, answer_id = _completed_answer(client, csrf)
+        created = client.post(
+            f"/api/v1/answers/{answer_id}/feedback",
+            json={"run_id": run_id, "category": "outdated", "detail": "开放时间疑似过期"},
+            headers=mutation_headers(csrf),
+        )
+        assert created.status_code == 200
+        feedback_id = created.json()["feedback_id"]
+
+        transcript = client.get(f"/api/v1/admin/feedback/{feedback_id}/transcript")
+        assert transcript.status_code == 200, transcript.text
+        payload = transcript.json()
+        assert payload["feedback_id"] == feedback_id
+        assert payload["run_id"] == run_id
+        assert payload["question"] == "反馈测试问题", "必须能复原用户提问"
+        assert payload["answer"], "必须能复原当时的回答原文"
+
+        missing = client.get("/api/v1/admin/feedback/999999/transcript")
+        assert missing.status_code == 404
+

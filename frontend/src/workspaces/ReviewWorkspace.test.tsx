@@ -358,3 +358,40 @@ test("未登录用户的反馈会标注来源并能处理（P1-1 回归）", asy
   expect(screen.getByRole("button", { name: "标为已办结" })).toBeTruthy();
 });
 
+
+test("反馈详情能看到提问与回答原文（2026-09-17）", async () => {
+  const user = userEvent.setup();
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false, pending_proposals: 0,
+    });
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/feedback/7/transcript")) return Promise.resolve({
+      feedback_id: 7, run_id: "run-7",
+      question: "中国科学技术大学食堂开放时间",
+      answer: "同学你好，食堂开放时间以现场公告为准。",
+      mode: "auto", sources: [], limitations: ["本条回答来自语义缓存"],
+      created_at: "2026-09-17T02:00:00Z",
+    });
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({
+      items: [{
+        id: 7, answer_id: "answer-7", run_id: "run-7", namespace: "demo",
+        category: "outdated", status: "open", created_at: "2026-09-17T02:00:00Z",
+        detail: "开放时间疑似过期", resolution: "", sources: [],
+      }],
+    });
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("tab", { name: /回答反馈/ }));
+  // 折叠块默认收起：点开才懒加载原文
+  await user.click(await screen.findByText("查看提问与回答"));
+
+  expect(await screen.findByText("中国科学技术大学食堂开放时间")).toBeInTheDocument();
+  expect(await screen.findByText(/食堂开放时间以现场公告为准/)).toBeInTheDocument();
+  expect(screen.getByText("本条回答来自语义缓存")).toBeInTheDocument();
+});
+

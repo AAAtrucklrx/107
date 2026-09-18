@@ -244,6 +244,35 @@ async def update_feedback(
     return updated
 
 
+@router.get("/feedback/{feedback_id}/transcript")
+async def feedback_transcript(
+    feedback_id: int,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_reviewer)],
+) -> dict:
+    """反馈对应的**提问与回答原文**（2026-09-17）。
+
+    审核人处理反馈时最需要的是"用户到底问了什么、小蜗当时怎么答的" —— 之前后台只有
+    分类、用户的一句说明和来源清单，判断不了反馈是否成立。这里按 feedback 里存的
+    run_id/answer_id 复原原文；超出保留期就如实 404，不编造。
+    """
+    namespace = _namespace(principal)
+    feedback = await asyncio.to_thread(request.app.state.store.get_feedback, feedback_id)
+    if feedback is None:
+        raise ApiError(404, "FEEDBACK_NOT_FOUND", "没有找到该反馈。")
+    # 与 PATCH 同口径：匿名（未登录用户）的反馈也允许审核人查看
+    if feedback.get("namespace") not in {None, namespace, "anonymous"}:
+        raise ApiError(403, "FORBIDDEN", "该反馈不属于当前审核空间。")
+    transcript = await asyncio.to_thread(
+        request.app.state.store.run_transcript,
+        str(feedback.get("run_id") or ""),
+        str(feedback.get("answer_id") or ""),
+    )
+    if transcript is None:
+        raise ApiError(404, "TRANSCRIPT_EXPIRED", "该次问答的原文已超出保留期，无法查看。")
+    return {"feedback_id": feedback_id, **transcript}
+
+
 @router.get("/generations")
 async def generation_state(
     request: Request,

@@ -5563,6 +5563,62 @@ body::after {
   opacity: 0.82;
 }
 
+.feedback-review-item__transcript {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+.feedback-review-item__transcript > summary {
+  cursor: pointer;
+  color: var(--accent, #2563eb);
+  font-weight: 650;
+}
+
+.feedback-transcript {
+  margin-top: 8px;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 10px;
+}
+
+.feedback-transcript h4 {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.feedback-transcript__question {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.feedback-transcript__answer {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.feedback-transcript__hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.feedback-transcript__limits {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
 .feedback-review-item__resolution {
   margin: 6px 0 0;
   border-left: 3px solid var(--success);
