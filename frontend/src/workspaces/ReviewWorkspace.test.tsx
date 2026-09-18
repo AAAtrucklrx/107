@@ -431,3 +431,34 @@ test("反馈条目分块化：用户说明 / 证据 / 处理 三段标签可见�
   expect(screen.getByText(/该次回答的来源 1 条/)).toBeInTheDocument();
 });
 
+
+test("发布治理页可开关自动批准（2026-09-18）", async () => {
+  const user = userEvent.setup();
+  const withSwitch = { ...stats, auto_approve: { enabled: false, default: false, override: false } };
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false, pending_proposals: 0,
+    });
+    if (path === "/admin/review-items/stats") return Promise.resolve(withSwitch);
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({ items: [] });
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+  apiMutationMock.mockResolvedValue({ auto_approve: { enabled: true, override: true } });
+
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("tab", { name: /发布治理/ }));
+
+  expect(await screen.findByText("自动批准")).toBeInTheDocument();
+  expect(screen.getByText(/当前：已关闭/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "开启自动批准" }));
+  await user.click(await screen.findByRole("button", { name: "确认修改" }));
+
+  await waitFor(() => expect(apiMutationMock).toHaveBeenCalled());
+  const [path, , init] = apiMutationMock.mock.calls[0];
+  expect(path).toBe("/admin/review-items/settings");
+  expect(String(init.body)).toContain('"auto_approve":true');
+});
+

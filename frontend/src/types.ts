@@ -524,6 +524,14 @@ export interface ReviewStats {
   pre_reviewed: number;
   auto_eligible: number;
   auto_approved: number;
+  /** 自动批准运行时开关（2026-09-18）：enabled=生效值，override=是否被后台覆盖过 */
+  auto_approve?: {
+    enabled: boolean;
+    default: boolean;
+    override: boolean;
+    updated_at?: number | null;
+    updated_by?: string | null;
+  };
   active_documents: number;
   /** 用户反馈质量信号（2026-09-17）；会话库统计失败时为 null */
   feedback?: {

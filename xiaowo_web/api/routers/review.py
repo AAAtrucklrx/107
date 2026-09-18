@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import secrets
 from typing import Annotated
@@ -14,10 +15,12 @@ from xiaowo_web.api.schemas import (
     ChunkApproval,
     ReviewApproval,
     ReviewEdit,
+    ReviewSettingsUpdate,
     SourceTrustProposalCreate,
 )
 from xiaowo_web.api.pagination import decode_cursor, encode_cursor
 from xiaowo_web.auth.models import Principal
+from xiaowo_web.review.store import AUTO_APPROVE_SETTING_KEY
 from xiaowo_web.errors import ApiError
 
 
@@ -96,9 +99,55 @@ async def review_stats(
     if web_store is not None:
         try:
             stats["feedback"] = web_store.feedback_stats(_namespace(principal))
+            stats["auto_approve"] = _auto_approve_state(request, principal)
         except Exception:  # noqa: BLE001 —— 统计失败不影响审核日报本体
             stats["feedback"] = None
     return stats
+
+
+def _auto_approve_state(request: Request, principal: Principal) -> dict:
+    """自动批准开关的**生效值**与来源（后台设置 / .env 默认）。"""
+    namespace = _namespace(principal)
+    store = request.app.state.review_store
+    settings = request.app.state.settings
+    state = store.runtime_flag_state(namespace, AUTO_APPROVE_SETTING_KEY)
+    return {
+        "enabled": store.get_runtime_flag(
+            namespace, AUTO_APPROVE_SETTING_KEY, default=settings.review_auto_approve
+        ),
+        "default": bool(settings.review_auto_approve),
+        "override": state is not None,
+        "updated_at": None if state is None else state["updated_at"],
+        "updated_by": None if state is None else state["updated_by"],
+    }
+
+
+@router.get("/settings")
+async def review_settings(
+    request: Request,
+    principal: Annotated[Principal, Depends(require_reviewer)],
+) -> dict:
+    """审核运行时设置（2026-09-18）。"""
+    return {"auto_approve": _auto_approve_state(request, principal)}
+
+
+@router.patch("/settings")
+async def update_review_settings(
+    payload: ReviewSettingsUpdate,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_reviewer_mutation)],
+    request_id: Annotated[str | None, Header(alias="X-Request-ID")] = None,
+) -> dict:
+    """改运行时设置（写库 + 审计，worker 每个 job 现读 → 立即生效）。"""
+    await asyncio.to_thread(
+        request.app.state.review_store.set_runtime_flag,
+        _namespace(principal),
+        AUTO_APPROVE_SETTING_KEY,
+        payload.auto_approve,
+        actor_key=principal.principal_id,
+        request_id=_request_id(request_id),
+    )
+    return {"auto_approve": _auto_approve_state(request, principal)}
 
 
 @router.get("/{item_id}")

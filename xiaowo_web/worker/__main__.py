@@ -7,6 +7,7 @@ import asyncio
 from xiaowo_web.evidence.clients import Crawl4AiClient
 from xiaowo_web.knowledge.approved import ApprovedKnowledgeRetriever
 from xiaowo_web.review import ReviewStore
+from xiaowo_web.review.store import AUTO_APPROVE_SETTING_KEY
 from xiaowo_web.settings import WebSettings
 from xiaowo_web.worker import IngestionWorker, PublicationWorker, RefetchWorker
 from xiaowo_web.worker.ingestion import LlmCleaner
@@ -37,7 +38,11 @@ async def _run() -> None:
         store,
         cleaner=_build_cleaner(settings),
         pre_reviewer=_build_pre_reviewer(settings),
-        auto_approve=settings.review_auto_approve,
+        # 2026-09-18：每个 job 现读"库里的运行时开关"，没有覆盖才用 .env 默认
+        # → 后台改了开关立即生效，无需重启 worker
+        auto_approve=lambda namespace: store.get_runtime_flag(
+            namespace, AUTO_APPROVE_SETTING_KEY, default=settings.review_auto_approve
+        ),
         retriever=ApprovedKnowledgeRetriever(store, settings),
     )
     publisher = PublicationWorker(store, settings)

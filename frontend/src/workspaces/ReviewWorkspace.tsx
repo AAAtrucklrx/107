@@ -316,6 +316,27 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
     );
   }, [workspaceView, loadFeedback]);
 
+  const updateAutoApprove = useCallback(
+    async (enabled: boolean) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        await apiMutation(`/admin/review-items/settings`, session.csrf_token, {
+          method: "PATCH",
+          body: JSON.stringify({ auto_approve: enabled }),
+        });
+        setNotice(`自动批准已${enabled ? "开启" : "关闭"}（对之后的新进料生效）。`);
+        await loadStats();
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "修改自动批准开关失败。");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadStats, session.csrf_token],
+  );
+
   const loadTranscript = useCallback(async (feedbackId: number) => {
     setTranscripts((prev) => ({ ...prev, [feedbackId]: "loading" }));
     try {
@@ -638,6 +659,38 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
               title={generation?.pending_proposals === 0 ? "当前没有待导出的来源规则建议" : "导出为 Git diff 送审"}
               onClick={() => void exportTrustProposals()}
             ><Download size={15} />导出 Git diff</button>
+          </section>
+          {/* 自动批准开关（2026-09-18）：原本只有 .env 开关，改一次要重启 worker；
+              现在写进库里的运行时设置，worker 每个 job 现读 → 这里改完立即生效 */}
+          <section className="trust-export-row">
+            <div>
+              <h2>自动批准</h2>
+              <code>预审四项全绿 + 本校官方主源 + 稳定类（policy / stable_general）</code>
+              <span className="data-source">
+                当前：{stats?.auto_approve?.enabled ? "已开启" : "已关闭"}
+                {stats?.auto_approve?.override
+                  ? ` · 后台设置${stats.auto_approve.updated_by ? `（${stats.auto_approve.updated_by}` : ""}${
+                      stats.auto_approve.updated_by && stats.auto_approve.updated_at ? " " : ""
+                    }${
+                      stats.auto_approve.updated_at
+                        ? formatTimestamp(stats.auto_approve.updated_at)
+                        : ""
+                    }${stats.auto_approve.updated_by ? "）" : ""}`
+                  : " · 沿用环境默认"}
+              </span>
+            </div>
+            <ConfirmDialog
+              trigger={
+                <button className="secondary-button" type="button" disabled={busy}>
+                  {stats?.auto_approve?.enabled ? "关闭自动批准" : "开启自动批准"}
+                </button>
+              }
+              title={stats?.auto_approve?.enabled ? "关闭自动批准" : "开启自动批准"}
+              description="开启后，满足上述条件的进料会被系统自动批准并排队发布，不再经人工。只影响之后的新进料，不会处理现有积压。"
+              confirmLabel="确认修改"
+              destructive={Boolean(stats?.auto_approve?.enabled)}
+              onConfirm={() => void updateAutoApprove(!stats?.auto_approve?.enabled)}
+            />
           </section>
         </div>
       </Tabs.Content>

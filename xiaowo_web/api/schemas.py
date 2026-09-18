@@ -71,6 +71,14 @@ class AnswerFeedbackCreate(BaseModel):
     detail: str = Field(default="", max_length=1000)
 
 
+class ReviewSettingsUpdate(BaseModel):
+    """审核运行时设置（2026-09-18）：目前只有自动批准开关。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    auto_approve: bool
+
+
 class AnswerFeedbackStatusUpdate(BaseModel):
     """反馈处理状态流转（2026-09-17）：待处理 → 处理中 → 已办结/已忽略。"""
 

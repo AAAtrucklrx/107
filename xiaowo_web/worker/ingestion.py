@@ -215,7 +215,9 @@ class IngestionWorker:
         cleaner: Cleaner | None = None,
         *,
         pre_reviewer=None,
-        auto_approve: bool = False,
+        # bool = 固定值（旧行为/测试）；Callable[[namespace], bool] = 运行时现读
+        # （后台开关改了不用重启 worker，2026-09-18）
+        auto_approve: bool | "Callable[[str], bool]" = False,
         retriever=None,
         worker_id: str | None = None,
     ) -> None:
@@ -223,10 +225,26 @@ class IngestionWorker:
         self.cleaner = cleaner or DeterministicCleaner()
         # 进料预审（2026-09-17）：None = 不跑（判定与自动批准都不参与，行为与旧版一致）
         self.pre_reviewer = pre_reviewer
-        self.auto_approve = bool(auto_approve)
+        self.auto_approve = auto_approve
         # 已入库片段的检索器：给"重复/冲突"判定提供对照物
         self.retriever = retriever
         self.worker_id = worker_id or f"worker-{secrets.token_urlsafe(8)}"
+
+    def _auto_approve_enabled(self, namespace: str) -> bool:
+        """运行时读取"是否自动批准"（2026-09-18）。
+
+        - 传 bool：按固定值（旧行为、测试用）；
+        - 传 callable：**每个 job 现读**（后台开关即时生效）；
+        - 读取异常一律 fail-closed（当作关闭），绝不因为读设置失败而自动发布。
+        """
+        source = self.auto_approve
+        if callable(source):
+            try:
+                return bool(source(namespace))
+            except Exception as exc:  # noqa: BLE001
+                log.warning(f"读取自动批准开关失败，按关闭处理: {exc}")
+                return False
+        return bool(source)
 
     def _cleaner_for(self, payload: dict):
         """摘要类文档（`text/search-snippet`）**跳过 LLM 清洗**（2026-09-17）。
@@ -289,7 +307,7 @@ class IngestionWorker:
             request_id=f"pre-review:{job.job_id}",
             now=now,
         )
-        if not self.auto_approve or not verdict.auto_approve_eligible(
+        if not self._auto_approve_enabled(job.namespace) or not verdict.auto_approve_eligible(
             level=level, category=draft.category
         ):
             return

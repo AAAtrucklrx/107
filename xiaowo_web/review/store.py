@@ -20,6 +20,9 @@ from xiaowo_web.settings import WebSettings
 
 
 _NAMESPACES = frozenset({"demo", "production"})
+# 自动批准的运行时开关 key（.env 提供默认值，后台可覆盖）
+AUTO_APPROVE_SETTING_KEY = "review_auto_approve"
+
 _TTL_LIMITS = {
     "announcement": 7,
     "dynamic_service": 30,
@@ -165,6 +168,18 @@ class ReviewStore:
             """
             CREATE INDEX IF NOT EXISTS idx_publish_job_items_item
             ON publish_job_items(item_id, job_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS review_runtime_settings (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                updated_by TEXT NOT NULL,
+                PRIMARY KEY (namespace, key)
+            )
             """
         )
         conn.execute(
@@ -1083,6 +1098,88 @@ class ReviewStore:
                 detail=detail,
             )
             conn.commit()
+
+    # ── 运行时开关（2026-09-18）─────────────────────────────────────────────
+    # 背景：自动批准原本只有 .env 开关（`XIAOWO_REVIEW_AUTO_APPROVE`），改一次要重启
+    # worker，后台也看不到、改不了。现在把它做成**库里的运行时设置 + 审计**，worker
+    # 每个 job 现读，后台可即时开关。
+
+    def runtime_flag_state(self, namespace: str, key: str) -> dict[str, Any] | None:
+        """读运行时开关（未设置返回 None，由调用方回落到 .env 默认）。"""
+        self._validate_namespace(namespace)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value, updated_at, updated_by FROM review_runtime_settings "
+                "WHERE namespace = ? AND key = ?",
+                (namespace, str(key)),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "value": str(row["value"]).strip().lower() in {"1", "true", "yes", "on"},
+            "updated_at": float(row["updated_at"]),
+            "updated_by": str(row["updated_by"]),
+        }
+
+    def get_runtime_flag(self, namespace: str, key: str, *, default: bool = False) -> bool:
+        """取运行时开关的**生效值**：没设置过就用 `default`（通常来自 .env）。"""
+        state = self.runtime_flag_state(namespace, key)
+        return bool(default) if state is None else bool(state["value"])
+
+    def set_runtime_flag(
+        self,
+        namespace: str,
+        key: str,
+        value: bool,
+        *,
+        actor_key: str,
+        request_id: str,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        """写运行时开关 + 审计。**立即生效**：worker 每个 job 现读（无需重启）。"""
+        self._validate_namespace(namespace)
+        timestamp = time.time() if now is None else now
+        with self._write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            previous = conn.execute(
+                "SELECT value FROM review_runtime_settings WHERE namespace = ? AND key = ?",
+                (namespace, str(key)),
+            ).fetchone()
+            conn.execute(
+                """
+                INSERT INTO review_runtime_settings(namespace, key, value, updated_at, updated_by)
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(namespace, key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at,
+                    updated_by = excluded.updated_by
+                """,
+                (namespace, str(key), "true" if value else "false", timestamp, str(actor_key)),
+            )
+            self._audit(
+                conn,
+                namespace=namespace,
+                actor_key=actor_key,
+                action="runtime_flag_changed",
+                object_type="runtime_setting",
+                object_id=str(key),
+                request_id=request_id,
+                now=timestamp,
+                before_hash=None if previous is None else str(previous["value"]),
+                after_hash="true" if value else "false",
+                detail={
+                    "key": str(key),
+                    "before": None if previous is None else str(previous["value"]),
+                    "after": bool(value),
+                },
+            )
+            conn.commit()
+        return {
+            "key": str(key),
+            "value": bool(value),
+            "updated_at": timestamp,
+            "updated_by": str(actor_key),
+        }
 
     def auto_approve_item(
         self,
