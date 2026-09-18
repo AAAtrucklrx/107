@@ -80,6 +80,9 @@ _ANSWER_JUDGE_PROMPT = """你是判定器：判断「助手回答」是否**真�
 - 回答给出了问题所问的具体信息（哪怕同时附带说明或补充）→ 能
 - 回答只是说没查到 / 暂无 / 无法确认 / 不在范围内，或答非所问，或要求用户先登录、
   先补充信息 → 不能
+- 问题包含**多个并列的询问点**（如"A 和 B 分别是谁""A 的联系方式和办公地点"）时，
+  只要其中有**任何一项**没有正面回答（只说没查到 / 未收录 / 建议自行核实），就判「不能」
+  —— 缺项必须交给联网补齐，不能因为"答出了一部分"就算答出来了
 
 用户问题：
 {q}
@@ -194,6 +197,43 @@ async def _local_answered(bundle, question: str) -> bool:
     if judged is not None:
         return judged
     return not bool(_NO_ANSWER_RE.search((bundle.markdown or "")[:_NO_ANSWER_PREFIX_CHARS]))
+
+
+_LOCAL_HINT_MAX_CHARS = 1800
+
+
+def _local_merge_hint(bundle) -> dict | None:
+    """本地已确认内容 → 交给联网合成当"必须保留的基础"（2026-09-18）。
+
+    为什么需要（实测）：问「计算机学院教学秘书和院长分别是谁」，本地答出了教秘
+    （姓名/电话/邮箱，official_primary），院长没收录；判定器把整题判成"没答全"后走
+    联网，而联网合成只看得到检索结果 → **本地那半段被整段丢掉**，联网又只抓到那个
+    页面的标题没抓到正文，最后反过来对教秘说"没法给你"。所以联网时必须把本地已确认
+    内容并进去，而不是赢家通吃。
+
+    只带**公共**内容：来源含 `tool_result`/`tool_cache` 的是个人数据（成绩/课表/考试/
+    日程），绝不能进联网检索与合成。
+    """
+    text = str(getattr(bundle, "markdown", "") or "").strip()
+    if not text:
+        return None
+    # 两条本地终态都算"本地已经答出来的内容"：语义缓存命中的也是当初本地路径产出的答案
+    # （个人化回答不进缓存，见 xiaowo_web/chat/runner.py::_used_personal_tools）
+    if str(getattr(bundle, "terminal_reason", "") or "") not in {"local_answer", "cache_hit"}:
+        return None
+    sources = list(getattr(bundle, "sources", None) or [])
+    if any((s.get("level") or "") in {"tool_result", "tool_cache"} for s in sources):
+        return None
+    # 缓存命中会带一条"语义缓存回答"占位来源，不算真来源
+    titles = [
+        str(s.get("title") or "").strip()
+        for s in sources
+        if str(s.get("source_id") or "") != "semantic-cache"
+    ]
+    return {
+        "markdown": text[:_LOCAL_HINT_MAX_CHARS],
+        "titles": [title for title in titles if title][:5],
+    }
 
 
 def _is_world_query(question: str) -> bool:
@@ -349,6 +389,9 @@ class EvidenceAwareRunner:
 
         # 本地答不出 → 串行联网兜底（不再预起：预起会在本地可答时白烧一次联网调用）
         _web_started = asyncio.get_running_loop().time()
+        # 2026-09-18：本地只答了一半的复合问题，联网时要把本地已确认内容带进去当基础，
+        # 否则联网合成会把本地那半段整段覆盖掉（实测：教秘信息丢失）
+        local_hint = _local_merge_hint(local)
         web = await self.pipeline.answer(
             request.question,
             profile=request.principal.profile,
@@ -356,6 +399,7 @@ class EvidenceAwareRunner:
             rounds_limit=1,
             # 2026-09-18：联网合成也真流式（首字从"整篇生成完"提前到首个 token）
             on_delta=getattr(request, "emit_delta", None),
+            local_hint=local_hint,
         )
         self._shadow_compare(
             request, web, asyncio.get_running_loop().time() - _web_started
@@ -379,6 +423,12 @@ class EvidenceAwareRunner:
             if warning not in local.limitations:
                 local.limitations.append(warning)
             return local
+        if local_hint:
+            # 合并披露：正文里既有本地已确认内容也有联网内容，必须让用户看得见
+            note = ("本答同时包含本地知识库已确认内容与联网检索内容；其中本地部分"
+                    "以本校官方文件与综合教务系统为准。")
+            if note not in web.limitations:
+                web.limitations.append(note)
         # B5｜冲突口径：本地另有**本校官方**材料涉及该问题时，联网结论若与之冲突以本地为准。
         # （本地优先已保证"本地答得出来就不联网"，能走到这里说明本地未 confirmed，
         #   但仍可能召回了官方文档——此时必须给出以本地为准的口径。）

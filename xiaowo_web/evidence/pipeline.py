@@ -230,6 +230,7 @@ class EvidencePipeline:
         on_stage: StageCallback | None = None,
         rounds_limit: int | None = None,
         on_delta: Callable[[str], None] | None = None,
+        local_hint: dict | None = None,
     ) -> AnswerBundle:
         try:
             sanitized = sanitize_public_query(question, profile)
@@ -264,7 +265,8 @@ class EvidencePipeline:
         ):
             pure_task = asyncio.create_task(
                 self._pure_search_answer(
-                    sanitized.text, pure_limitations, [], on_stage, on_delta=on_delta
+                    sanitized.text, pure_limitations, [], on_stage, on_delta=on_delta,
+                    local_hint=local_hint,
                 )
             )
         # ── 取舍顺序（2026-09-17 晚，实测后调整）──
@@ -316,6 +318,7 @@ class EvidencePipeline:
         ):
             pure = await self._pure_search_answer(
                 sanitized.text, limitations_acc, wechat_sources, on_stage, on_delta=on_delta,
+                local_hint=local_hint,
             )
             if pure is not None:
                 return pure
@@ -1020,8 +1023,12 @@ class EvidencePipeline:
         wechat_sources: list[dict],
         on_stage: StageCallback | None,
         on_delta: Callable[[str], None] | None = None,
+        local_hint: dict | None = None,
     ) -> AnswerBundle | None:
         """纯搜索取原文摘录 → 两道闸门 → **自研合成**（2026-09-17，`web_answer_mode=pure`）。
+
+        `local_hint`（2026-09-18）：本地已确认内容，作为合成时"必须保留的基础"并计入
+        可核验证据 —— 复合问题（本地答一半、联网补一半）靠它避免本地那半段被覆盖。
 
         与 `_smart_answer` 的差别：端点**不做总结**（不传 `model`），把 1000~1500 字/条的
         原文摘录交给我们（实测：智能生成只给固定 203 字、耗时 22~43s；纯搜索 0.5~1s）。
@@ -1082,7 +1089,7 @@ class EvidencePipeline:
         try:
             answer, unsupported = await asyncio.to_thread(
                 compose_and_verify, question, references, report=hedge_notes,
-                on_delta=on_delta,
+                on_delta=on_delta, local_hint=local_hint,
             )
         except Exception as exc:  # noqa: BLE001
             limitations_acc.append("联网答案合成失败，已回退通用检索。")

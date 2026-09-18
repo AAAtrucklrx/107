@@ -180,8 +180,8 @@ def test_runner_forwards_emit_delta_to_pipeline() -> None:
     captured: dict = {}
 
     class _CapturePipeline:
-        async def answer(self, _question, *, profile=None, on_stage=None,
-                         on_delta=None, rounds_limit=None) -> AnswerBundle:
+        async def answer(self, _question, *, profile=None, on_stage=None, on_delta=None,
+                         local_hint=None, rounds_limit=None) -> AnswerBundle:
             captured["on_delta"] = on_delta
             return AnswerBundle(markdown="联网回答。", terminal_reason="AI_GENERATED")
 

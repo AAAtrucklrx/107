@@ -128,7 +128,7 @@ def test_repair_removes_unsupported_numbers(tmp_path, monkeypatch) -> None:
     calls = {"repair": 0}
 
     monkeypatch.setattr(compose_module, "compose_with_own_llm",
-                        lambda q, r, on_delta=None: "图书馆每周开放 9*9 小时，电话 63607647。")
+                        lambda q, r, on_delta=None, local_hint=None: "图书馆每周开放 9*9 小时，电话 63607647。")
     monkeypatch.setattr(compose_module, "injected_context", lambda: "")
     monkeypatch.setattr(compose_module, "repair_answer",
                         lambda q, r, prev, bad: calls.__setitem__("repair", calls["repair"] + 1)
@@ -145,7 +145,7 @@ def test_repair_gives_up_after_one_attempt(tmp_path, monkeypatch) -> None:
     import xiaowo_web.evidence.compose as compose_module
 
     calls = {"repair": 0}
-    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r, on_delta=None: "开放 9*9 小时。")
+    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r, on_delta=None, local_hint=None: "开放 9*9 小时。")
     monkeypatch.setattr(compose_module, "injected_context", lambda: "")
     monkeypatch.setattr(compose_module, "repair_answer",
                         lambda q, r, prev, bad: calls.__setitem__("repair", calls["repair"] + 1)
@@ -197,7 +197,7 @@ def test_hedge_marks_unsupported_numbers(tmp_path, monkeypatch) -> None:
     import xiaowo_web.evidence.compose as compose_module
 
     monkeypatch.setattr(compose_module, "compose_with_own_llm",
-                        lambda q, r, on_delta=None: "图书馆每周开放 9*9 小时，电话 63607647。")
+                        lambda q, r, on_delta=None, local_hint=None: "图书馆每周开放 9*9 小时，电话 63607647。")
     monkeypatch.setattr(compose_module, "injected_context", lambda: "")
     monkeypatch.setattr(compose_module, "repair_answer",
                         lambda q, r, prev, bad: "图书馆每周开放 9*9 小时，电话 63607647。")
@@ -215,7 +215,7 @@ def test_hedge_refuses_when_nothing_verifiable_left(tmp_path, monkeypatch) -> No
     """答案里的数字**全是**无据的 → 数字就是它的全部内容，仍交回调用方拒答。"""
     import xiaowo_web.evidence.compose as compose_module
 
-    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r, on_delta=None: "开放 9*9 小时。")
+    monkeypatch.setattr(compose_module, "compose_with_own_llm", lambda q, r, on_delta=None, local_hint=None: "开放 9*9 小时。")
     monkeypatch.setattr(compose_module, "injected_context", lambda: "")
     monkeypatch.setattr(compose_module, "repair_answer", lambda q, r, prev, bad: "开放 8*8 小时。")
 
@@ -236,7 +236,7 @@ def test_hedge_replaces_every_occurrence(tmp_path, monkeypatch) -> None:
     import xiaowo_web.evidence.compose as compose_module
 
     monkeypatch.setattr(compose_module, "compose_with_own_llm",
-                        lambda q, r, on_delta=None: "开放 9*9 小时（9*9），电话 63607647。")
+                        lambda q, r, on_delta=None, local_hint=None: "开放 9*9 小时（9*9），电话 63607647。")
     monkeypatch.setattr(compose_module, "injected_context", lambda: "")
     monkeypatch.setattr(compose_module, "repair_answer", lambda q, r, prev, bad: "")
 
@@ -249,7 +249,7 @@ def test_hedge_note_reaches_limitations(tmp_path, monkeypatch) -> None:
     """合成写回的对冲说明要进 limitations（用户能看到"哪几处没依据"）。"""
     import xiaowo_web.evidence.pipeline as pipeline_module
 
-    def _fake_compose(question, refs, report=None, on_delta=None):
+    def _fake_compose(question, refs, report=None, on_delta=None, local_hint=None):
         if report is not None:
             report.append("答案里有 1 处具体数字/日期在检索资料中没有依据，已就地标注为「资料未给出」。")
         return "图书馆每周开放时间未在资料中给出，电话 63607647。", []

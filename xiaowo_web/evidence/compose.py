@@ -272,6 +272,31 @@ def _hedge_residual(answer: str, unsupported: list[str], evidence: str) -> tuple
     return text, list(hits)
 
 
+def _local_hint_block(local_hint: dict | None) -> str:
+    """本地已确认内容 → 合成提示里的「必须保留」块（2026-09-18）。
+
+    为什么要有"未收录这类话不算事实"那一句：本地那份答案往往一半是事实、一半是
+    "院长未收录，建议自行核实"。若不点明，模型会把那句拒答也当成"已确认内容"保留，
+    联网查到的院长就白查了。
+    """
+    if not local_hint:
+        return ""
+    markdown = str(local_hint.get("markdown") or "").strip()
+    if not markdown:
+        return ""
+    titles = [str(t).strip() for t in (local_hint.get("titles") or []) if str(t).strip()]
+    lines = ["", "【本地知识库已确认内容（优先级最高）】", markdown]
+    if titles:
+        lines.append("（以上内容来自：" + "、".join(titles[:5]) + "；引用时请写明来源名称）")
+    lines.append(
+        "【合并要求】必须完整保留上述已确认事实（姓名、电话、邮箱、日期等不得改写或省略）；"
+        "只补充联网检索到的其余部分；两者冲突时以本地已确认内容为准并说明差异；"
+        "上述内容里若有「未收录 / 未查到 / 建议自行核实」这类**没有给出事实**的表述，"
+        "而联网检索到了对应信息，请直接用联网结果补全并说明来源，不要保留那种说法。"
+    )
+    return "\n".join(lines)
+
+
 def compose_and_verify(
     question: str,
     references: list[dict],
@@ -279,6 +304,7 @@ def compose_and_verify(
     max_repair: int = 1,
     report: list[str] | None = None,
     on_delta: "Callable[[str], None] | None" = None,
+    local_hint: dict | None = None,
 ) -> tuple[str, list[str]]:
     """自研合成 + 可核验性校验（**先修复、再对冲，最后才拒答**）。
 
@@ -293,10 +319,17 @@ def compose_and_verify(
     `report` 非空时把"对冲了几处"写回去，供调用方记进 limitations。
     """
     # 只有**首次合成**流式：修复/对冲会重写正文，再流一次会让用户看到内容跳来跳去
-    answer = compose_with_own_llm(question, references, on_delta=on_delta)
+    answer = compose_with_own_llm(
+        question, references, on_delta=on_delta, local_hint=local_hint
+    )
     if not answer.strip():
         return "", []
     evidence = refs_evidence(references) + "\n" + injected_context()
+    hint_text = str((local_hint or {}).get("markdown") or "").strip()
+    if hint_text:
+        # 本地已确认内容也是**合法证据**：否则里面的电话/邮箱会被可核验闸门当成
+        # "无据数字"对冲掉（2026-09-18 实测场景：教秘电话在本地、联网只抓到标题）
+        evidence = evidence + "\n" + hint_text
     unsupported = unsupported_facts(answer, evidence)
     attempts = 0
     while unsupported and attempts < max(0, max_repair):
@@ -337,6 +370,7 @@ def compose_with_own_llm(
     references: list[dict],
     *,
     on_delta: "Callable[[str], None] | None" = None,
+    local_hint: dict | None = None,
 ) -> str:
     """用**我们自己的** COMPOSE_PROMPT 与 LLM 合成答案（证据每条 1500 字）。
 
@@ -356,7 +390,8 @@ def compose_with_own_llm(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", COMPOSE_PROMPT),
-        ("human", "请直接输出回答正文，第一句必须是面向用户的内容。"),
+        ("human", "请直接输出回答正文，第一句必须是面向用户的内容。"
+                  + _local_hint_block(local_hint)),
     ])
     invoke_vars = {
         "query": question,
