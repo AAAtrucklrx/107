@@ -146,6 +146,64 @@ def get_day_view(student_id: str, date_str: str = None) -> dict:
     }
 
 
+def _week_courses_by_day(student_id: str, week_start: date) -> dict[int, list[dict]]:
+    """本周**实际生效**的课程（按教学周过滤），按 weekday(1=周一) 分桶。
+
+    为什么在这里算：`get_week_view` 是"本周"问题的**唯一权威**来源。此前它只读 events，
+    而答案里同时塞了整份学期课表（`query_schedule`）→ 模型自己合并，把 5~14 周的课
+    铺到第 3 周、把只有第 2 周的课铺到本周（2026-09-18 实测）。
+    """
+    from config import SEMESTER
+    from tools.course_tools import _local_courses_current_semester
+    from utils.schedule_parse import (
+        normalize_time_str,
+        parse_course_time,
+        slot_clock_range,
+        slot_is_active_in_week,
+        teaching_week,
+    )
+
+    buckets: dict[int, list[dict]] = {}
+    try:
+        semester_start = date.fromisoformat(str(SEMESTER.get("start_date") or ""))
+        total_weeks = int(SEMESTER.get("total_weeks") or 0)
+    except (TypeError, ValueError):
+        return buckets
+    if total_weeks < 1:
+        return buckets
+    week = teaching_week(week_start, semester_start, total_weeks)
+    if week is None:
+        return buckets
+    try:
+        local = _local_courses_current_semester(student_id)
+    except Exception as exc:  # noqa: BLE001 —— 课表取不到不该让周视图整体失败
+        log.warning(f"周视图课程注入失败（student_id={student_id}）: {exc}")
+        return buckets
+    for course in local.get("courses") or []:
+        # 旧备份会把教室混在 time 里，合并后仅供解析；输出仍用原 location
+        text = " ".join(
+            part for part in (str(course.get("time") or ""), str(course.get("location") or "")) if part
+        )
+        if not text:
+            continue
+        for slot in parse_course_time(normalize_time_str(text)):
+            day_num = slot.get("day_num")
+            if day_num is None or not slot_is_active_in_week(slot, week):
+                continue
+            clock = slot_clock_range(slot)
+            if not clock:
+                continue
+            buckets.setdefault(int(day_num), []).append({
+                "title": str(course.get("course_name") or "未命名课程"),
+                "type": "course",
+                "start_time": f"{clock[0] // 60:02d}:{clock[0] % 60:02d}",
+                "end_time": f"{clock[1] // 60:02d}:{clock[1] % 60:02d}",
+                "location": str(course.get("location") or ""),
+                "source": "course_table",
+            })
+    return buckets
+
+
 @tool
 def get_week_view(student_id: str, start_date: str = None) -> dict:
     """
@@ -169,16 +227,32 @@ def get_week_view(student_id: str, start_date: str = None) -> dict:
     day_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     daily = {}
     total_events = 0
+    week_courses = _week_courses_by_day(student_id, week_start)
 
     for i in range(7):
         d = week_start + timedelta(days=i)
         events = _query_day_events(student_id, d.isoformat())
+        # 课表算出的本周课程与 events 里已导入的课表事件可能同名同刻 → 去重
+        seen = {
+            (str(e.get("title") or ""), str(e.get("start_time") or ""), str(e.get("end_time") or ""))
+            for e in events
+        }
+        for extra in week_courses.get(i + 1, []):
+            key = (extra["title"], extra["start_time"], extra["end_time"])
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append(extra)
+        events.sort(key=lambda e: str(e.get("start_time") or ""))
         count = len(events)
         total_events += count
 
         daily[day_names[i]] = {
+            "date": d.isoformat(),
             "event_count": count,
             "busy_hours": count * 1.5,
+            # 2026-09-18：原来只给"有几件事"，模型拿不到标题/时间就没法"按日期排序汇总"
+            "events": events,
         }
 
     busy_day = max(daily, key=lambda k: daily[k]["busy_hours"])

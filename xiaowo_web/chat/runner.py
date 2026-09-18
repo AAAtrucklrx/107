@@ -94,6 +94,8 @@ _PERSONAL_TOOLS = frozenset({
     "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa", "query_exam",
     "query_course_selection", "get_my_program", "get_program_progress", "plan_semester",
     "import_schedule",
+    # 日程类同样是个人数据：用它答出来的话绝不能进共享语义缓存（2026-09-18 补）
+    "get_week_view", "get_day_view", "add_event", "check_conflict",
 })
 
 

@@ -81,6 +81,91 @@ def _is_locked(student_id: str) -> bool:
     return cas is None or not student_id or cas.student_id != student_id
 
 
+# ── 当前学期课表来源（2026-09-18 统一） ────────────────
+#
+# 病根：课表界面（/api/v1/academic/schedule，演示身份）读 fixtures/demo/<学号>.json，
+# 而聊天工具只读 student_courses 里那份 2026 **春季**缓存 → 同一句"本周课表"，
+# 界面是对的、回答是错的（2026-09-18 用户实测）。这里把"本地当前学期课表"收敛成
+# **一个**入口，来源按优先级：
+#   1. student_courses 里属于**当前学期**的行（CAS 同步落库）
+#   2. 演示学生的合成 fixture（与课表界面同源）
+#   3. 都没有 → 如实说"只有别的学期的缓存"，**绝不**用旧学期数据冒充本学期
+
+
+def _current_semester_labels() -> set[str]:
+    """当前学期的可接受写法：`2026-2027-1` / `2026年秋季学期` / `20261`。
+
+    同一学期在不同来源里三种写法都有（config、jw nameZh、jw code），过滤时必须
+    都能认出来，否则会把正确数据也滤掉。
+    """
+    labels: set[str] = set()
+    try:
+        from config import SEMESTER
+
+        name = str(SEMESTER.get("name") or "").strip()
+    except Exception:  # noqa: BLE001
+        name = ""
+    if not name:
+        return labels
+    labels.add(name)
+    labels.add(name.replace("-", ""))
+    parts = name.split("-")
+    if len(parts) >= 3:
+        year, term = parts[0], parts[-1]
+        term_zh = {"1": "秋季", "2": "春季", "3": "夏季"}.get(term, "")
+        if term_zh:
+            labels.add(f"{year}年{term_zh}学期")
+        labels.add(f"{year}{term}")
+    return labels
+
+
+def _current_semester_zh() -> str:
+    """当前学期的中文标签（与 jw nameZh / student_courses.semester 同形）。"""
+    for label in sorted(_current_semester_labels()):
+        if "年" in label and "学期" in label:
+            return label
+    return ""
+
+
+def _demo_fixture_courses(student_id: str) -> list[dict] | None:
+    """演示学生的合成学业快照（`fixtures/demo/<学号>.json` 的 courses）。"""
+    sid = str(student_id or "").strip().upper()
+    if not sid or sid != _DEMO_STUDENT_ID.upper():
+        return None
+    path = Path(__file__).resolve().parents[1] / "fixtures" / "demo" / f"{sid}.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not payload.get("synthetic"):
+        return None
+    courses = payload.get("courses")
+    if not isinstance(courses, list):
+        return None
+    return [dict(item) for item in courses if isinstance(item, dict)]
+
+
+def _local_courses_current_semester(student_id: str) -> dict:
+    """本地（无 CAS 登录态）取**当前学期**课表，返回 courses 与来源说明。"""
+    labels = _current_semester_labels()
+    rows = _db().query("SELECT * FROM student_courses WHERE student_id = ?", (student_id,))
+    cached = sorted({str(r.get("semester") or "").strip() for r in rows if r.get("semester")})
+    fresh = [r for r in rows if str(r.get("semester") or "").strip() in labels] if labels else []
+    if fresh:
+        return {"courses": fresh, "semester": _current_semester_zh(),
+                "source": "course_cache", "message": "", "cached_semesters": cached}
+    fixture = _demo_fixture_courses(student_id)
+    if fixture:
+        return {"courses": fixture, "semester": _current_semester_zh(),
+                "source": "demo_fixture", "cached_semesters": cached,
+                "message": "⚠️ 演示课表为合成数据，不用于真实到课判断（与「课表」页面同源）。"}
+    have = "、".join(cached) if cached else "空"
+    want = _current_semester_zh() or "、".join(sorted(labels)) or "未配置学期"
+    return {"courses": [], "semester": "", "source": "stale_cache", "cached_semesters": cached,
+            "message": (f"⚠️ 本地只有 {have} 的课表缓存，没有当前学期（{want}）的课表；"
+                        "请登录统一身份认证后重试。")}
+
+
 # ── 内部查询函数（非 tool 装饰器，供 tool 复用） ──────
 
 def _norm_course_name(name: str) -> str:
@@ -468,19 +553,15 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
         except Exception as e:
             log.warning(f"课表 API 失败 (student_id={sid}, day={day})，降级到本地数据: {e}")
 
-    # ── Fallback: SQLite 本地缓存或 锁定提示 ──
+    # ── Fallback: 本地**当前学期**数据或 锁定提示 ──
     if _is_locked(sid):
         return {"student_id": sid, "courses": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
 
-    sql = "SELECT * FROM student_courses WHERE student_id = ?"
-    params = [sid]
-
+    local = _local_courses_current_semester(sid)
+    courses = local["courses"]
     if day:
-        sql += " AND time LIKE ?"
-        params.append(f"%{day}%")
-
-    courses = _db().query(sql, tuple(params))
+        courses = [c for c in courses if day in str(c.get("time") or "")]
     for c in courses:
         c["credits"] = c.get("credits") or 0
         try:
@@ -488,8 +569,11 @@ def query_schedule(student_id: str = None, week: int = None, day: str = None) ->
         except (TypeError, ValueError):
             c["meetings"] = []
 
-    return {"student_id": sid, "courses": courses, "count": len(courses),
-            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
+    result = {"student_id": sid, "courses": courses, "count": len(courses),
+              "source": local["source"], "semester": local["semester"]}
+    if local["message"]:
+        result["message"] = local["message"]
+    return result
 
 
 @tool
@@ -592,9 +676,9 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
         except Exception as e:
             log.warning(f"课表 API 失败 (student_id={sid}, date={date or target_date.isoformat()})，降级到本地数据: {e}")
 
-    # Fallback: SQLite 本地缓存
-    rows = _db().query(
-        "SELECT * FROM student_courses WHERE student_id = ?", (sid,))
+    # Fallback: 本地**当前学期**数据（旧学期缓存不再冒充本学期）
+    local = _local_courses_current_semester(sid)
+    rows = local["courses"]
     courses = []
     for r in rows:
         time_str = r.get("time", "") or ""
@@ -616,10 +700,15 @@ def query_daily_schedule(date: str = None, student_id: str = None) -> dict:
                 "periods": f"第{','.join(str(p) for p in periods)}节" if periods else "",
                 "weeks": slot.get("weeks_raw", ""),
             })
-    return {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
-            "teaching_week": current_week, "courses": courses,
-            "count": len(courses), "source": "fallback",
-            "message": "⚠️ 教务接口暂时不可用，以下为本地缓存课表，仅供参考"}
+    # 日内按上课时间排序：用户要的是"按日期排序"，日内顺序也应当稳定（2026-09-18）
+    courses.sort(key=lambda c: str(c.get("start_time") or ""))
+    result = {"student_id": sid, "date": target_date.isoformat(), "weekday": weekday,
+              "teaching_week": current_week, "courses": courses,
+              "count": len(courses), "source": local["source"],
+              "semester": local["semester"]}
+    if local["message"]:
+        result["message"] = local["message"]
+    return result
 
 
 @tool
@@ -1169,10 +1258,8 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
         return {"student_id": sid, "selections": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
 
-    courses = _db().query(
-        "SELECT * FROM student_courses WHERE student_id = ?",
-        (sid,),
-    )
+    local = _local_courses_current_semester(sid)
+    courses = local["courses"]
     selections = [{
         "course_code": c.get("course_code", ""),
         "course_name": c.get("course_name", ""),
@@ -1183,8 +1270,11 @@ def query_course_selection(student_id: str = None, semester: str = None) -> dict
         "semester": c.get("semester", ""),
         "status": "已选",
     } for c in courses]
-    return {"student_id": sid, "selections": selections, "count": len(selections),
-            "source": "fallback", "message": "⚠️ 教务接口暂时不可用，以下为本地缓存选课数据，仅供参考"}
+    result = {"student_id": sid, "selections": selections, "count": len(selections),
+              "source": local["source"], "semester": local["semester"]}
+    if local["message"]:
+        result["message"] = local["message"]
+    return result
 
 
 @tool

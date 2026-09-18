@@ -398,8 +398,21 @@ class AcademicService:
     @staticmethod
     def _tool_source(result: dict[str, Any]) -> dict[str, Any]:
         kind = str(result.get("source") or "unavailable")
-        labels = {"real": "教务实时数据", "fallback": "本地缓存", "locked": "暂无数据"}
-        return {"kind": kind, "label": labels.get(kind, kind), "demo": False, "stale": kind == "fallback"}
+        labels = {
+            "real": "教务实时数据",
+            "fallback": "本地缓存",
+            "locked": "暂无数据",
+            # 2026-09-18：本地课表来源拆细，避免"旧学期缓存"和"当前学期缓存"都显示成同一个灰标
+            "course_cache": "本地当前学期课表",
+            "demo_fixture": "合成演示数据",
+            "stale_cache": "无当前学期课表",
+        }
+        return {
+            "kind": kind,
+            "label": labels.get(kind, kind),
+            "demo": kind == "demo_fixture",
+            "stale": kind in {"fallback", "stale_cache"},
+        }
 
     def _combined_source(self, *results: dict[str, Any]) -> dict[str, Any]:
         kinds = {str(result.get("source") or "unavailable") for result in results}

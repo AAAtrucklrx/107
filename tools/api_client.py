@@ -315,12 +315,23 @@ class CatalogAPI:
             return None
 
         today = semester_today().isoformat()
-        # 找到 start <= today 的最近学期
-        for sem in semesters:
-            if isinstance(sem, dict) and sem.get("start", "") <= today:
-                return sem
-        # 如果没有匹配的，返回最新的
-        return semesters[0] if semesters else None
+        # ⚠️ catalog API 返回的学期列表是**按时间升序**的（第 1 条是 2002 年夏季学期）。
+        # 旧实现取「第一个 start <= today」→ 永远命中 2002 年夏季学期，于是
+        # query_schedule/query_exam/query_course_selection 的教务分支全查错学期
+        # （2026-09-18 实测：id=1 / 2002年夏季学期，正确值是 id=461 / 2026年秋季学期）。
+        items = [
+            sem for sem in semesters
+            if isinstance(sem, dict) and "error" not in sem and str(sem.get("start") or "")
+        ]
+        if not items:
+            return semesters[0] if semesters else None
+        started = [sem for sem in items if str(sem["start"]) <= today]
+        if not started:
+            # 今天早于所有学期（新库/跨年）→ 返回最早的那个，语义是"即将开始"
+            return min(items, key=lambda sem: str(sem["start"]))
+        # 教务可能显式标注当前学期（isLast）；否则取已开始学期里 start 最大的那个
+        marked = [sem for sem in started if sem.get("isLast")]
+        return marked[0] if marked else max(started, key=lambda sem: str(sem["start"]))
 
     def clear_cache(self) -> None:
         """清除缓存"""

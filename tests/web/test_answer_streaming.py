@@ -46,7 +46,11 @@ def test_personal_route_short_query_calls_grade_tool() -> None:
 def test_personal_route_gpa_and_exam_and_schedule() -> None:
     assert [c["tool"] for c in _direct_tool_route(_route_state("算一下我的绩点"))["tool_calls"]] == ["calc_gpa"]
     assert [c["tool"] for c in _direct_tool_route(_route_state("期末考试什么时候"))["tool_calls"]] == ["query_exam"]
-    assert [c["tool"] for c in _direct_tool_route(_route_state("我这周课表"))["tool_calls"]] == ["query_schedule"]
+    # 2026-09-18：周维度问题改走 get_week_view（它自己按教学周过滤课程；整学期列表
+    # 会被模型自行铺进本周，实测把 5~14 周的课排到第 3 周）
+    week = _direct_tool_route(_route_state("我这周课表"))["tool_calls"]
+    assert [c["tool"] for c in week] == ["get_week_view"]
+    assert week[0]["args"]["start_date"]
 
 
 def test_personal_route_requires_login() -> None:

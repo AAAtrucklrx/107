@@ -819,6 +819,21 @@ def _program_nature_note(name: object) -> str:
     return f"  ⚠️ 该方案含「{'、'.join(hits)}」性质，不是完整主修方案，回答必须说明这一点"
 
 
+def _target_week_start(query: str) -> str:
+    """周视图的起始周一（学期时区）："下周/上周" 偏移一周，其余为本周。"""
+    from datetime import timedelta
+
+    from utils.semester_time import semester_today
+
+    today = semester_today()
+    monday = today - timedelta(days=today.weekday())
+    if "下周" in query:
+        monday = monday + timedelta(days=7)
+    elif "上周" in query:
+        monday = monday - timedelta(days=7)
+    return monday.isoformat()
+
+
 def _direct_tool_route(state: QaState) -> dict | None:
     """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
 
@@ -958,32 +973,47 @@ def _direct_tool_route(state: QaState) -> dict | None:
     # 疑似个人指代（含「我/自己」或问句很短）；student_id 由 act 层 _PERSONAL_TOOLS
     # 以认证上下文强制覆盖，工具自行处理未登录锁定。
     if state.get("student_id") and (len(query) <= 12 or "我" in query or "自己" in query):
-        personal_tool = ""
+        calls: list[dict] = []
         if "成绩" in query:
-            personal_tool = "query_grade"
+            calls = [{"tool": "query_grade", "args": {}}]
         elif "绩点" in query or "gpa" in query.lower():
-            personal_tool = "calc_gpa"
+            calls = [{"tool": "calc_gpa", "args": {}}]
         elif any(k in query for k in ("考试安排", "考试时间", "期末考试", "考试周", "我的考试", "什么时候考试")):
-            personal_tool = "query_exam"
-        elif ("课表" in query or (any(w in query for w in ("这周", "本周", "下周")) and "课" in query)) and "导入" not in query:
-            personal_tool = "query_schedule"
-        if personal_tool:
+            calls = [{"tool": "query_exam", "args": {}}]
+        elif "导入" not in query:
+            # 2026-09-18：周维度问题（本周/这周/下周 + 课表/课程/日程/安排）**只**调
+            # get_week_view —— 它自己按教学周过滤，是"本周"的唯一权威。此前把整学期
+            # 课表（query_schedule）一起喂给模型，模型自己合并，把 5~14 周的课铺进
+            # 第 3 周、把只有第 2 周的课铺到本周。整学期课表留给"我的课表"这类问句。
+            week_word = any(w in query for w in ("本周", "这周", "下周", "这星期", "本周内"))
+            agenda_word = any(
+                k in query for k in ("日程", "安排", "汇总", "会议", "组会", "生日", "待办")
+            )
+            if week_word and ("课" in query or agenda_word):
+                calls = [{"tool": "get_week_view", "args": {"start_date": _target_week_start(query)}}]
+            elif "课表" in query:
+                calls = [{"tool": "query_schedule", "args": {}}]
+        if calls:
             results = state.get("tool_results") or []
-            if any(r.get("tool") == personal_tool and r.get("status") == "done" for r in results):
+            done_tools = {r.get("tool") for r in results if r.get("status") == "done"}
+            pending = [call for call in calls if call["tool"] not in done_tools]
+            names = "、".join(call["tool"] for call in calls)
+            if not pending:
                 return {
                     "decision": "compose",
                     "tool_calls": [],
                     "thought_log": (state.get("thought_log") or []) + [{
                         "round": rounds + 1, "decision": "compose",
-                        "reason": f"个人数据路由工具 {personal_tool} 已有结果，直接合成",
+                        "reason": f"个人数据路由工具 {names} 已有结果，直接合成",
                     }],
                 }
+            pending_names = "、".join(call["tool"] for call in pending)
             return {
                 "decision": "call_tool",
-                "tool_calls": [{"tool": personal_tool, "args": {}}],
+                "tool_calls": pending,
                 "thought_log": (state.get("thought_log") or []) + [{
                     "round": rounds + 1, "decision": "call_tool",
-                    "reason": f"个人数据确定性路由→{personal_tool}",
+                    "reason": f"个人数据确定性路由→{pending_names}",
                 }],
             }
 
@@ -2180,6 +2210,25 @@ _STRUCTURE_SPECS: dict[str, dict] = {
             str(r.get("teacher", "") or ""),
         ],
     },
+    "get_week_view": {
+        "title": "本周课表与日程",
+        "items": lambda p: [
+            {
+                "day": day,
+                "date": str(((p.get("daily") or {}).get(day) or {}).get("date") or ""),
+                **event,
+            }
+            for day in ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+            for event in (((p.get("daily") or {}).get(day) or {}).get("events") or [])
+        ],
+        "columns": ["日期", "时间", "安排", "地点"],
+        "row": lambda r: [
+            str(r.get("day", "")) + (" " + str(r.get("date", ""))[5:] if r.get("date") else ""),
+            f"{r.get('start_time', '')}~{r.get('end_time', '')}",
+            str(r.get("title", "") or ""),
+            str(r.get("location", "") or ""),
+        ],
+    },
     "query_exam": {
         "title": "考试安排",
         "items_key": "exams",
@@ -2381,6 +2430,10 @@ def _build_tool_summary(results: list[dict]) -> str:
             "generic": "数据来源：专业通用参考，不是个人培养方案",
             "unavailable": "培养方案来源不可用",
             "locked": "需登录教务系统后获取",
+            # 2026-09-18：课表来源必须说清是"哪一份"，否则模型无从判断时效
+            "course_cache": "数据来源：本地当前学期课表缓存",
+            "demo_fixture": "数据来源：演示合成数据（与「课表」页面同源），非真实教务记录",
+            "stale_cache": "数据来源：没有当前学期的课表数据",
         }.get(res.get("source") or "", res.get("source") or "来源未知")
 
     lines = []
@@ -2525,6 +2578,33 @@ def _build_tool_summary(results: list[dict]) -> str:
             for g in details[:60]:
                 lines.append(f"- {g.get('semester', '')} {g.get('course_name', '?')} "
                              f"{g.get('credits', '')}学分 成绩{g.get('score_display', g.get('score', ''))} 绩点{g.get('grade_point', '')}")
+        elif tool == "get_week_view" and isinstance(res.get("daily"), dict):
+            # 周视图逐日列出。**不能**落进通用 json[:800] 兜底：实测第 3 周被截在周二，
+            # 模型只好在回答里说"数据在周二处被截断"（2026-09-18）。
+            daily = res["daily"]
+            free = "、".join(res.get("free_days") or []) or "无"
+            lines.append(
+                f"[{tool}] {res.get('week_start', '')} ~ {res.get('week_end', '')} 本周共 "
+                f"{res.get('total_events', 0)} 项（最忙 {res.get('busiest_day', '')}，无安排 {free}）:"
+            )
+            for day in ("周一", "周二", "周三", "周四", "周五", "周六", "周日"):
+                info = daily.get(day)
+                if not isinstance(info, dict):
+                    continue
+                events = info.get("events") or []
+                if not events:
+                    lines.append(f"- {day}（{info.get('date', '')}）: 无安排")
+                    continue
+                lines.append(f"- {day}（{info.get('date', '')}）:")
+                for e in events[:20]:
+                    lines.append(
+                        f"  · {e.get('start_time', '')}~{e.get('end_time', '')} "
+                        f"{e.get('title', '?')} {e.get('location', '')} [{e.get('type', '')}]"
+                    )
+            lines.append(
+                "  （本周视图**已按教学周过滤**：只列本周实际生效的课程与日程；"
+                "整学期课表是另一个工具的结果，不得把非本周的课写进本周安排）"
+            )
         elif tool in ("query_schedule", "query_daily_schedule") and isinstance(res.get("courses"), list):
             courses = res["courses"]
             lines.append(f"[{tool}] 共 {len(courses)} 门课（{_src(res)}，{res.get('semester', '')}）:")
