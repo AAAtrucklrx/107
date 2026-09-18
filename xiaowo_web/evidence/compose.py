@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from typing import Any
 
 from utils.logger import get_logger
@@ -277,6 +278,7 @@ def compose_and_verify(
     *,
     max_repair: int = 1,
     report: list[str] | None = None,
+    on_delta: "Callable[[str], None] | None" = None,
 ) -> tuple[str, list[str]]:
     """自研合成 + 可核验性校验（**先修复、再对冲，最后才拒答**）。
 
@@ -290,7 +292,8 @@ def compose_and_verify(
     证据口径 = 检索披露的标题/URL/正文 **+ 我们注入的日期/学期上下文**。
     `report` 非空时把"对冲了几处"写回去，供调用方记进 limitations。
     """
-    answer = compose_with_own_llm(question, references)
+    # 只有**首次合成**流式：修复/对冲会重写正文，再流一次会让用户看到内容跳来跳去
+    answer = compose_with_own_llm(question, references, on_delta=on_delta)
     if not answer.strip():
         return "", []
     evidence = refs_evidence(references) + "\n" + injected_context()
@@ -329,8 +332,19 @@ def compose_and_verify(
     return answer, unsupported
 
 
-def compose_with_own_llm(question: str, references: list[dict]) -> str:
-    """用**我们自己的** COMPOSE_PROMPT 与 LLM 合成答案（证据每条 1500 字）。"""
+def compose_with_own_llm(
+    question: str,
+    references: list[dict],
+    *,
+    on_delta: "Callable[[str], None] | None" = None,
+) -> str:
+    """用**我们自己的** COMPOSE_PROMPT 与 LLM 合成答案（证据每条 1500 字）。
+
+    `on_delta` 非空时走**真流式**（2026-09-18）：逐 chunk 推给调用方（缓冲约 16 字），
+    首字延迟从"整篇生成完"降为"首个 token"；流式失败且一分内容都没出时，回退一次性
+    `.invoke()` 保证仍有答案。**注意**：流出去的是**未过闸门**的稿子，最终由
+    `compose_and_verify` 的返回值（可能经修复/对冲改写）覆盖。
+    """
     from agents.qa.nodes import (
         COMPOSE_PROMPT,
         _current_date_text,
@@ -338,13 +352,13 @@ def compose_with_own_llm(question: str, references: list[dict]) -> str:
         _semester_context_text,
     )
     from langchain_core.prompts import ChatPromptTemplate
-    from utils.llm_client import create_llm
+    from utils.llm_client import create_llm, llm_content
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", COMPOSE_PROMPT),
         ("human", "请直接输出回答正文，第一句必须是面向用户的内容。"),
     ])
-    result = (prompt | create_llm(temperature=0.3)).invoke({
+    invoke_vars = {
         "query": question,
         "current_date": _current_date_text(),
         "current_weekday": _current_weekday_text(),
@@ -356,5 +370,31 @@ def compose_with_own_llm(question: str, references: list[dict]) -> str:
         "tool_summary": "（无）",
         "candidates_found": "已达到匹配阈值",
         "structured_note": "本回答无结构化数据卡，请按上述规则生成正文。",
-    })
+    }
+    chain = prompt | create_llm(temperature=0.3)
+    if on_delta is None:
+        result = chain.invoke(invoke_vars)
+        return str(getattr(result, "content", result))
+    parts: list[str] = []
+    buf: list[str] = []
+    try:
+        for chunk in chain.stream(invoke_vars):
+            # strip=False：流式增量不得逐块 strip，否则块边界换行被吃掉，
+            # Markdown 表格/列表会塌成一行（2026-09-15 在本地链路踩过同样的坑）
+            delta = llm_content(chunk, strip=False)
+            if delta:
+                parts.append(delta)
+                buf.append(delta)
+                if sum(len(b) for b in buf) >= 16:
+                    on_delta("".join(buf))
+                    buf = []
+        if buf:
+            on_delta("".join(buf))
+    except Exception as exc:  # noqa: BLE001 —— 流式中断不该把整条链路打挂
+        log.warning(f"联网合成流式中断（保留已生成 {sum(len(p) for p in parts)} 字）: {exc}")
+    text = "".join(parts)
+    if text.strip():
+        return text
+    # 一分内容都没流出来（provider 不支持 stream / 首个 chunk 前就失败）→ 退回一次性调用
+    result = chain.invoke(invoke_vars)
     return str(getattr(result, "content", result))

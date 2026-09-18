@@ -229,6 +229,7 @@ class EvidencePipeline:
         profile: dict | None = None,
         on_stage: StageCallback | None = None,
         rounds_limit: int | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> AnswerBundle:
         try:
             sanitized = sanitize_public_query(question, profile)
@@ -262,7 +263,9 @@ class EvidencePipeline:
             and self.settings.search_provider == "baidu"
         ):
             pure_task = asyncio.create_task(
-                self._pure_search_answer(sanitized.text, pure_limitations, [], on_stage)
+                self._pure_search_answer(
+                    sanitized.text, pure_limitations, [], on_stage, on_delta=on_delta
+                )
             )
         # ── 取舍顺序（2026-09-17 晚，实测后调整）──
         # 纯搜索通常 4~7s 就有答案；公众号要 ~13s（抓 3 篇正文，每篇 2.7~3.7s）且只有
@@ -312,7 +315,7 @@ class EvidencePipeline:
             and self.settings.search_provider == "baidu"
         ):
             pure = await self._pure_search_answer(
-                sanitized.text, limitations_acc, wechat_sources, on_stage,
+                sanitized.text, limitations_acc, wechat_sources, on_stage, on_delta=on_delta,
             )
             if pure is not None:
                 return pure
@@ -1016,6 +1019,7 @@ class EvidencePipeline:
         limitations_acc: list[str],
         wechat_sources: list[dict],
         on_stage: StageCallback | None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> AnswerBundle | None:
         """纯搜索取原文摘录 → 两道闸门 → **自研合成**（2026-09-17，`web_answer_mode=pure`）。
 
@@ -1077,7 +1081,8 @@ class EvidencePipeline:
         hedge_notes: list[str] = []
         try:
             answer, unsupported = await asyncio.to_thread(
-                compose_and_verify, question, references, report=hedge_notes
+                compose_and_verify, question, references, report=hedge_notes,
+                on_delta=on_delta,
             )
         except Exception as exc:  # noqa: BLE001
             limitations_acc.append("联网答案合成失败，已回退通用检索。")

@@ -294,6 +294,8 @@ class EvidenceAwareRunner:
                 request.question,
                 profile=request.principal.profile,
                 on_stage=request.emit_stage,
+                # 2026-09-18：强制联网重答与自动兜底共用同一套流式
+                on_delta=getattr(request, "emit_delta", None),
             )
 
         # ── 本地优先（2026-09-16 改）──
@@ -352,6 +354,8 @@ class EvidenceAwareRunner:
             profile=request.principal.profile,
             on_stage=request.emit_stage,
             rounds_limit=1,
+            # 2026-09-18：联网合成也真流式（首字从"整篇生成完"提前到首个 token）
+            on_delta=getattr(request, "emit_delta", None),
         )
         self._shadow_compare(
             request, web, asyncio.get_running_loop().time() - _web_started
