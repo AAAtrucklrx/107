@@ -9,7 +9,7 @@ from __future__ import annotations
 import html as _html
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from langchain_core.tools import tool
 
@@ -161,34 +161,98 @@ def _bj_today(now: datetime | None = None) -> datetime:
     return datetime.now(ZoneInfo("Asia/Shanghai"))
 
 
+_WEEKDAY_INDEX = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
+
+
+def _covers_day(act, day: date) -> bool:
+    """活动在目标当天**进行中**（含跨天活动）。
+
+    只看开始日会把跨天活动（"09-06~10-11 摄影大赛"在 09-20 仍可参加）漏掉，
+    也会把已结束的活动（"09-13~09-19"在 09-20 已经结束）算进来——两边都实测踩到。
+    """
+    start = act.start_dt
+    if start is None:
+        deadline = act.apply_deadline
+        return deadline is not None and deadline.date() == day
+    end = getattr(act, "end_dt", None) or start
+    return start.date() <= day <= end.date()
+
+
+def _nearest_weekday(today: date, index: int) -> date:
+    """最近的"周 index"（含今天；已过去则算下一周）。"""
+    monday = today - timedelta(days=today.isoweekday() - 1)
+    target = monday + timedelta(days=index - 1)
+    if target < today:
+        target += timedelta(days=7)
+    return target
+
+
 def _in_window(act, window: str, now: datetime) -> bool | None:
-    """时间窗过滤：返回 None 表示无窗口信息不过滤。"""
+    """时间窗过滤：返回 None 表示无窗口信息不过滤。
+
+    顺序**必须**是：今天/明天/后天 → 周末 → **具体星期** → 即将截止 → 本周。
+    实测坑（2026-09-18）：原来只有「本周/这周」那种宽窗，而 `"这周" in "这周日"` 为真 →
+    问"这周日"会把**整周**活动都算命中，卡片于是把周六活动当成周日的推荐给了用户。
+    """
     if not window:
         return None
     w = window.strip()
     deadline = act.apply_deadline
-    start = act.start_dt
-    if "今日" in w or "今天" in w:  # 2026-09-04：今日窗口（活动开始日=北京今天）
-        ref = start or deadline
-        if ref is None:
-            return False
-        return ref.date() == _bj_today(now).date()
+    today = _bj_today(now).date()
+    if "今日" in w or "今天" in w:
+        return _covers_day(act, today)
+    if "明天" in w:
+        return _covers_day(act, today + timedelta(days=1))
+    if "后天" in w:
+        return _covers_day(act, today + timedelta(days=2))
+    if "周末" in w:
+        return _covers_day(act, _nearest_weekday(today, 6)) or _covers_day(act, _nearest_weekday(today, 7))
+    m_day = re.search(r"(?:周|星期)([一二三四五六日天])", w)
+    if m_day:
+        index = _WEEKDAY_INDEX[m_day.group(1)]
+        target = _nearest_weekday(today, index)
+        if "下周" in w:
+            target += timedelta(days=7)
+        return _covers_day(act, target)
     if "截止" in w or "快" in w:  # 即将截止（3 天内）
         if deadline is None:
             return False
         return 0 <= (deadline - now).total_seconds() <= 3 * 86400
-    if "周末" in w:
-        if start is None:
-            return False
-        return start.isoweekday() in (6, 7)
     if "本周" in w or "这周" in w or "本周内" in w:
-        ref = start or deadline
-        if ref is None:
-            return False
-        today = _bj_today(now)
-        monday = today.date() - timedelta(days=today.isoweekday() - 1)
-        return monday <= ref.date() <= monday + timedelta(days=6)
+        monday = today - timedelta(days=today.isoweekday() - 1)
+        return any(_covers_day(act, monday + timedelta(days=offset)) for offset in range(7))
     return None
+
+
+def _activity_window_label(window: str, now: datetime) -> str:
+    """时间窗 → 人话标签："周日" → "周日（2026-09-20）"，用于卡片标题与正文。"""
+    w = str(window or "").strip()
+    if not w:
+        return ""
+    today = _bj_today(now).date()
+    if "今日" in w or "今天" in w:
+        return f"今天（{today.isoformat()}）"
+    if "明天" in w:
+        return f"明天（{(today + timedelta(days=1)).isoformat()}）"
+    if "后天" in w:
+        return f"后天（{(today + timedelta(days=2)).isoformat()}）"
+    m_day = re.search(r"(?:周|星期)([一二三四五六日天])", w)
+    if m_day:
+        index = _WEEKDAY_INDEX[m_day.group(1)]
+        day = _nearest_weekday(today, index)
+        if "下周" in w:
+            day = day + timedelta(days=7)
+        name = "周日" if index == 7 else f"周{'一二三四五六'[index - 1]}"
+        if "下周" in w:
+            name = f"下{name}"
+        return f"{name}（{day.isoformat()}）"
+    if "周末" in w:
+        return "本周末"
+    if "本周" in w or "这周" in w:
+        return "本周"
+    if "截止" in w or "快" in w:
+        return "即将截止（3 天内）"
+    return w
 
 
 # 活动返回条数安全上限。limit<=0 视为「全部」——实际条数受平台活动总量约束。
@@ -222,7 +286,7 @@ def query_activities(keyword: str = "", category: str = "",
     Args:
         keyword: 关键词，匹配活动名/简介/主办方（如 "讲座"、"辩论"、"志愿服务"）
         category: 分类过滤（如 "单次项目"、"系列项目"）
-        time_window: 时间窗（"即将截止"/"周末"/"本周"）
+        time_window: 时间窗（"今天"/"明天"/"后天"/"周X"/"周末"/"本周"/"即将截止"）
         limit: 返回条数上限（默认 8；**传 0 或负数表示返回全部**）
         student_id: 学号（登录用户自动注入）
 
@@ -304,9 +368,29 @@ def query_activities(keyword: str = "", category: str = "",
         except Exception as e:  # noqa: BLE001
             log.debug(f"asked 埋点跳过: {e}")
 
+    window_label = _activity_window_label(time_window, now) if time_window else ""
+    if time_window and not out:
+        # 窗口内没有命中：**不要**把别天的活动塞进卡片（实测用户问"周日"却拿到周六那批），
+        # 如实说明并保留窗口标签，正文/卡片都能看出这是哪一天的结果
+        return {
+            "count": 0,
+            "total_enrolment": len(acts),
+            "activities": [],
+            "window": time_window,
+            "window_label": window_label,
+            "message": (
+                f"{window_label or time_window}没有正在报名的活动"
+                "（活动是陆续上架的，可以换个时间窗或过两天再看看）。"
+            ),
+            "fetched_at": datetime.fromtimestamp(_cache["ts"]).strftime("%Y-%m-%d %H:%M"),
+            "source": source,
+        }
+
     return {
         "count": len(out),
         "total_enrolment": len(acts),
+        "window": time_window,
+        "window_label": window_label,
         "activities": [{
             "name": a.name,
             "organizer": a.organizer,

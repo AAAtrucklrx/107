@@ -309,7 +309,7 @@ _TOOL_ENTRIES = (
     "check_course_conflict(选课冲突检测, 参数 course_names 可选, 检测已选课程间的节次/周次冲突)",
     "evaluate_selection_pressure(退补选压力评估, 参数 add_courses/drop_courses/credit_cap 可选, 学分上限与时间负荷评估)",
     "render_link(校园官方入口跳转, 参数 scene=场景描述如 退课/缴费/评教, 返回官方系统名称+URL)",
-    "query_activities(青春科大第二课堂活动查询, 参数 keyword=关键词 category=分类 time_window=即将截止/周末/本周 limit=条数, 实时返回报名中活动)",
+    "query_activities(青春科大第二课堂活动查询, 参数 keyword=关键词 category=分类 time_window=今天/明天/后天/周X/周末/本周/即将截止 limit=条数, 实时返回报名中活动)",
 )
 
 _TOOL_CATALOG: dict[str, str] = {}
@@ -931,6 +931,30 @@ def _target_week_start(query: str) -> str:
     return monday.isoformat()
 
 
+def _activity_time_window(query: str) -> str:
+    """问句里的活动时间窗（传给 query_activities）。
+
+    识别顺序：今天/明天/后天 → 周末 → 具体星期 → 即将截止 → 本周。
+    ⚠️ 具体星期必须在"本周/这周"之前——`"这周" in "这周日"` 为真，顺序反了整周都会被算命中。
+    """
+    text = str(query or "")
+    for word in ("今天", "今日", "明天", "后天"):
+        if word in text:
+            return word
+    if "周末" in text:
+        return "本周末" if "本" in text else "周末"
+    # 中文是"下+周+日"，前缀只能是单个"下/这/本"；写成"(下周)?"会漏掉"下周日"
+    match = re.search(r"(下|这|本)?(?:周|星期)([一二三四五六日天])", text)
+    if match:
+        prefix = "下" if match.group(1) == "下" else ""
+        return f"{prefix}周{match.group(2)}"
+    if "即将截止" in text or "快截止" in text:
+        return "即将截止"
+    if "本周" in text or "这周" in text:
+        return "本周"
+    return ""
+
+
 def _direct_tool_route(state: QaState) -> dict | None:
     """高置信意图 → 确定性工具路由；条件不满足返回 None（交 LLM 决策）。
 
@@ -1040,6 +1064,10 @@ def _direct_tool_route(state: QaState) -> dict | None:
             if kw in query:
                 args["keyword"] = kw
                 break
+        # 2026-09-18：问句里的时间窗必须传下去，否则卡片会把别天的活动当成"这周日推荐"
+        window = _activity_time_window(query)
+        if window:
+            args["time_window"] = window
         return {
             "decision": "call_tool",
             "tool_calls": [{"tool": tool, "args": args}],
@@ -2357,7 +2385,9 @@ _STRUCTURE_SPECS: dict[str, dict] = {
         ],
     },
     "query_activities": {
-        "title": "活动推荐",
+        # 标题带上时间窗：用户问"周日"时卡片必须看得出这是哪一天的结果
+        "title": lambda p: (f"活动推荐（{p['window_label']}）"
+                            if p.get("window_label") else "活动推荐"),
         "items_key": "activities",
         "columns": ["活动", "组织方", "时间", "地点", "报名截止", "推荐理由"],
         "row": lambda r: [
