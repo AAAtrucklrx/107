@@ -689,7 +689,10 @@ def _is_dayview_query(query: str) -> bool:
     return has_topic and has_ask
 
 
-_PROGRAM_ROUTE_KW = ("我的培养方案", "培养方案", "培养进度", "方案进度", "学期规划", "我的方案")
+_PROGRAM_ROUTE_KW = ("我的培养方案", "培养方案", "培养进度", "方案进度", "学期规划", "我的方案",
+                     # 2026-09-18：「转去生医部要补哪些课」原来不在方案路由里 → 交 LLM 决策，
+                     # 它会去调"我自己"的方案工具，目标专业永远查不到
+                     "补哪些课", "补课", "要补", "需要补", "补修", "还要修哪些")
 # 「完成度」类问句必须走 get_program_progress：act 阶段会注入已修课程并算出
 # 差额；只走 get_my_program 时正文只剩课程清单，模型会误答「无法算出你的已修学分」。
 _PROGRAM_PROGRESS_KW = ("完成", "进度", "还差", "还缺", "缺多少", "差多少", "够不够",
@@ -782,8 +785,102 @@ def _detect_target_college(query: str, own_major: str) -> str | None:
     ⚠️ own_major 为空（未登录）时**不得**用它做排除：`_same_major(name, "")`
     对任何 name 都返回 True，会把所有学院都排掉、目标学院永远是 None
     （2026-09-16 实测踩到，匿名跨专业路由因此完全不触发）。"""
+    # 学院简称（"生医部"→生命科学与医学部）：库里学院名不含该简称，必须走别名表
+    try:
+        from tools._program_resolve import COLLEGE_ALIASES
+
+        for alias, full in sorted(COLLEGE_ALIASES.items(), key=lambda kv: -len(kv[0])):
+            if alias and alias in query and not (own_major and _same_major(full, own_major)):
+                return full
+    except Exception as e:  # noqa: BLE001 — 别名表不可用不影响原有精确匹配
+        log.warning(f"读取学院别名失败，仅用精确学院名匹配: {e}")
     for name in _known_colleges():
         if name in query and not (own_major and _same_major(name, own_major)):
+            return name
+    return None
+
+
+_KNOWN_MAJOR_CACHE: list[str] = []
+# 这些词不是专业名：问句剥掉关键词后剩下它们时，说明用户没点名专业
+_MAJOR_STOPWORDS = frozenset({
+    "转专业", "转系", "跨专业", "换专业", "专业", "课程", "课表", "学分", "毕业",
+    "方案", "培养方案", "要求", "差距", "选课", "方向", "学院", "学部",
+    # 单字/半截词：非贪婪正则会先吐出"培养"这类前缀，必须显式挡掉
+    "培养", "培养方", "课", "学期", "规划", "什么", "哪些",
+})
+
+
+def _known_majors() -> list[str]:
+    """方案库里的**专业名词干**（'临床医学专业培养方案' → '临床医学'）。
+
+    与 `_known_colleges()` 同样只读一次并缓存；长名优先，保证"临床医学"不会被
+    更短的词抢先匹配。"""
+    if not _KNOWN_MAJOR_CACHE:
+        try:
+            from tools.program_tools import _cdb
+
+            conn = _cdb()
+            try:
+                rows = conn.execute("SELECT DISTINCT name FROM programs").fetchall()
+            finally:
+                conn.close()
+            stems: set[str] = set()
+            for (raw,) in rows:
+                name = re.sub(r"[（(][^）)]*[）)]", "", str(raw or "")).strip()
+                name = re.sub(r"(专业)?培养方案$", "", name).strip()
+                if len(name) >= 2:
+                    stems.add(name)
+            _KNOWN_MAJOR_CACHE.extend(sorted(stems, key=lambda s: (-len(s), s)))
+        except Exception as e:  # noqa: BLE001 — 取不到名单时退化为只认学院名
+            log.warning(f"读取专业名单失败，问句将只按学院名识别目标: {e}")
+    return _KNOWN_MAJOR_CACHE
+
+
+def _detect_target_major(query: str, own_major: str = "") -> str | None:
+    """问句里点名的**具体专业**（长名优先）；未点名或就是本人专业时返回 None。"""
+    for name in _known_majors():
+        if name in query and not (own_major and _same_major(name, own_major)):
+            return name
+    return None
+
+
+# 只有"专业名 + 方案类词"这种**开头即专业名**的问句才猜专业名；否则一律不猜
+# （早期版本从整句里剥关键词，抠出过"帮对比一下该选""里必修课"这种垃圾，
+#   把既有路由规则全打乱了——2026-09-18 实测回归）
+_MAJOR_GUESS_PATTERNS = (
+    re.compile(r"^(?:我的|我|自己|本人)?(?P<name>[\u4e00-\u9fffA-Za-z]{2,12}?)(?:专业)?(?:的)?(?:培养方案|方案|课|课程)"),
+    re.compile(r"^(?:我的|我|自己|本人)?(?P<name>[\u4e00-\u9fffA-Za-z]{2,12}?)(?:专业)?(?:怎么样|如何|是什么|有哪些课|的课|好不好)"),
+)
+
+
+# 猜出来的"专业名"里只要含这些词，就说明匹配到的是问句的**功能词**而不是专业名
+_MAJOR_GUESS_REJECT = (
+    "培养方案", "方案", "课程", "专业", "学期", "规划", "哪些", "什么", "怎么", "如何",
+    "帮我", "对比", "比较", "一下", "该选", "选课", "要补", "补课", "补修", "我的",
+)
+
+
+def _looks_like_major(name: str) -> bool:
+    """猜出来的名字像不像专业名（排除"帮我对比一下""培养""转去生医部要补哪些"这类）。"""
+    if len(name) < 2 or name in _MAJOR_STOPWORDS:
+        return False
+    return not any(word in name for word in _MAJOR_GUESS_REJECT)
+
+
+def _guess_major_from_query(query: str) -> str | None:
+    """问句**开头**点名的专业名（可命中库里没有的名字，如"生物医学工程"）。
+
+    用途：让"生物医学工程的培养方案"也走方案工具，从而拿到 `not_found` + 相近专业建议，
+    而不是拿本人方案作答（2026-09-18 实测）。只有"名字 + 方案类词"的短问句才猜，
+    否则会从长句里抠出功能词、把既有路由规则全打乱（实测踩过两次）。
+    """
+    text = str(query or "").strip()
+    for pattern in _MAJOR_GUESS_PATTERNS:
+        match = pattern.match(text)
+        if not match:
+            continue
+        name = match.group("name").strip()
+        if _looks_like_major(name):
             return name
     return None
 
@@ -858,20 +955,31 @@ def _direct_tool_route(state: QaState) -> dict | None:
         own_grade = str(profile.get("grade") or "")
         target_college = (_detect_target_college(query, own_major)
                           if any(k in query for k in _PROGRAM_COMPARE_KW) else None)
+        # 问句里点名了**具体专业**时优先用它（用户说了"临床医学"就不该再回学院候选）；
+        # 但"物理学院"这类**学院名里恰好含专业名**（物理学）的情况要以学院为准。
+        named_major = _detect_target_major(query, own_major)
+        if named_major and target_college and named_major in target_college:
+            named_major = None
+        target_major = named_major or _guess_major_from_query(query) or target_college
         plan_call = None
-        if target_college:
+        if target_major:
             # 目标专业必须走进度工具：已修课程由 act 注入，才能算出「哪些能抵、还差哪些」
             tool_name = "get_program_progress"
-            args = {"major": target_college, "grade": own_grade}
-            reason = f"跨专业方案对比确定性路由（{tool_name} → {target_college}）"
+            args = {"major": target_major, "grade": own_grade}
+            reason = f"跨专业方案对比确定性路由（{tool_name} → {target_major}）"
             # 问「下个学期选什么课」时并行按真实学期分组（见 _plan_semester_call）
-            plan_call = _plan_semester_call(query, target_college, own_grade)
+            plan_call = _plan_semester_call(query, target_major, own_grade)
         else:
             tool_name = ("get_program_progress"
                          if any(k in query for k in _PROGRAM_PROGRESS_KW)
                          else "get_my_program")
-            args = {"major": own_major, "grade": own_grade}
-            reason = f"培养方案个人数据确定性路由（{tool_name}）"
+            # 问句里点名了别的专业（哪怕库里没有，如"生物医学工程"）→ 查那个，
+            # 让工具给出"没有这个专业名 + 相近专业"而不是拿本人方案作答
+            args = {"major": (_detect_target_major(query, own_major)
+                              or _guess_major_from_query(query)
+                              or own_major),
+                    "grade": own_grade}
+            reason = f"培养方案个人数据确定性路由（{tool_name} → {args['major']}）"
         calls = [{"tool": tool_name, "args": args}] + ([plan_call] if plan_call else [])
         if plan_call:
             reason += f" + {plan_call['tool']}(year_index={plan_call['args']['year_index']})"
@@ -2541,6 +2649,24 @@ def _build_tool_summary(results: list[dict]) -> str:
                     f"  （该课程共 {total_units} 个班, 本次评论样本只覆盖了评分靠前的 {covered_units} 个班; "
                     f"未被覆盖的班**不得声称「没有评论」**, 只能说本次未取到样本）"
                 )
+        elif res.get("ambiguity") and tool != "analyze_teacher":
+            # 方案类工具：学院级命中多专业 → 必须先让用户确认，不得替用户选一个
+            names = "、".join(str(c.get("name") or "") for c in (res.get("candidates") or []))
+            lines.append(f"[{tool}] {res.get('message') or '需要用户先确认'}（学院：{res.get('college', '')}）")
+            for item in (res.get("candidates") or []):
+                lines.append(
+                    f"- {item.get('name')} | {item.get('grade', '')} | "
+                    f"{item.get('course_count', 0)} 门 | {item.get('college', '')}"
+                )
+            lines.append("  ⚠️ 回答必须先让用户确认是哪个专业，不得替用户挑一个；确认后再算补课清单。")
+        elif res.get("not_found") and tool != "analyze_teacher":
+            lines.append(f"[{tool}] {res.get('message') or '未找到该专业/学院的培养方案'}")
+            for item in (res.get("suggestions") or []):
+                lines.append(
+                    f"- 相近专业：{item.get('name')} | {item.get('grade', '')} | "
+                    f"{item.get('course_count', 0)} 门 | {item.get('college', '')}"
+                )
+            lines.append("  ⚠️ 必须如实说明「库里没有这个专业名」，不得谎称「数据源不可用」。")
         elif tool == "analyze_teacher" and res.get("ambiguity"):
             # 姓名相近的多个老师（"龚伟" vs "龚伟峰"）：必须让用户先确认，不得合并统计
             names = "、".join(str(c.get("name") or "") for c in (res.get("candidates") or []))

@@ -206,6 +206,26 @@ def _resolve_courses(major: str, grade: str, personal_tree: dict | list | None):
 
 # ── 工具 ─────────────────────────────────────────────
 
+def _lookup_issue(major: str, grade: Optional[str] = None,
+                  personal_tree: Optional[dict | list] = None) -> dict | None:
+    """学院级多专业 → 候选确认；名字不存在 → not_found + 相近建议（其余返回 None）。
+
+    2026-09-18：原来这两种情况都笼统回 `source: unavailable` + 0 门，用户以为
+    "生医部没有培养方案"——其实库里有 9 个，只是"生医部"是简称、且"生物医学工程"
+    这个专业在生医部并不存在。
+    """
+    if personal_tree is not None or not str(major or "").strip():
+        return None
+    try:
+        conn = _cdb()
+    except sqlite3.Error:
+        return None
+    try:
+        return _pr.lookup_issue(conn, major, grade)
+    finally:
+        conn.close()
+
+
 @tool
 def get_my_program(major: str, grade: Optional[str] = None,
                    personal_tree: Optional[dict | list] = None) -> dict:
@@ -224,6 +244,9 @@ def get_my_program(major: str, grade: Optional[str] = None,
          "courses": [{"code","name","required","credit","term","category"}]}
         courses 已按 category 分组（category 升序）。
     """
+    issue = _lookup_issue(major, grade, personal_tree)
+    if issue is not None:
+        return issue
     prog, courses = _resolve_courses(major, grade, personal_tree)
 
     # modules: 按一级模块名聚合（category 首段），若无 category 用空段位
@@ -287,6 +310,9 @@ def get_program_progress(major: str, grade: Optional[str] = None,
     taken_courses_known=False 时 taken/credits/percent 的 0 只是缺省占位，
     不代表学生实际未修；调用方不得据此断言完成度，也不得称 remaining 为「缺口」。
     """
+    issue = _lookup_issue(major, grade, personal_tree)
+    if issue is not None:
+        return issue
     prog, courses = _resolve_courses(major, grade, personal_tree)
 
     required = [c for c in courses if c["required"] == "必修"]
@@ -379,6 +405,9 @@ def plan_semester(major: str, grade: Optional[str] = None, year_index: int = 1,
         {"year_index", "terms": [{"term": "2秋", "courses": [...]}], "total_credits"}
         term 无学年前缀的（如 "" 或 "空"）归入「未标注」分组。
     """
+    issue = _lookup_issue(major, grade, personal_tree)
+    if issue is not None:
+        return issue
     prog, courses = _resolve_courses(major, grade, personal_tree)
 
     terms: dict[str, list[dict]] = {}

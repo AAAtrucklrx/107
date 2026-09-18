@@ -29,6 +29,185 @@ def prog_priority(r) -> int:
     return 0
 
 
+# 学院/学部**常用简称 → 方案库里的学院名**（不含数字前缀）。
+# 实测（2026-09-18）：用户问「转去生医部要补哪些课」，而库里的学院名是
+# "910生命科学与医学部"——"生医部"既不是方案名也不是学院名子串，直接落空，
+# 工具只能回"方案来源不可用"，用户以为没有生医部的方案（其实有 9 个）。
+COLLEGE_ALIASES: dict[str, str] = {
+    "生医部": "生命科学与医学部",
+    "生命科学与医学部": "生命科学与医学部",
+    "生院": "生命科学学院",
+    "生命科学学院": "生命科学学院",
+    "计院": "计算机科学与技术学院",
+    "计算机学院": "计算机科学与技术学院",
+    "计算机系": "计算机科学与技术学院",
+    "物院": "物理学院",
+    "化院": "化学与材料科学学院",
+    "化材院": "化学与材料科学学院",
+    "数院": "数学科学学院",
+    "地空": "地球和空间科学学院",
+    "地空学院": "地球和空间科学学院",
+    "管院": "管理学院",
+    "核院": "核科学技术学院",
+    "工院": "工程科学学院",
+    "少院": "少年班学院",
+    "网安": "网络空间安全学院",
+    "网安学院": "网络空间安全学院",
+    "微电子": "集成电路学院（国家示范性微电子学院）",
+    "集电": "集成电路学院（国家示范性微电子学院）",
+    "集成电路学院": "集成电路学院（国家示范性微电子学院）",
+    "信息学院": "信息科学技术学院",
+    "信院": "信息科学技术学院",
+    "人工智能学院": "人工智能与数据科学学院",
+    "环境学院": "环境学院",
+    "科技传播系": "科技传播系",
+    "人文学院": "人文与社会科学学院",
+}
+
+
+def strip_college_noise(name: str | None) -> str:
+    """学院名去掉数字前缀与单位后缀：'910生命科学与医学部' → '生命科学与医学'。
+
+    后缀用「学院/系/部」而不是「学院/学部/系」：后者会把"…医学部"的"学部"整段吃掉，
+    得到"生命科学与医"（2026-09-18 实测）。
+    """
+    return re.sub(r"^\d+", "", re.sub(r"(学院|系|部)$", "", str(name or ""))).strip()
+
+
+def resolve_colleges(conn, query: str | None) -> list[str]:
+    """查询词 → 方案库里的**学院名原值**（如 "910生命科学与医学部"）。
+
+    顺序：① 学院名子串 ② 常用简称别名 ③ 去后缀词干**前缀**匹配（≥2 字，取最长）。
+    """
+    text = str(query or "").strip()
+    if not text:
+        return []
+    colleges = [str(row[0]) for row in conn.execute("SELECT DISTINCT college FROM programs")]
+    exact = [c for c in colleges if text in c]
+    if exact:
+        return exact
+    alias = COLLEGE_ALIASES.get(text) or COLLEGE_ALIASES.get(text.replace("学院", ""))
+    if alias:
+        hit = [c for c in colleges if alias in c]
+        if hit:
+            return hit
+    stem = strip_college_noise(text)
+    if len(stem) >= 2:
+        prefix_hits = [c for c in colleges if strip_college_noise(c).startswith(stem)]
+        if prefix_hits:
+            return sorted(prefix_hits, key=lambda c: (-len(strip_college_noise(c)), c))
+    return []
+
+
+def _college_candidates(conn, colleges: list[str], grade: str | None) -> list[dict]:
+    """学院下的专业候选（按专业名去重，年级取最近、课程数取最大）。"""
+    target = parse_grade_key(grade) if grade else 0
+    best: dict[str, dict] = {}
+    for college in colleges:
+        rows = conn.execute(
+            "SELECT p.id, p.name, p.college, p.grade, "
+            "(SELECT COUNT(*) FROM program_courses pc WHERE pc.program_id = p.id) AS cc "
+            "FROM programs p WHERE p.college = ?",
+            (college,),
+        ).fetchall()
+        for row in rows:
+            name = str(row["name"] or "")
+            item = {
+                "name": name,
+                "grade": str(row["grade"] or ""),
+                "college": strip_college_noise(row["college"]),
+                "program_id": row["id"],
+                "course_count": int(row["cc"] or 0),
+            }
+            current = best.get(name)
+            if current is None:
+                best[name] = item
+                continue
+            # 年级越接近越好；同年级取课程数更多（避开英才班/辅修壳）
+            cur_diff = abs(parse_grade_key(current["grade"]) - target) if target else 0
+            new_diff = abs(parse_grade_key(item["grade"]) - target) if target else 0
+            if (new_diff, -item["course_count"]) < (cur_diff, -current["course_count"]):
+                best[name] = item
+    return sorted(best.values(), key=lambda c: (-c["course_count"], c["name"]))
+
+
+def _nearby_programs(conn, text: str, limit: int = 5) -> list[dict]:
+    """相近专业建议：按查询词的 2-gram 命中数排序（"生物医学工程" → 生物科学/生物技术/临床医学）。"""
+    # 词元按**位置**加权：越靠前的二字词越有信息量（"生物医学工程"里的"生物" > "工程"），
+    # 否则"高分子材料与工程""环境科学与工程"会凭"工程"两字挤进建议
+    grams = [text[i:i + 2] for i in range(len(text) - 1)] or [text]
+    weights = {gram: len(grams) - idx for idx, gram in enumerate(grams)}
+    rows = conn.execute(
+        "SELECT p.id, p.name, p.college, p.grade, "
+        "(SELECT COUNT(*) FROM program_courses pc WHERE pc.program_id = p.id) AS cc "
+        "FROM programs p"
+    ).fetchall()
+    scored = []
+    for row in rows:
+        name = str(row["name"] or "")
+        score = sum(weight for gram, weight in weights.items() if gram in name)
+        if score:
+            # 其次普通专业方案优先（少年班/英才班/辅修方案名带括号或"英才班"），
+            # 再短名优先（"临床医学专业培养方案" 优于 "少年班学院培养方案（生物科学）"）
+            scored.append((score, prog_priority({"name": name}), len(name),
+                           int(row["cc"] or 0), name, row))
+    scored.sort(key=lambda item: (-item[0], item[1], item[2], -item[3], item[4]))
+    out: list[dict] = []
+    seen: set[str] = set()
+    for _score, _prio, _len, _cc, name, row in scored:
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append({
+            "name": name,
+            "college": strip_college_noise(row["college"]),
+            "grade": str(row["grade"] or ""),
+            "course_count": int(row["cc"] or 0),
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def lookup_issue(conn, major: str | None, grade: str | None = None) -> dict | None:
+    """方案定位的**前置问题**：学院级命中多专业 → 候选；完全找不到 → not_found + 相近建议。
+
+    正常（能唯一定位到专业方案）返回 None，交回现有解析流程。
+    """
+    text = str(major or "").strip()
+    if not text:
+        return None
+    if conn.execute("SELECT 1 FROM programs WHERE name LIKE ? LIMIT 1", (f"%{text}%",)).fetchone():
+        return None  # 专业名能命中，交给 resolve_program
+    colleges = resolve_colleges(conn, text)
+    if colleges:
+        candidates = _college_candidates(conn, colleges, grade)
+        if len(candidates) <= 1:
+            return None
+        names = "、".join(item["name"] for item in candidates)
+        return {
+            "ambiguity": True,
+            "query": text,
+            "college": strip_college_noise(colleges[0]),
+            "candidates": candidates,
+            "message": (
+                f"「{text}」是学院/学部，下有 {len(candidates)} 个专业方案：{names}。"
+                "请先确认要转（要查）哪个专业，我再按那个专业的方案算补课清单。"
+            ),
+        }
+    suggestions = _nearby_programs(conn, text)
+    return {
+        "not_found": True,
+        "query": text,
+        "suggestions": suggestions,
+        "message": (
+            f"培养方案库里没有叫「{text}」的专业/学院"
+            + (f"；相近的专业有：{'、'.join(item['name'] for item in suggestions)}" if suggestions else "")
+            + "。请给出准确的学院或专业名称（也可以说专业全称，如「临床医学」）。"
+        ),
+    }
+
+
 def _lcp_len(a: str, b: str) -> int:
     """两串的最长公共前缀长度。"""
     n = 0
@@ -65,7 +244,11 @@ def resolve_program(conn, major: str | None, grade: str | None = None) -> dict |
             "AS course_count FROM programs p WHERE p.{col} LIKE ? ORDER BY p.grade DESC")
     rows = conn.execute(_SEL.format(col="name"), (f"%{major}%",)).fetchall()
     if not rows:
-        rows = conn.execute(_SEL.format(col="college"), (f"%{major}%",)).fetchall()
+        # 学院名（含"生医部"这类简称）→ 该学院下的方案；仍无命中才认失败
+        for college in resolve_colleges(conn, major):
+            rows = conn.execute(_SEL.format(col="college"), (f"%{college}%",)).fetchall()
+            if rows:
+                break
     if not rows:
         return None
 
