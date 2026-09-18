@@ -2541,12 +2541,28 @@ def _build_tool_summary(results: list[dict]) -> str:
                     f"  （该课程共 {total_units} 个班, 本次评论样本只覆盖了评分靠前的 {covered_units} 个班; "
                     f"未被覆盖的班**不得声称「没有评论」**, 只能说本次未取到样本）"
                 )
+        elif tool == "analyze_teacher" and res.get("ambiguity"):
+            # 姓名相近的多个老师（"龚伟" vs "龚伟峰"）：必须让用户先确认，不得合并统计
+            names = "、".join(str(c.get("name") or "") for c in (res.get("candidates") or []))
+            lines.append(f"[{tool}] {res.get('message') or '教师姓名不唯一'}")
+            lines.append(f"- 候选：{names}")
+            lines.append("  ⚠️ 必须先让用户确认是哪一位老师（姓名相近的不是同一个人），不得合并统计。")
         elif tool == "analyze_teacher" and res.get("teacher"):
             # 教师模式（teacher_name 或 teacher_name+course）：完整呈现各课程评分，防止
             # 通用兜底 json.dumps[:800] 截断导致 B1/B2 等课程数据丢失（2026-08 修复）
             courses = res.get("courses") or []
-            lines.append(f"[{tool}] 教师「{res.get('teacher')}」共 {len(courses)} 门课"
+            # 2026-09-18：点名**实际命中的教师名**与匹配方式 —— 之前只回显查询串，
+            # 把"龚伟"与"龚伟峰"被合并统计这件事藏住了
+            matched = "、".join(str(x) for x in (res.get("matched_teachers") or [])) \
+                or str(res.get("teacher") or "")
+            lines.append(f"[{tool}] 教师「{res.get('teacher')}」（命中教师名：{matched}；"
+                         f"匹配方式 {res.get('matched_by', 'exact')}）共 {len(courses)} 门课"
                          f"（综合均分 {res.get('avg_rating')}·{res.get('review_count')}条，评课数据仅供参考）:")
+            if str(res.get("matched_by") or "") == "fuzzy":
+                lines.append(
+                    "  ⚠️ 该姓名不是评课库里的精确教师名，命中的是姓名相近的老师："
+                    "回答必须说明，不得当作同一个人。"
+                )
             for c in courses:
                 lines.append(f"- {c['name']} | {c['rating_avg']}分·{c['rate_count']}条")
             sample = res.get("reviews_sample") or []

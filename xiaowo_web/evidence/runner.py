@@ -93,6 +93,23 @@ _ANSWER_JUDGE_PROMPT = """你是判定器：判断「助手回答」是否**真�
 只输出：能 或 不能"""
 
 
+_JUDGE_HEAD_CHARS = 1200
+_JUDGE_TAIL_CHARS = 1200
+
+
+def _judge_window(text: str) -> str:
+    """判定器必须**看到答案的头和尾**。
+
+    实测（2026-09-18）：问「龚伟老师评价，还有龚伟老师的实验室是什么」，回答里
+    "实验室这次没检索到"那句在 800 字之后，被原来的 `answer[:800]` 截掉 → 判定器
+    只看到评价那半段，判「能」→ **不联网**，缺项永远补不上。
+    """
+    body = str(text or "")
+    if len(body) <= _JUDGE_HEAD_CHARS + _JUDGE_TAIL_CHARS:
+        return body
+    return body[:_JUDGE_HEAD_CHARS] + "\n…（中间略）…\n" + body[-_JUDGE_TAIL_CHARS:]
+
+
 def _llm_judge_answered(question: str, answer: str) -> bool | None:
     """LLM 判定「这段回答是否真的回答了问题」。失败返回 None（由调用方退回启发式）。
 
@@ -113,7 +130,7 @@ def _llm_judge_answered(question: str, answer: str) -> bool | None:
         prompt = ChatPromptTemplate.from_messages([("human", _ANSWER_JUDGE_PROMPT)])
         text = llm_content((prompt | create_llm(temperature=0.0)).invoke({
             "q": (question or "")[:500],
-            "a": (answer or "")[:800],
+            "a": _judge_window(answer),
         })) or ""
     except Exception as exc:  # noqa: BLE001 —— 判定器不可用不得影响回答
         log.warning(f"回答判定器调用失败，退回措辞启发式: {exc}")
@@ -187,7 +204,11 @@ async def _local_answered(bundle, question: str) -> bool:
     if not (bundle.claims and all(c.get("status") == "confirmed" for c in bundle.claims)):
         return True
     if any((s.get("level") or "") in {"tool_result", "tool_cache"} for s in (bundle.sources or [])):
-        return True
+        # 工具结果确实权威，但它**只覆盖自己那部分**：多并列问句（"X 的评价，还有 X 的实验室"）
+        # 里工具只答了一半时不能据此认定"答出来了"——否则判定器根本不会被调用、永不联网
+        # （2026-09-18 实测："实验室"那半句永远补不上）
+        if not _looks_multi_part(question):
+            return True
     if _needs_personal_data(question, bundle.markdown or ""):
         return True
     retrieval = getattr(bundle, "retrieval", None) or {}
@@ -200,6 +221,38 @@ async def _local_answered(bundle, question: str) -> bool:
 
 
 _LOCAL_HINT_MAX_CHARS = 1800
+
+# 多并列询问点（"X 的评价，还有 X 的实验室"）：工具只覆盖它自己那部分，
+# 这类问句不能走"有工具结果就算答出来了"的快速豁免
+_MULTI_PART_HINTS = re.compile(r"(还有|以及|另外|顺便|同时|分别|各自|各是)")
+
+# 个人数据工具：其工具结果**绝不**带进联网检索与合成（隐私红线）。
+# 反过来，公开工具（analyze_teacher / get_course_reviews / compare_courses / find_empty_room …）
+# 的结果必须能带过去，否则"评价 + 实验室"这类复合问题在联网覆盖时会丢掉评价那半段。
+_PERSONAL_HINT_TOOLS = frozenset({
+    "query_schedule", "query_daily_schedule", "query_grade", "calc_gpa", "query_exam",
+    "query_course_selection", "query_program", "get_my_program", "get_program_progress",
+    "plan_semester", "import_schedule", "get_week_view", "get_day_view", "add_event",
+    "check_conflict", "evaluate_selection_pressure", "check_course_conflict",
+})
+
+
+def _looks_multi_part(question: str) -> bool:
+    """问句是否包含**多个并列的询问点**。"""
+    return bool(_MULTI_PART_HINTS.search(question or ""))
+
+
+def _source_is_personal_data(source: dict) -> bool:
+    """工具类来源是不是个人数据（成绩/课表/考试/日程…）。
+
+    拿不到工具名时**保守当作个人数据**（旧 bundle / 测试替身）：宁可少合并，也不外泄。
+    """
+    if str(source.get("level") or "") not in {"tool_result", "tool_cache"}:
+        return False
+    tool = str(source.get("tool") or "")
+    if not tool:
+        return True
+    return tool in _PERSONAL_HINT_TOOLS
 
 
 def _local_merge_hint(bundle) -> dict | None:
@@ -222,8 +275,8 @@ def _local_merge_hint(bundle) -> dict | None:
     if str(getattr(bundle, "terminal_reason", "") or "") not in {"local_answer", "cache_hit"}:
         return None
     sources = list(getattr(bundle, "sources", None) or [])
-    if any((s.get("level") or "") in {"tool_result", "tool_cache"} for s in sources):
-        return None
+    if any(_source_is_personal_data(s) for s in sources):
+        return None  # 个人数据不进联网
     # 缓存命中会带一条"语义缓存回答"占位来源，不算真来源
     titles = [
         str(s.get("title") or "").strip()

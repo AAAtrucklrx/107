@@ -268,11 +268,19 @@ def _top_reviews(conn: sqlite3.Connection, course_id: int, teacher: str | None =
     content_limit 控制单条评论正文截断（评课库为全文入库，长评常见 400~1000 字）；
     追问详情场景（get_course_reviews）应传更大值。"""
     if teacher:
+        # LIKE 只当**粗筛超集**（保留合教组合命中），随后按姓名分量精确过滤——
+        # 否则"龚伟"会把"龚伟峰"的评论一起捞进来（2026-09-18 实测）
         rows = conn.execute(
             "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content, icourse_id "
             "FROM reviews WHERE course_id=? AND teacher LIKE ? ORDER BY id LIMIT 200",
             (course_id, f"%{teacher}%"),
         ).fetchall()
+        wanted = set(_split_teacher_names(teacher))
+        if wanted:
+            rows = [
+                row for row in rows
+                if wanted & set(_split_teacher_names(row["teacher"]))
+            ]
     else:
         rows = conn.execute(
             "SELECT author, teacher, stars, term, difficulty, homework, give_score, harvest, content, icourse_id "
@@ -1665,6 +1673,55 @@ def _sample_reviews(units: list[dict], fetch) -> tuple[list[dict], int, int]:
     return reviews[:_SAMPLE_TOTAL_CAP], len(units), sum(1 for _, revs in pools if revs)
 
 
+def _split_teacher_names(raw: str | None) -> list[str]:
+    """把 `teachers.name` / `reviews.teacher` 的**连写合教组合**拆成单个姓名。
+
+    评课库把合教组合逗号连写存一行（实测："马建辉, 龚伟"、"张曼君, 龚伟峰"），
+    所以**不能**用 `LIKE '%龚伟%'` 找人 —— 那会把"龚伟峰"一起匹配进来
+    （2026-09-18 实测：龚伟峰的四门英语课被算到龚伟头上）。
+    """
+    text = str(raw or "").replace("，", ",").replace("、", ",")
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _normalize_teacher_query(name: str | None) -> str:
+    """去掉"老师/教授/教师"后缀（工具也可能被直接调用）。"""
+    text = str(name or "").strip()
+    for suffix in ("老师", "教授", "教师"):
+        if text.endswith(suffix) and len(text) > len(suffix):
+            text = text[: -len(suffix)]
+    return text.strip()
+
+
+def _match_teacher_rows(conn: sqlite3.Connection, teacher_name: str | None):
+    """找教师行：先按**姓名分量精确相等**，没有精确命中才退回模糊。
+
+    返回 `(rows, matched_by, matched_names)`；`matched_by` ∈ exact/fuzzy/none，
+    `matched_names` 是命中的**具体姓名**（拆分后的分量、去重）。
+    """
+    query = _normalize_teacher_query(teacher_name)
+    if not query:
+        return [], "none", []
+    exact_rows: list = []
+    fuzzy_rows: list = []
+    fuzzy_names: set[str] = set()
+    for row in conn.execute("SELECT id, name FROM teachers").fetchall():
+        parts = _split_teacher_names(row["name"])
+        if query in parts:
+            exact_rows.append(row)
+            continue
+        for part in parts:
+            if query in part:
+                fuzzy_rows.append(row)
+                fuzzy_names.add(part)
+                break
+    if exact_rows:
+        return exact_rows, "exact", [query]
+    if fuzzy_rows:
+        return fuzzy_rows, "fuzzy", sorted(fuzzy_names)
+    return [], "none", []
+
+
 @tool
 def analyze_teacher(teacher_name: str | None = None, course: str | None = None) -> dict:
     """
@@ -1774,13 +1831,48 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             "reviews_units_covered": units_covered,
         }
 
-    # 老师模式: 教师名模糊匹配 course_teachers（含合教组合, 如"魏海明, 计永胜"）, 同课多组合取样本量大者
+    # 老师模式: **姓名分量精确相等**（合教组合逗号连写，如"魏海明, 计永胜"）；
+    # 只有精确匹配不到才退回模糊 —— 否则"龚伟"会把"龚伟峰"一起并进来（2026-09-18 实测）。
+    teacher_rows, matched_by, matched_names = _match_teacher_rows(conn, teacher_name)
+    if matched_by == "none":
+        conn.close()
+        return {"error": f"未找到教师：{teacher_name}"}
+    if matched_by == "fuzzy" and len(matched_names) > 1:
+        # 姓名相近的多个老师（"龚伟" vs "龚伟峰"）：**不能合并统计**，交用户确认
+        counts: dict[str, int] = {}
+        for teacher_row in teacher_rows:
+            n = conn.execute(
+                "SELECT COUNT(*) AS n FROM course_teachers WHERE teacher_id = ?",
+                (teacher_row["id"],),
+            ).fetchone()["n"]
+            for part in _split_teacher_names(teacher_row["name"]):
+                # 评课库里混着爬虫脏行（"中级）（龚伟峰"、"II）（龚明"），候选列表里滤掉
+                if any(ch in part for ch in "（）()［］[]"):
+                    continue
+                if any(name in part for name in matched_names):
+                    counts[part] = counts.get(part, 0) + int(n or 0)
+        conn.close()
+        return {
+            "ambiguity": True,
+            "query": teacher_name,
+            "candidates": [
+                {"name": name, "course_count": counts.get(name, 0)}
+                for name in sorted(counts, key=lambda key: -counts.get(key, 0))
+            ],
+            "message": (
+                f"评课库里没有叫「{teacher_name}」的老师，但有姓名相近的"
+                f"{'、'.join(sorted(counts))}——他们不是同一个人，请确认要问哪一位"
+            ),
+        }
+    matched_label = matched_names[0] if matched_names else _normalize_teacher_query(teacher_name)
+    ids = [teacher_row["id"] for teacher_row in teacher_rows]
+    placeholders = ",".join("?" for _ in ids)
     rows = conn.execute(
         "SELECT c.id, c.name, c.dept, ct.rating_avg, ct.rating_count, ct.dims_dist "
         "FROM course_teachers ct JOIN courses c ON c.id = ct.course_id "
-        "WHERE ct.teacher_id IN (SELECT id FROM teachers WHERE name LIKE ?) "
+        f"WHERE ct.teacher_id IN ({placeholders}) "
         "ORDER BY ct.rating_count DESC",
-        (f"%{teacher_name}%",),
+        tuple(ids),
     ).fetchall()
     if not rows:
         conn.close()
@@ -1813,7 +1905,7 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
                 "rating_avg": round(r["rating_avg"], 1),
                 "rate_count": r["rating_count"],
                 "dims_mode": _dims_mode(r["dims_dist"]),
-                "top_reviews": _top_reviews(conn, r["id"], teacher_name, limit=_SAMPLE_PER_UNIT),
+                "top_reviews": _top_reviews(conn, r["id"], matched_label, limit=_SAMPLE_PER_UNIT),
             }
     courses = list(seen.values())
     courses.sort(key=lambda x: (-x["rating_avg"], -x["rate_count"]))
@@ -1825,8 +1917,12 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         courses, lambda c: c.get("top_reviews") or []
     )
     conn.close()
-    return {
-        "teacher": teacher_name,
+    payload = {
+        # 用**实际命中的姓名**回填，而不是原样回显查询串 —— 回显会把"把两个人合并"
+        # 这件事藏起来（2026-09-18 实测）
+        "teacher": matched_label,
+        "matched_by": matched_by,
+        "matched_teachers": matched_names or [matched_label],
         "courses": courses,
         "avg_rating": avg,
         "review_count": n_reviews,
@@ -1834,6 +1930,12 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         "reviews_units_total": units_total,
         "reviews_units_covered": units_covered,
     }
+    if matched_by == "fuzzy":
+        payload["note"] = (
+            f"⚠️「{teacher_name}」不是评课库里的精确教师名，命中的是姓名相近的"
+            f"{'、'.join(matched_names)}；回答时必须说明这一点，不要当成同一个人。"
+        )
+    return payload
 
 
 @tool

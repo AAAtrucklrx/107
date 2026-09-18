@@ -247,6 +247,9 @@ def _tool_records(tool_results: list[dict[str, Any]]) -> list[tuple[dict[str, An
             "fetched_at": result.get("fetched_at") or None,
             "level": "tool_cache" if cached else "tool_result",
             "validity": "cached" if cached else "active",
+            # 2026-09-18：带出**工具名**，下游才能区分"公开工具结果"（教师评价/课程对比/
+            # 空教室…可以进联网合并）与"个人数据"（成绩/课表/考试…绝不外带）
+            "tool": tool_name,
             "tags": ["personal"] if tool_name not in {"render_link", "query_activities", "search_faq"} else [],
         }
         evidence = {
