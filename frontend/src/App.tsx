@@ -227,7 +227,7 @@ export function App() {
       onDemoLogin={handleDemoLogin}
       onLogout={handleLogout}
       onDemoReset={handleDemoReset}
-      onOpenAdmin={() => navigateAdmin("tools")}
+      onOpenAdmin={() => navigateAdmin("knowledge")}  // 2026-09-17：菜单入口也进知识审核（此前写死 tools，绕过 adminPageFromPath 的默认页修复）
       busy={busy}
     >
       <div className="workspace-transition">

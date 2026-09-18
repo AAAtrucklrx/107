@@ -482,7 +482,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
           </div>
           {feedback.length === 0 ? <WorkspaceEmpty title="当前没有回答反馈" detail="新的反馈会在此处进入核验队列。" /> : feedback.map((item) => (
             <article className="feedback-review-item" data-status={item.status} key={item.id}>
-              <div>
+              <header className="feedback-review-item__head">
                 <span className={`review-status review-status--fb-${item.status}`}>{feedbackStatusLabels[item.status] ?? item.status}</span>
                 <span className="review-status review-status--in_review">{feedbackCategoryLabels[item.category] ?? item.category}</span>
                 {item.namespace === "anonymous" && (
@@ -491,9 +491,20 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                   </span>
                 )}
                 <time>{formatTimestamp(item.created_at)}</time>
-              </div>
-              <p>{item.detail || "用户仅提交了反馈分类，没有补充说明。"}</p>
-              {item.resolution && <p className="feedback-review-item__resolution">处理记录：{item.resolution}</p>}
+              </header>
+              <section className="feedback-review-item__block">
+                <h4>用户说明</h4>
+                <p>{item.detail || "用户仅提交了反馈分类，没有补充说明。"}</p>
+              </section>
+              {item.resolution && (
+                <section className="feedback-review-item__block">
+                  <h4>处理记录</h4>
+                  <p className="feedback-review-item__resolution">{item.resolution}</p>
+                </section>
+              )}
+              <section className="feedback-review-item__block">
+                <h4>证据</h4>
+                <div className="feedback-review-item__evidence">
               {item.sources && item.sources.length > 0 && (
                 <details className="feedback-review-item__sources">
                   <summary>该次回答的来源 {item.sources.length} 条（反馈闭环依据）</summary>
@@ -553,7 +564,10 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                   );
                 })()}
               </details>
-              <div className="feedback-review-item__actions">
+                </div>
+              </section>
+              <footer className="feedback-review-item__actions">
+                <h4>处理</h4>
                 {feedbackActions.map((action) => (
                   <button
                     className="secondary-button"
@@ -565,7 +579,7 @@ export function ReviewWorkspace({ session }: { session: SessionPayload }) {
                     {action.label}
                   </button>
                 ))}
-              </div>
+              </footer>
               <small>
                 回答 {item.answer_id.slice(0, 10)} · 运行 {item.run_id.slice(0, 10)}
                 {item.handled_by ? ` · 处理人 ${item.handled_by}` : ""}

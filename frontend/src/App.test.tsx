@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import type { PublicConfig, SessionPayload } from "./types";
 import { App } from "./App";
@@ -110,4 +111,31 @@ test("keeps non-administrators out of administrator routes", async () => {
   expect(await screen.findByText("用户问答工作区")).toBeInTheDocument();
   await waitFor(() => expect(window.location.pathname).toBe("/"));
   expect(screen.queryByText("管理后台")).not.toBeInTheDocument();
+});
+
+
+test("账号菜单进管理后台直达知识审核（P2-5 入口回归）", async () => {
+  // 教训：上一次只测了 URL 解析（/admin → 知识审核），但**用户真正的入口是账号菜单**，
+  // 而菜单写死 navigateAdmin("tools")，于是"看着没生效"。测试必须走入口。
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  bootstrapMock.mockResolvedValue({ config, session: adminSession });
+  render(<App />);
+
+  // 账号菜单要等会话（bootstrap）加载完才渲染 —— 先等主工作区
+  await screen.findByText("用户问答工作区");
+  const trigger = await waitFor(() => {
+    const node = document.querySelector(
+      ".account-trigger:not(.account-trigger--compact)",
+    ) as HTMLElement | null;
+    expect(node).toBeTruthy();
+    return node as HTMLElement;
+  });
+  await user.click(trigger);
+
+  const items = await screen.findAllByRole("menuitem", { name: /管理后台/ });
+  await user.click(items[0]);
+
+  expect(await screen.findByText("知识审核工作区")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/admin/knowledge");
+  expect(screen.queryByText("工具审核工作区")).toBeNull();
 });

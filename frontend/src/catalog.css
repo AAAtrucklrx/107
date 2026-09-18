@@ -5660,3 +5660,91 @@ body::after {
   gap: 6px;
   margin-top: 9px;
 }
+
+/* ── 反馈列表分块化（2026-09-17）──────────────────────────────────────────────
+   原来 `.feedback-review-item` 连卡片样式都没有：每条只是平铺的文字块，彼此没有边界，
+   反馈一多就"眼花"。这里做成卡片 + 四段式（头部 / 用户说明 / 处理记录 / 证据 / 处理），
+   每段之间用虚线分隔，次要信息统一降到 muted 色。 */
+.feedback-review-item {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised, #fff);
+  padding: 12px 14px 10px;
+}
+
+.feedback-review-item + .feedback-review-item {
+  margin-top: 10px;
+}
+
+.feedback-review-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.feedback-review-item__head time {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.feedback-review-item__block {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.feedback-review-item__block h4,
+.feedback-review-item__actions h4 {
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+.feedback-review-item__block p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+.feedback-review-item__block .feedback-review-item__resolution {
+  margin: 0;
+}
+
+.feedback-review-item__evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feedback-review-item__evidence .feedback-review-item__sources,
+.feedback-review-item__evidence .feedback-review-item__transcript {
+  margin: 0;
+}
+
+/* 两个折叠项统一样式：muted + 手型，避免一蓝一灰打架 */
+.feedback-review-item__sources > summary,
+.feedback-review-item__transcript > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.feedback-review-item__sources > summary:hover,
+.feedback-review-item__transcript > summary:hover {
+  color: var(--ink);
+}
+
+.feedback-review-item__actions {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.feedback-review-item__actions h4 {
+  flex-basis: 100%;
+}

@@ -395,3 +395,39 @@ test("反馈详情能看到提问与回答原文（2026-09-17）", async () => {
   expect(screen.getByText("本条回答来自语义缓存")).toBeInTheDocument();
 });
 
+
+test("反馈条目分块化：用户说明 / 证据 / 处理 三段标签可见（2026-09-17）", async () => {
+  const user = userEvent.setup();
+  apiGetMock.mockImplementation((path: string) => {
+    if (path === "/admin/generations") return Promise.resolve({
+      namespace: "demo", active_generation_id: "gen-current", previous_generation_id: null,
+      activated_at: 1787788800, can_rollback: false, publish_busy: false, pending_proposals: 0,
+    });
+    if (path === "/admin/review-items/stats") return Promise.resolve(stats);
+    if (path.startsWith("/admin/feedback")) return Promise.resolve({
+      items: [{
+        id: 8, answer_id: "answer-8", run_id: "run-8", namespace: "demo",
+        category: "outdated", status: "in_progress", created_at: "2026-09-17T02:00:00Z",
+        detail: "开放时间疑似过期",
+        resolution: "已对 3/3 条来源排队复抓",
+        sources: [{ source_id: "s1", title: "教务处公告", domain: "www.teach.ustc.edu.cn" }],
+      }],
+    });
+    if (path.startsWith("/admin/review-items")) return Promise.resolve({ items: [detail], namespace: "demo" });
+    return Promise.reject(new Error(`unexpected GET ${path}`));
+  });
+
+  render(<ReviewWorkspace session={session} />);
+  await user.click(await screen.findByRole("tab", { name: /回答反馈/ }));
+
+  // 标题（分块标签小写 h4）
+  expect(await screen.findByRole("heading", { name: "用户说明" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "证据" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "处理" })).toBeInTheDocument();
+  // 内容仍在
+  expect(screen.getByText("开放时间疑似过期")).toBeInTheDocument();
+  expect(screen.getByText("已对 3/3 条来源排队复抓")).toBeInTheDocument();
+  expect(screen.getByText(/该次回答的来源 1 条/)).toBeInTheDocument();
+});
+
