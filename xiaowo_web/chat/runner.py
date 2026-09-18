@@ -288,6 +288,7 @@ class LegacyQaRunner:
         max_workers: int = 4,
         approved_retriever: ApprovedRetriever | None = None,
         semantic_cache: Any | None = None,
+        defer_cache_write: bool = False,
     ) -> None:
         self._run_qa_func = run_qa_func
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="xiaowo-qa")
@@ -295,6 +296,9 @@ class LegacyQaRunner:
         self._approved_retriever = approved_retriever
         # 语义缓存（可选）：None = 禁用（测试默认）；生产由 main 注入共享单例
         self._semantic_cache = semantic_cache
+        # 2026-09-18：外层 EvidenceAwareRunner 存在时，缓存写入交给它 —— 否则会把
+        # "本地草稿"写进缓存，而用户看到的其实是被联网覆盖后的答案
+        self._defer_cache_write = bool(defer_cache_write)
         # ①: reranker/embedder 后台预热(避免首次问答卡顿 3s/20s; 缺失时静默跳过)
         try:
             from knowledge.reranker import prewarm
@@ -339,20 +343,30 @@ class LegacyQaRunner:
                 "citation": "缓存", "source_id": "semantic-cache",
                 "title": "语义缓存回答", "source": "本地语义缓存",
             }
+            # 2026-09-18：联网缓存与本地缓存必须区分——联网答案不能冒充"已确认"，
+            # 且当初的限制说明（未核实来源/未命中官方来源…）要跟着一起还原
+            kind = str(cached.get("kind") or "local")
+            restored_limits = [
+                str(item) for item in (cached.get("limitations") or []) if str(item).strip()
+            ]
+            cache_note = (
+                "本条回答来自语义缓存（联网检索结果，最多缓存 30 分钟）；"
+                "下列来源是该答案最初生成时的引用。"
+                if kind == "web"
+                else "本条回答来自语义缓存；下列来源是该答案最初生成时的引用。"
+            )
             return AnswerBundle(
                 markdown=cached["answer"],
                 claims=[{
                     "claim_id": "c1", "text": cached["answer"], "kind": "factual",
-                    "status": "confirmed",
+                    "status": "confirmed" if kind == "local" else "generated",
                     "evidence": [{"source_id": "semantic-cache", "relation": "supports",
                                   "quote": f"语义缓存命中（相似度 {cached['score']}）"}],
                 }],
                 sources=[cache_marker, *restored],
                 structured=list(cached.get("structured") or []),
-                limitations=(
-                    ["本条回答来自语义缓存；下列来源是该答案最初生成时的引用。"]
-                    if restored else []
-                ),
+                limitations=[cache_note, *restored_limits] if (restored or restored_limits) else [cache_note],
+                cache_kind=kind,
                 terminal_reason="cache_hit",
                 thoughts=[{"round": 0, "decision": "cache_hit",
                            "reason": f"语义缓存命中（相似度 {cached['score']}），跳过全链路"}],
@@ -516,21 +530,28 @@ class LegacyQaRunner:
             answer = f"{answer.rstrip()} {citations}".rstrip()
             claim["text"] = answer
         # 语义缓存写入：仅公共知识回答（确认有支撑 + 未调用个人数据工具），
-        # 个人化回答不缓存，避免跨会话/跨用户复用个人数据
+        # 个人化回答不缓存，避免跨会话/跨用户复用个人数据。
+        # 2026-09-18：外层 runner 会接管写入（它能等到"最终答案"定下来），此时本地
+        # runner 只负责把 chunk hash 带出去，不自己写 —— 否则缓存的是用户没看到的草稿。
+        source_hashes = sorted(
+            {_digest(c.get("content") or "") for c in candidates if c.get("content")}
+        )
         if (
-            self._semantic_cache is not None
+            not self._defer_cache_write
+            and self._semantic_cache is not None
             and claim_status == "confirmed"
             and not result.get("error")
             and not _TIME_SENSITIVE.search(request.question)
             and not _used_personal_tools(tool_results)
         ):
             try:
-                source_hashes = sorted({_digest(c.get("content") or "") for c in candidates if c.get("content")})
                 self._semantic_cache.store(
                     request.question, answer, namespace,
                     source_hashes=source_hashes,
                     structured=list(result.get("structured") or []),
                     sources=list(sources),   # P1-3：连来源一起存，命中时还原
+                    kind="local",
+                    limitations=list(limitations),
                 )
             except Exception:
                 pass  # 缓存写入失败不影响回答
@@ -541,6 +562,7 @@ class LegacyQaRunner:
             limitations=limitations,
             structured=list(result.get("structured") or []),
             retrieval=retrieval_signal,
+            cache_source_hashes=source_hashes,
             terminal_reason="local_answer",
             thoughts=thoughts,
             truncated=bool(result.get("truncated")),

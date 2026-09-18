@@ -20,6 +20,9 @@ from typing import Any
 
 DEFAULT_THRESHOLD = 0.92
 DEFAULT_TTL_SECONDS = 86400.0  # 24h：校园知识时效性强，宁可短
+# 联网条目单独一套短 TTL（2026-09-18）：联网内容没有 chunk hash 可做定向失效，
+# 来源里还常有未核实公众号/自媒体，不能用本地那套 24h 来管。
+DEFAULT_WEB_TTL_SECONDS = 1800.0  # 30 分钟
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS semantic_cache(
@@ -30,6 +33,8 @@ CREATE TABLE IF NOT EXISTS semantic_cache(
     embedding TEXT NOT NULL,
     source_hashes TEXT NOT NULL,
     sources TEXT NOT NULL DEFAULT '[]',
+    kind TEXT NOT NULL DEFAULT 'local',
+    limitations TEXT NOT NULL DEFAULT '[]',
     created_at REAL NOT NULL,
     hit_count INTEGER NOT NULL DEFAULT 0
 );
@@ -50,6 +55,14 @@ def _ensure_columns(conn: "sqlite3.Connection") -> None:
     if "sources" not in cols:
         # 2026-09-17 修 P1-3：缓存回答的**原始来源**（命中时还原给用户/反馈分诊）
         conn.execute("ALTER TABLE semantic_cache ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
+    if "kind" not in cols:
+        # 2026-09-18：来源类型（local=本地知识库，web=联网检索/合并）——决定 TTL 与
+        # 命中时能否声称"已确认"
+        conn.execute("ALTER TABLE semantic_cache ADD COLUMN kind TEXT NOT NULL DEFAULT 'local'")
+    if "limitations" not in cols:
+        # 2026-09-18：限制说明必须跟着答案一起存，否则联网答案的"未核实来源""未命中
+        # 官方来源"等警示会在命中时丢掉
+        conn.execute("ALTER TABLE semantic_cache ADD COLUMN limitations TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
 
 
@@ -61,11 +74,13 @@ class SemanticCache:
         embedder=None,
         threshold: float = DEFAULT_THRESHOLD,
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
+        web_ttl_seconds: float = DEFAULT_WEB_TTL_SECONDS,
     ) -> None:
         self.db_path = Path(db_path)
         self._embedder = embedder  # 注入（测试）；默认延迟复用知识库共享 embedder
         self.threshold = threshold
         self.ttl = ttl_seconds
+        self.web_ttl = web_ttl_seconds
         self._lock = threading.RLock()
         self._ready = False
 
@@ -124,14 +139,20 @@ class SemanticCache:
         except Exception:
             return None  # embedding 不可用时缓存整体旁路，不影响问答主链路
         with self._lock, self._connect() as conn:
+            # 先按**最长**的 TTL 粗筛，再逐条按自己的 kind 判有效期
+            window = max(self.ttl, self.web_ttl)
             rows = conn.execute(
-                "SELECT id, question, answer, structured, sources, embedding, created_at FROM semantic_cache "
-                "WHERE namespace = ? AND created_at > ? ORDER BY created_at DESC",
-                (namespace, timestamp - self.ttl),
+                "SELECT id, question, answer, structured, sources, kind, limitations, embedding, created_at "
+                "FROM semantic_cache WHERE namespace = ? AND created_at > ? ORDER BY created_at DESC",
+                (namespace, timestamp - window),
             ).fetchall()
         best: dict[str, Any] | None = None
         best_score = 0.0
         for row in rows:
+            kind = str(row["kind"] or "local")
+            effective_ttl = self.web_ttl if kind == "web" else self.ttl
+            if row["created_at"] <= timestamp - effective_ttl:
+                continue  # 按类型过期（web 30 分钟 / local 24 小时）
             try:
                 vec = json.loads(row["embedding"])
             except (ValueError, TypeError):
@@ -143,6 +164,8 @@ class SemanticCache:
                     "answer": row["answer"],
                     "structured": json.loads(row["structured"] or "[]") or [],
                     "sources": json.loads(row["sources"] or "[]") or [],
+                    "kind": kind,
+                    "limitations": json.loads(row["limitations"] or "[]") or [],
                     "score": round(score, 4),
                     "created_at": row["created_at"],
                     "cache_id": row["id"],
@@ -165,6 +188,8 @@ class SemanticCache:
         source_hashes: list[str] | None = None,
         structured: list[dict] | None = None,
         sources: list[dict] | None = None,
+        kind: str = "local",
+        limitations: list[str] | None = None,
         now: float | None = None,
     ) -> bool:
         if not (question or "").strip() or not (answer or "").strip():
@@ -177,8 +202,8 @@ class SemanticCache:
             return False
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO semantic_cache(namespace, question, answer, structured, embedding, source_hashes, sources, created_at) "
-                "VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO semantic_cache(namespace, question, answer, structured, embedding, "
+                "source_hashes, sources, kind, limitations, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     namespace,
                     question.strip(),
@@ -187,6 +212,8 @@ class SemanticCache:
                     json.dumps(vec),
                     json.dumps(sorted(set(source_hashes or []))),
                     json.dumps(list(sources or []), ensure_ascii=False),
+                    "web" if str(kind) == "web" else "local",
+                    json.dumps(list(limitations or []), ensure_ascii=False),
                     timestamp,
                 ),
             )

@@ -38,6 +38,12 @@ class AnswerBundle:
     # 阶段1 结构化数据卡：工具结果表格（成绩/课表/考试/选课），不经 LLM 重述
     structured: list[dict[str, Any]] = field(default_factory=list)
     truncated: bool = False
+    # 语义缓存用的 chunk content hash（2026-09-18）：本地 runner 在"缓存写入交给外层
+    # runner"时把它带出来，发布激活时的定向失效才不会因为拿不到 hash 而失效
+    cache_source_hashes: list[str] = field(default_factory=list)
+    # 本条是"缓存命中"时的类型（"" / "local" / "web"）：web 类命中可直接复用，
+    # local 类命中仍需判定器把关（可能是"未收录"的半成品）——2026-09-18
+    cache_kind: str = ""
     # 本地链路的结构信号（2026-09-16）：供上层判断"本地到底有没有答出来"。
     # 字段：candidates_found / candidate_count / top_score / tool_used。
     # ⚠️ 实测只有 `candidates_found is False`（知识库压根没召回）是**可靠**判据；

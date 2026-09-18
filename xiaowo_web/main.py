@@ -68,6 +68,8 @@ def create_app(
             approved_retriever=approved_retriever,
             max_workers=min(resolved_settings.max_concurrent_runs, 16),
             semantic_cache=semantic_cache,
+            # 会被 EvidenceAwareRunner 包住时，缓存写入交给外层（外层才知道最终答案）
+            defer_cache_write=bool(resolved_settings.web_search_enabled),
         )
         if resolved_settings.web_search_enabled:
             if resolved_settings.search_provider == "bocha":
@@ -118,7 +120,8 @@ def create_app(
                 shadow_store.initialize()
                 shadow_comparer = ShadowComparer(shadow_store, search_client)
             resolved_runner = EvidenceAwareRunner(
-                local_runner, evidence_pipeline, shadow=shadow_comparer
+                local_runner, evidence_pipeline, shadow=shadow_comparer,
+                semantic_cache=semantic_cache,
             )
             if resolved_health_provider is None:
                 resolved_health_provider = SidecarHealthProvider(search_client, crawl_client)

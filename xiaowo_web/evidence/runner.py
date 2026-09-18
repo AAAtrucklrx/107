@@ -271,18 +271,80 @@ def _world_answer(question: str) -> AnswerBundle:
     )
 
 
+# ── 语义缓存：写"最终展示的答案"（2026-09-18） ────────────────
+# 为什么写入点要在这里：本地 runner 写缓存时还不知道自己会不会被联网答案覆盖，实测
+# 缓存里因此存了一堆"用户没看到的草稿"（例：`2026年暑期社会实践立项通知` 缓存的是本地
+# 353 字"未收录"，展示的却是联网 1193 字）。最终答案只在这里才定下来。
+_CACHE_TIME_SENSITIVE = re.compile(
+    r"(?:最新|最近|近期|近日|最近几天|今天|现在|当前|截至|刚刚|本周|本月|今年|目前|现行|还有效吗)"
+)
+_CACHE_PERSONAL_LEVELS = frozenset({"tool_result", "tool_cache"})
+_CACHE_TRUSTED_LEVELS = frozenset(
+    {"official_primary", "reliable_independent", "local_curated", "local"}
+)
+
+
+def _cache_kind(bundle) -> str | None:
+    """最终答案要不要进语义缓存：返回 'local' / 'web' / None（不缓存）。"""
+    if not str(getattr(bundle, "markdown", "") or "").strip():
+        return None
+    if bool(getattr(bundle, "truncated", False)):
+        return None  # 截断的半截答案不能进缓存
+    sources = list(getattr(bundle, "sources", None) or [])
+    if any((s.get("level") or "") in _CACHE_PERSONAL_LEVELS for s in sources):
+        return None  # 个人数据（成绩/课表/考试/日程）绝不进缓存
+    statuses = {str(c.get("status") or "") for c in (getattr(bundle, "claims", None) or [])}
+    if not statuses or "insufficient" in statuses:
+        return None  # 拒答 / 证据不足
+    reason = str(getattr(bundle, "terminal_reason", "") or "")
+    if reason == "local_answer":
+        return "local" if statuses == {"confirmed"} else None
+    if reason in {"AI_GENERATED", "web_evidence_confirmed"}:
+        # 联网条目额外护栏：至少 1 条可信来源，否则不把自媒体内容冻结进缓存
+        if not any((s.get("level") or "") in _CACHE_TRUSTED_LEVELS for s in sources):
+            return None
+        return "web"
+    return None
+
+
 class EvidenceAwareRunner:
     def __init__(
         self,
         local_runner: QaRunner,
         pipeline: EvidencePipeline,
         shadow: object | None = None,
+        semantic_cache: object | None = None,
     ) -> None:
         self.local_runner = local_runner
         self.pipeline = pipeline
         # Phase 2 影子对比（2026-09-17）：None = 关闭。只记录，不参与回答。
         self.shadow = shadow
         self._shadow_tasks: set[asyncio.Task] = set()
+        # 语义缓存（2026-09-18）：None = 关闭；生产由 main 注入共享单例
+        self._semantic_cache = semantic_cache
+
+    def _cache_final(self, request: QaRunRequest, bundle: AnswerBundle) -> None:
+        """把**最终展示的答案**写进语义缓存（一切异常都吞掉，绝不影响回答）。"""
+        if self._semantic_cache is None:
+            return
+        if _CACHE_TIME_SENSITIVE.search(request.question or ""):
+            return  # 时效问句：宁可每次重查，也不端出过期缓存
+        kind = _cache_kind(bundle)
+        if kind is None:
+            return
+        namespace = "demo" if request.principal.auth_mode == "demo" else "production"
+        hashes = list(getattr(bundle, "cache_source_hashes", None) or []) if kind == "local" else []
+        try:
+            self._semantic_cache.store(
+                request.question, bundle.markdown, namespace,
+                source_hashes=hashes,
+                structured=list(getattr(bundle, "structured", None) or []),
+                sources=list(getattr(bundle, "sources", None) or []),
+                kind=kind,
+                limitations=list(getattr(bundle, "limitations", None) or []),
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _shadow_compare(self, request: QaRunRequest, web: AnswerBundle, latency: float) -> None:
         """把这一次线上答案（方案 A）交给影子对比后台记录方案 B。
@@ -324,6 +386,12 @@ class EvidenceAwareRunner:
         task.add_done_callback(self._shadow_tasks.discard)
 
     async def run(self, request: QaRunRequest) -> AnswerBundle:
+        # 2026-09-18：先让内层决定答案（本地/联网/合并），拿到**最终** bundle 再写缓存
+        bundle = await self._run_inner(request)
+        self._cache_final(request, bundle)
+        return bundle
+
+    async def _run_inner(self, request: QaRunRequest) -> AnswerBundle:
         # 闲聊入口快路径：短问候句不进入联网证据链（模板回应，毫秒级）
         if is_chitchat_query(request.question):
             return chitchat_reply()
@@ -347,6 +415,12 @@ class EvidenceAwareRunner:
         # 由回答下方的「强制联网重答」触发）。
         world_query = _is_world_query(request.question)
         local = await self.local_runner.run(request)
+        # 2026-09-18：**联网**缓存命中直接复用 —— 它当初就是"核实过能答"的答案，且 TTL
+        # 仅 30 分钟；不短路的话，cache 命中的 claims 是 generated → local_ready 为 False
+        # → 又跑一遍联网，缓存等于白存（实测 6.2s 重跑并写出重复条目）。
+        # local 类命中不短路：它可能是"未收录"的半成品，仍需判定器决定要不要联网补。
+        if getattr(local, "cache_kind", "") == "web":
+            return local
         # 未登录 + 问句需要个人数据/校园工具 → 联网无从补足，本地的「请登录」才是权威答案。
         # 否则 local_ready 判 False（"请登录"类 claim 天然是 insufficient）会把这份好答案
         # 顶掉，换成网页泛泛科普（实测引到了极客公园/钛媒体）。2026-09-16。
@@ -409,7 +483,9 @@ class EvidenceAwareRunner:
         # 时效性问题且本地也未确认时，保留诚实拒答（不回退可能过期的数据）。
         fallback_eligible = (
             web.terminal_reason in {"EVIDENCE_INSUFFICIENT", "CRAWL_BLOCKED"}
-            and local.terminal_reason == "local_answer"
+            # cache_hit 同样是"本地已有的好答案"（语义缓存只存最终展示过的答案）；
+            # 漏掉它会把缓存的答案丢掉、端出 88 字固定拒答（2026-09-18 实测）
+            and local.terminal_reason in {"local_answer", "cache_hit"}
             and bool(local.markdown.strip())
             and (has_tool_source or local_ready or not current)
         )
