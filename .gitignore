@@ -82,3 +82,10 @@ database/*.db-wal
 database/*.db-shm
 scripts/qa60_run.py
 scripts/data/
+
+# 服务器运维脚本的运行态产物（2026-09-22：deploy/server/ 一直未入库，日志/pid/状态不入库）
+deploy/server/logs/
+deploy/server/run/
+deploy/server/*.out
+deploy/server/*.log
+deploy/server/__pycache__/
