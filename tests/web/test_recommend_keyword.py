@@ -173,8 +173,14 @@ def test_extractor_keeps_real_course_names(tmp_path, monkeypatch) -> None:
 # ── ③ 空池兜底：真·硬条件清空时给方案课程清单 ────────────────
 
 def test_real_direction_absent_from_program_falls_back_to_term_list(tmp_path, monkeypatch) -> None:
+    """关键词在评课库里查不到任何课程 → 按 F2c 给方案内该学期清单（不放宽硬条件）。
+
+    注意：2026-09-22 起，若关键词是**唯一**一个库内课程名的前缀（如「计算系统概论」↔
+    「计算系统概论A」），会改为列出那个课程的全部班级（见 test_exact_course_listing.py）。
+    这里用一个真正查不到的方向词，走兜底分支。
+    """
     monkeypatch.setattr(advisor_tools, "_cdb", _mini_db(tmp_path))
-    out = _call(keywords=["量子信息"])  # 库里真有（前缀命中），但本人方案里没有
+    out = _call(keywords=["量子场论"])  # 库里没有这门课，也没有以它开头的课名
     assert out["recommendations"] == [], "硬条件不放宽：推荐列表仍为空"
     fb = out.get("program_term_courses")
     assert fb and fb["target_term"] == "2春"

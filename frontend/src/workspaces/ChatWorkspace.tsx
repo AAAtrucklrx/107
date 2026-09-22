@@ -338,7 +338,7 @@ function StageStrip({ message }: { message: ChatMessage }) {
 }
 
 // B1: 打字机渲染 — 流式期间逐块渐显 markdown, 完成后一次全显
-function TypewrittenAnswer({ message }: { message: ChatMessage }) {
+function TypewrittenAnswer({ message, onAsk }: { message: ChatMessage; onAsk?: (question: string) => void }) {
   const active = message.status === "streaming";
   const full = message.content;
   const [shown, setShown] = useState(active ? 0 : full.length);
@@ -362,7 +362,7 @@ function TypewrittenAnswer({ message }: { message: ChatMessage }) {
   return (
     <>
       {(message.structured ?? []).map((table, index) => (
-        <DataTable key={index} table={table} />
+        <DataTable key={index} table={table} onAsk={onAsk} />
       ))}
       <RenderedAnswer
         content={full.slice(0, shown)}
@@ -397,24 +397,65 @@ function cellLevel(column: string, cell: string): "high" | "mid" | "low" | undef
   return undefined;
 }
 
-function DataTable({ table }: { table: StructuredBlock }) {
+function DataTable({ table, onAsk }: { table: StructuredBlock; onAsk?: (question: string) => void }) {
+  // 2026-09-22：课程类卡片可点 —— 点击某行/快捷按钮会把该课的追问问句填进输入框
+  //（只填充不自动发送，同学可以改完再发）。没有回调时保持原来的纯展示表格。
+  const questions = table.row_questions ?? [];
+  const interactive = Boolean(onAsk) && questions.some(Boolean);
+  const ask = (question: string | null | undefined) => {
+    if (onAsk && question) onAsk(question);
+  };
   return (
     <div className="structured-table" role="table" aria-label={table.title}>
-      <div className="structured-table-title">{table.title}</div>
+      <div className="structured-table-title">
+        {table.title}
+        {interactive && <span className="structured-table-hint">点击任意一行可继续追问</span>}
+      </div>
       <table>
         <thead>
           <tr>{table.columns.map((column, i) => <th key={i}>{column}</th>)}</tr>
         </thead>
         <tbody>
-          {table.rows.map((row, ri) => (
-            <tr key={ri}>
-              {row.map((cell, ci) => (
-                <td key={ci} data-level={cellLevel(table.columns[ci] ?? "", cell)}>{cell}</td>
-              ))}
-            </tr>
-          ))}
+          {table.rows.map((row, ri) => {
+            const question = questions[ri] ?? null;
+            const rowInteractive = Boolean(onAsk && question);
+            return (
+              <tr
+                key={ri}
+                className={rowInteractive ? "structured-table-row--ask" : undefined}
+                tabIndex={rowInteractive ? 0 : undefined}
+                aria-label={rowInteractive ? `点击追问：${question}` : undefined}
+                title={rowInteractive ? `点击追问：${question}` : undefined}
+                onClick={rowInteractive ? () => ask(question) : undefined}
+                onKeyDown={rowInteractive ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    ask(question);
+                  }
+                } : undefined}
+              >
+                {row.map((cell, ci) => (
+                  <td key={ci} data-level={cellLevel(table.columns[ci] ?? "", cell)}>{cell}</td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      {Boolean(onAsk && table.actions?.length) && (
+        <div className="structured-table-actions">
+          {table.actions?.map((action, i) => (
+            <button
+              key={i}
+              type="button"
+              className="structured-table-action"
+              onClick={() => ask(action.question)}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1019,7 +1060,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                 )}
                 {message.role === "assistant" && (message.content || !!message.sources?.length) && (
                   <Suspense fallback={<div className="message-render-loading" role="status" aria-label="正在呈现回答"><span /><span /></div>}>
-                    <TypewrittenAnswer message={message} />
+                    <TypewrittenAnswer message={message} onAsk={selectStarterPrompt} />
                   </Suspense>
                 )}
                 {message.role === "assistant" && message.truncated && message.status !== "streaming" && (

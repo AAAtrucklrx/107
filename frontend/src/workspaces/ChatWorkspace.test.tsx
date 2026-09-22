@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { ApiClientError, apiMutation, streamRunEvents } from "../lib/api";
@@ -57,6 +57,18 @@ vi.mock("../lib/api", () => {
     });
   }),
   };
+});
+
+// 2026-09-22：个别用例用 mockImplementation（持久）改写 apiMutation，会污染后续用例
+//（新加的卡片用例就被上一个用例的 AUTH_REQUIRED 拒绝实现带崩过）。每个用例前恢复默认实现。
+beforeEach(() => {
+  vi.mocked(apiMutation).mockImplementation((() => Promise.resolve({
+    run_id: "run-fixture",
+    conversation_id: null,
+    requested_mode: "auto",
+    effective_mode: "auto",
+    events_url: "/api/v1/chat/runs/run-fixture/events",
+  })) as never);
 });
 
 const config: PublicConfig = {
@@ -278,3 +290,78 @@ test("匿名问个人数据时给登录引导而不是故障（P3-10 回归）",
   expect(screen.queryByText("本次回答未完成")).toBeNull();
 });
 
+
+
+test("课程卡片可点追问：点击行/按钮只填充输入框、不自动发送（2026-09-22）", async () => {
+  const card = {
+    title: "课程推荐",
+    source_tool: "recommend_courses",
+    columns: ["课程", "评分·样本"],
+    rows: [["量子物理", "1.5分·83条"]],
+    row_questions: ["量子物理有哪些老师？"],
+    actions: [{ label: "量子物理 的评论原文", question: "量子物理的评论" }],
+  };
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "data.table", at: "2026-09-22T00:00:00Z", data: card });
+    options.onEvent({
+      id: 2, run_id: "run-fixture", type: "answer.segment", at: "2026-09-22T00:00:01Z",
+      data: { segment_id: "seg-ask", markdown: "量子物理的评课情况。", claim_ids: [] },
+    });
+    options.onEvent({
+      id: 3, run_id: "run-fixture", type: "answer.completed", at: "2026-09-22T00:00:02Z",
+      data: { answer_id: "answer-ask", claims: [], sources: [], limitations: [], terminal_reason: "local_answer" },
+    });
+  });
+
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  await user.type(input, "量子物理怎么样");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(screen.getByText(/量子物理的评课情况/)).toBeInTheDocument());
+
+  const callsBefore = vi.mocked(apiMutation).mock.calls.length;
+
+  // ① 整行可点 → 把该行的追问问句填进输入框
+  await user.click(screen.getByLabelText("点击追问：量子物理有哪些老师？"));
+  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("量子物理有哪些老师？");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveFocus());
+
+  // ② 卡片级快捷按钮同理
+  await user.click(screen.getByRole("button", { name: "量子物理 的评论原文" }));
+  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("量子物理的评论");
+
+  // ③ 只填充、不自动发送（没有新的 run 请求）
+  expect(vi.mocked(apiMutation).mock.calls.length).toBe(callsBefore);
+});
+
+test("没有追问问句的卡片保持纯展示：无提示、点击不填充（2026-09-22）", async () => {
+  const plainCard = {
+    title: "当日空闲教室", source_tool: "find_empty_room",
+    columns: ["教室", "空闲时段"], rows: [["3C301", "14:00-16:00"]],
+  };
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "data.table", at: "2026-09-22T00:00:00Z", data: plainCard });
+    options.onEvent({
+      id: 2, run_id: "run-fixture", type: "answer.segment", at: "2026-09-22T00:00:01Z",
+      data: { segment_id: "seg-plain", markdown: "空闲教室如下。", claim_ids: [] },
+    });
+    options.onEvent({
+      id: 3, run_id: "run-fixture", type: "answer.completed", at: "2026-09-22T00:00:02Z",
+      data: { answer_id: "answer-plain", claims: [], sources: [], limitations: [], terminal_reason: "local_answer" },
+    });
+  });
+
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  await user.type(input, "现在有哪些空教室");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(screen.getByText(/空闲教室如下/)).toBeInTheDocument());
+
+  expect(screen.queryByText("点击任意一行可继续追问")).not.toBeInTheDocument();
+  expect(document.querySelector(".structured-table-row--ask")).toBeNull();
+  await user.click(screen.getByText("3C301"));
+  // 纯展示卡片：点行不填充任何东西（发送后输入框本就是空的）
+  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("");
+});

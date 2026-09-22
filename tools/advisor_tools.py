@@ -977,6 +977,43 @@ def _parse_first_icourse_id(icourse_ids) -> int | None:
     return None
 
 
+def _same_name_pages(conn: sqlite3.Connection, name: str) -> dict:
+    """同名评课页概况（2026-09-22）。
+
+    评课社区一门课通常有**多个页面**（每位老师/每个班次一页；有的页不标注老师），
+    分数差异可能很大（实测「量子物理」30 页 / 区间 1.5~10.0）。工具返回的头号分数取自
+    其中一页，用户看到单一数字会以为"这门课就是这个分"，所以这里如实给出：
+    页数、参与统计的页数、分数区间、以及"本分数取自哪一页"。
+    """
+    key = _norm_course_name(name or "")
+    if not key:
+        return {}
+    try:
+        rows = conn.execute(
+            "SELECT c.code, r.rating_avg, r.rating_count FROM courses c "
+            "JOIN course_rates r ON r.course_id = c.id "
+            f"WHERE {_SQL_NORM_NAME} = ? AND r.rating_count > 0",
+            (key,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    # 兼容未设 row_factory=Row 的连接（脚本/测试可能直接 sqlite3.connect）
+    rows = [
+        dict(r) if hasattr(r, "keys")
+        else {"code": r[0], "rating_avg": r[1], "rating_count": r[2]}
+        for r in rows
+    ]
+    if len(rows) < 2:
+        return {"same_name_pages": len(rows)} if rows else {}
+    scored = [r for r in rows if (r["rating_count"] or 0) >= _MIN_CODE_SAMPLE]
+    basis = scored or rows
+    return {
+        "same_name_pages": len(rows),
+        "same_name_scored_pages": len(scored),
+        "score_range": f"{min(r['rating_avg'] for r in basis):.1f}~{max(r['rating_avg'] for r in basis):.1f}",
+    }
+
+
 def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
     """由课程行构建完整推荐条目（字段与旧实现一致）。
     row 需含 id/name/code/credit/dept/course_type/rating_avg/rating_count。
@@ -1032,6 +1069,16 @@ def _build_item(conn: sqlite3.Connection, row, profile: dict) -> dict:
         "recommendation_score": rank.get("score"),
         "match": {k: v for k, v in rank.items() if k != "urgency_rank"},
     }
+    # 同名多页披露（2026-09-22）：让"这门课多少分"有个来处，并给同学下钻的方向
+    pages = _same_name_pages(conn, row["name"])
+    item.update(pages)
+    if pages.get("same_name_pages", 0) > 1:
+        who = "、".join(t["name"] for t in teachers[:3]) or "该页未标注教师"
+        item["page_note"] = (
+            f"本分数只代表「{row['name']}」在评课社区的一个页面（{who}，{row['rating_count']} 条），"
+            f"该课同名共 {pages['same_name_pages']} 页、各页分数区间 {pages.get('score_range', '—')}，"
+            f"差异主要来自任课老师/班次"
+        )
     item["reasons"] = _generate_reason(conn, item, profile, rank, program_hint)
     return item
 
@@ -1236,6 +1283,31 @@ def _exact_course_rows(conn: sqlite3.Connection, c_key: str) -> list[sqlite3.Row
     return merged
 
 
+def _prefix_course_names(conn: sqlite3.Connection, key: str) -> list[str]:
+    """库内以 key 为前缀的**不同课程名**（归一化后比较，最多返回 8 个）。
+
+    2026-09-22：用户实测「计算系统概论」在评课库里叫「计算系统概论A」——指定课程直查按精确名匹配
+    找不到就退化成"单门课一行"，只显示一个老师。这里用来判断"是不是只有一个库内名字对得上"：
+    只有 1 个才敢按它列全部班；≥2 个（如「电磁学」对应 电磁学A/B/C/(H)/电磁学）视为有歧义，不猜。
+    """
+    if len(key) < 3:
+        return []
+    try:
+        rows = conn.execute(
+            f"SELECT DISTINCT c.name FROM courses c WHERE {_SQL_NORM_NAME} LIKE ? LIMIT 20",
+            (key + "%",),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    names: list[str] = []
+    for row in rows:
+        name = row["name"] if hasattr(row, "keys") else row[0]
+        norm = _norm_course_name(name or "")
+        if norm and norm != key and norm.startswith(key) and name not in names:
+            names.append(name)
+    return names
+
+
 def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
                             max_results: int) -> dict | None:
     """指定课程直查: 返回该课程全部班级(合教组合整体展示), 不套培养方案。
@@ -1248,7 +1320,15 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
         c_key = _norm_course_name(kw)
         for alias, full in _COURSE_ALIAS.items():
             c_key = c_key.replace(alias, full)
+        matched_name = ""
         rows = _exact_course_rows(conn, c_key)
+        if not rows:
+            # 2026-09-22：教务/口头的课名常是评课库名字的前缀（「计算系统概论」↔「计算系统概论A」）。
+            # 恰好只有一个库内名字以它开头时，按那个名字列全部班；多于一个则视为有歧义，不猜。
+            candidates = _prefix_course_names(conn, c_key)
+            if len(candidates) == 1:
+                matched_name = candidates[0]
+                rows = _exact_course_rows(conn, _norm_course_name(matched_name))
         if not rows:
             continue  # 该关键词未命中课程, 试下一个
         # 2026-09-22 修「未知老师 + 评分极低」（用户 09-21 实测「线性代数课程推荐」）：
@@ -1315,6 +1395,12 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
             "source": "exact_course",
             "limitations": [],
         }
+        if matched_name:
+            # 名字映射要如实告知，避免同学以为"只有这一个老师/这一门课"
+            result["matched_course_name"] = matched_name
+            result["limitations"].append(
+                f"评课库里这门课的名字是「{matched_name}」（你说的「{kw}」是简称），以上是该课程的全部班级。"
+            )
         if unrated_count:
             result["unrated_class_count"] = unrated_count
             result["limitations"].append(
@@ -2060,8 +2146,17 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
         ).fetchone()
         rate_count = agg[0] or 0
         rating_avg = round(agg[1] / rate_count, 1) if rate_count else 0.0
+        # 2026-09-22：给"这门课到底怎么查"补上评课页链接与同名多页披露
+        try:
+            icourse_raw = conn.execute(
+                "SELECT icourse_ids FROM courses WHERE id=?", (c["id"],)).fetchone()
+            course_community = _icourse_url(
+                _parse_first_icourse_id(icourse_raw[0] if icourse_raw else None))
+        except sqlite3.Error:
+            course_community = ""
+        pages = _same_name_pages(conn, c["name"])
         conn.close()
-        return {
+        result = {
             "course": c["name"],
             "code": c["code"],
             "credit": c["credit"],
@@ -2072,7 +2167,16 @@ def analyze_teacher(teacher_name: str | None = None, course: str | None = None) 
             "reviews_sample": reviews,
             "reviews_units_total": units_total,
             "reviews_units_covered": units_covered,
+            "community_url": course_community,
         }
+        result.update(pages)
+        if pages.get("same_name_pages", 0) > 1:
+            result["page_note"] = (
+                f"「{c['name']}」在评课社区共 {pages['same_name_pages']} 个班级页面，"
+                f"上面这个均分是各班按评论数加权的整课口径，各班分数区间 "
+                f"{pages.get('score_range', '—')}（差异来自任课老师/班次）"
+            )
+        return result
 
     # 老师模式: **姓名分量精确相等**（合教组合逗号连写，如"魏海明, 计永胜"）；
     # 只有精确匹配不到才退回模糊 —— 否则"龚伟"会把"龚伟峰"一起并进来（2026-09-18 实测）。

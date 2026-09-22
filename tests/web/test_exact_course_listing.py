@@ -124,3 +124,71 @@ def test_series_merge_unaffected_by_ordering_change(tmp_path, monkeypatch) -> No
     out = _listing(tmp_path, monkeypatch)
     names = sorted({item["name"] for item in out["recommendations"]})
     assert names == ["线性代数", "线性代数(A1)", "线性代数(B1)"]
+
+
+# ── 2026-09-22：课名是评课库名字的前缀（「计算系统概论」↔「计算系统概论A」） ──
+# 用户实测：「问计算系统概论只返回一个老师」——库里没有精确名，指定课程直查失配后
+# 退化成"单门课一行"，只显示一个老师。修法：唯一前缀命中时才按那个名字列全部班。
+
+def _prefix_db(tmp_path: Path, rows):
+    """rows: (id, name, code, avg, count, teacher)"""
+    path = tmp_path / "course_data.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+    for cid, name, code, avg, count, teacher in rows:
+        conn.execute("INSERT INTO courses(id, name, dept, code, credit, icourse_ids, rating_avg, rate_count)"
+                     " VALUES(?,?,?,?,?, '[]', ?, ?)",
+                     (cid, name, "计算机科学与技术系", code, 4.0, avg, count))
+        conn.execute("INSERT INTO course_rates(course_id, rating_sum, rating_count, rating_avg, dims_dist)"
+                     " VALUES(?,?,?,?, '{}')", (cid, avg * count, count, avg))
+        if teacher:
+            conn.execute("INSERT INTO teachers(id, name) VALUES(?,?)", (cid, teacher))
+            conn.execute("INSERT INTO course_teachers(course_id, teacher_id) VALUES(?,?)", (cid, cid))
+    conn.commit()
+    conn.close()
+
+    def _fake_cdb():
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        return c
+
+    return _fake_cdb
+
+
+CS_INTRO = [
+    (1, "计算系统概论A", "CS1002A01", 7.6, 44, "张辉"),
+    (2, "计算系统概论A", "CS1002A02", 5.8, 53, "苗付友"),
+    (3, "计算系统概论A", "CS1002A03", 8.9, 14, "陈俊仕"),
+]
+
+
+def test_unique_prefix_lists_all_classes(tmp_path, monkeypatch) -> None:
+    """「计算系统概论」→ 库里唯一前缀命中「计算系统概论A」→ 列出它的全部班级（不是 1 行）。"""
+    monkeypatch.setattr(advisor_tools, "_cdb", _prefix_db(tmp_path, CS_INTRO))
+    out = recommend_courses.invoke({"profile": {"max_results": 10}, "keywords": ["计算系统概论"]})
+    assert out.get("source") == "exact_course"
+    assert out["matched_course_name"] == "计算系统概论A"
+    assert len(out["recommendations"]) == 3
+    assert {t["name"] for item in out["recommendations"] for t in item["teachers"]} == {"张辉", "苗付友", "陈俊仕"}
+    assert "简称" in "；".join(out["limitations"]), "名字映射要如实告知"
+
+
+def test_ambiguous_prefix_is_not_merged(tmp_path, monkeypatch) -> None:
+    """多个不同课名共享前缀（电磁学A / 电磁学B）时不得合成一个列表。"""
+    rows = [
+        (1, "电磁学A", "P1", 8.0, 20, "甲"),
+        (2, "电磁学B", "P2", 9.0, 20, "乙"),
+    ]
+    monkeypatch.setattr(advisor_tools, "_cdb", _prefix_db(tmp_path, rows))
+    out = recommend_courses.invoke({"profile": {"max_results": 10}, "keywords": ["电磁学"]})
+    assert out.get("matched_course_name") is None
+    assert out.get("source") != "exact_course", "有歧义时退回普通推荐，不猜"
+
+
+def test_exact_name_still_wins_over_prefix(tmp_path, monkeypatch) -> None:
+    """精确同名存在时优先精确（不被前缀逻辑干扰）。"""
+    rows = CS_INTRO + [(9, "计算系统概论", "CS1002", 6.0, 10, "老王")]
+    monkeypatch.setattr(advisor_tools, "_cdb", _prefix_db(tmp_path, rows))
+    out = recommend_courses.invoke({"profile": {"max_results": 10}, "keywords": ["计算系统概论"]})
+    assert out.get("matched_course_name") is None
+    assert [item["name"] for item in out["recommendations"]] == ["计算系统概论"]

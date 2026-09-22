@@ -1379,6 +1379,56 @@ button:disabled {
   background: var(--surface-muted);
 }
 
+/* 2026-09-22：课程类卡片可点追问 —— 整行可点，只把问题填进输入框（不自动发送） */
+.structured-table-hint {
+  margin-left: 8px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+.structured-table tbody tr.structured-table-row--ask {
+  cursor: pointer;
+}
+
+.structured-table tbody tr.structured-table-row--ask:hover td {
+  background: var(--primary-soft);
+}
+
+.structured-table tbody tr.structured-table-row--ask:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.structured-table tbody tr.structured-table-row--ask:focus-visible td {
+  background: var(--primary-soft);
+}
+
+.structured-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.structured-table-action {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.structured-table-action:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
 /* 单元格语义分级：颜色只作辅助，数值/文字本身仍是主要线索 */
 .structured-table td[data-level="high"] {
   background: var(--success-soft);

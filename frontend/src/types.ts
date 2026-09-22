@@ -55,6 +55,11 @@ export interface StructuredBlock {
   columns: string[];
   rows: string[][];
   source_tool?: string;
+  /** 逐行对应的追问问句（与 rows 一一对应）：点击该行会把这句话填进输入框。
+   *  2026-09-22：课程类卡片用（「量子物理有哪些老师？」），让同学不用自己想"该怎么问"。 */
+  row_questions?: (string | null)[];
+  /** 卡片级快捷追问按钮（如「<课程> 的评论原文」）。 */
+  actions?: { label: string; question: string }[];
 }
 
 export interface Source {

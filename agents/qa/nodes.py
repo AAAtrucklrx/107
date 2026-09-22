@@ -2562,6 +2562,11 @@ _STRUCTURE_SPECS: dict[str, dict] = {
             str(r.get("course_name", r.get("name", "")) or ""),
             str(r.get("dept", "") or ""),
         ],
+        # 2026-09-22：卡片可点 → 前端把这句话填进输入框（只填充不发送），同学不用想"该怎么问"
+        "row_question": lambda r, p: (
+            f"{r.get('course_name') or r.get('name')}怎么样？"
+            if (r.get("course_name") or r.get("name")) else None
+        ),
     },
     # ── 2026-09-15 新增：推荐 / 评课 / 对比三类此前无卡，用户看不到表格 ──
     "recommend_courses": {
@@ -2570,12 +2575,16 @@ _STRUCTURE_SPECS: dict[str, dict] = {
         "columns": ["课程", "教师", "学分", "方案学期", "评分·样本", "推荐依据"],
         "row": lambda r: [
             str(r.get("name", "") or ""),
-            "、".join(str(x.get("name", "")) for x in (r.get("teachers") or [])[:3]) or "未知",
+            "、".join(str(x.get("name", "")) for x in (r.get("teachers") or [])[:3]) or "（该页未标注教师）",
             str(r.get("credit", "") if r.get("credit") is not None else ""),
             str((r.get("program_hint") or {}).get("term", "") or ""),
             f"{r.get('rating_avg') if r.get('rating_avg') is not None else '—'}分·{r.get('rate_count', 0) or 0}条",
             "；".join(str(x) for x in (r.get("reasons") or [])[:2]),
         ],
+        "row_question": lambda r, p: _course_row_question(
+            str(r.get("name") or ""),
+            [str(x.get("name") or "") for x in (r.get("teachers") or [])],
+        ),
     },
     "analyze_teacher": {
         # 课程模式给 teachers（各班，含合教组合）；教师模式给 courses（该教师各课）
@@ -2592,6 +2601,15 @@ _STRUCTURE_SPECS: dict[str, dict] = {
             str((r.get("dims_mode") or {}).get("给分", "") or ""),
             str((r.get("dims_mode") or {}).get("收获", "") or ""),
         ],
+        "row_question": lambda r, p: (
+            _teacher_row_question(str(p.get("course") or ""), str(r.get("name") or ""))
+            if p.get("course")
+            else (f"{r.get('name')}怎么样？" if r.get("name") else None)
+        ),
+        "actions": lambda p: (
+            [{"label": f"{p['course']} 的评论原文", "question": f"{p['course']}的评论"}]
+            if p.get("course") else []
+        ),
     },
     "compare_courses": {
         "title": "课程对比",
@@ -2606,6 +2624,44 @@ _STRUCTURE_SPECS: dict[str, dict] = {
         ],
     },
 }
+
+
+def _teacher_row_question(course: str, name: str) -> str | None:
+    """评课对比卡的逐行追问句：**每一行都要能问**，而且问的是「这个班」（2026-09-22）。
+
+    用户要求：合教组合、异常名也都要可问。生成规则（均已真机验证下游能答到"这个班"）：
+    - 单个老师（2~4 汉字）→「<课> <老师> 老师怎么样？」
+    - 合教组合（顿号/逗号分隔的多个姓名）→「<课> <甲、乙> 合教的班怎么样？」
+    - 评课页未标注老师 →「<课> 未标注老师的那个班怎么样？」
+    - 其它异常名（如库里拼坏的合教串）→「<课> <原名> 这个班怎么样？」（原名保留，便于对回表里那一行）
+    """
+    who = (name or "").strip()
+    if not who or "未标注" in who or "未知" in who:
+        return f"{course} 未标注老师的那个班怎么样？" if course else None
+    if re.fullmatch(r"[\u4e00-\u9fff]{2,4}", who):
+        return f"{course} {who} 老师怎么样？"
+    parts = [part.strip() for part in re.split(r"[,，、]", who) if part.strip()]
+    if len(parts) > 1 and all(re.fullmatch(r"[\u4e00-\u9fff]{2,4}", p) for p in parts):
+        return f"{course} {'、'.join(parts)} 合教的班怎么样？"
+    return f"{course} {who} 这个班怎么样？"
+
+
+def _course_row_question(course: str, teachers: list[str]) -> str | None:
+    """课程推荐 / 搜索结果卡的逐行追问句（2026-09-22，用户实测「电磁学C 还是有哪些老师」）。
+
+    与评课对比卡的区别：这些卡的一行是**一门课**（可能带该页老师），不是"某个班"，
+    所以有老师就问这个班、没有老师就问这门课，**不再统一问「有哪些老师」**。
+    """
+    if not course:
+        return None
+    names = [str(t).strip() for t in (teachers or []) if str(t).strip()]
+    if not names:
+        return f"{course}怎么样？"
+    if len(names) == 1 and re.fullmatch(r"[\u4e00-\u9fff]{2,4}", names[0]):
+        return f"{course} {names[0]} 老师怎么样？"
+    if all(re.fullmatch(r"[\u4e00-\u9fff]{2,4}", n) for n in names):
+        return f"{course} {'、'.join(names)} 合教的班怎么样？"
+    return f"{course} {'、'.join(names)} 这个班怎么样？"
 
 
 def _tool_to_structured(results: list[dict]) -> list[dict]:
@@ -2626,6 +2682,7 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
         if not isinstance(rows_raw, list) or not rows_raw:
             continue
         rows = []
+        row_questions: list[str | None] = []
         for r in rows_raw:
             if not isinstance(r, dict):
                 continue
@@ -2633,6 +2690,15 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
                 rows.append(spec["row"](r))
             except Exception:  # noqa: BLE001 — 单行异常只跳过该行，整卡仍可用
                 continue
+            # 追问句与 rows 一一对应（前端点击该行 → 填进输入框）
+            question = None
+            q_fn = spec.get("row_question")
+            if q_fn is not None:
+                try:
+                    question = q_fn(r, payload)
+                except Exception:  # noqa: BLE001 — 追问问句生成失败不影响卡片本身
+                    question = None
+            row_questions.append(question)
         if rows:
             title = spec["title"]
             if callable(title):  # 动态标题：如「缺口」仅在已修记录已知时才成立
@@ -2640,12 +2706,24 @@ def _tool_to_structured(results: list[dict]) -> list[dict]:
                     title = title(payload)
                 except Exception:  # noqa: BLE001 — 标题失败退回中性名，不影响整卡
                     title = "数据卡"
-            tables.append({
+            table = {
                 "title": title,
                 "columns": list(spec["columns"]),
                 "rows": rows,
                 "source_tool": item.get("tool"),
-            })
+            }
+            if any(row_questions):
+                table["row_questions"] = row_questions
+            actions_fn = spec.get("actions")
+            if actions_fn is not None:
+                try:
+                    actions = [a for a in (actions_fn(payload) or [])
+                               if isinstance(a, dict) and a.get("question")]
+                except Exception:  # noqa: BLE001
+                    actions = []
+                if actions:
+                    table["actions"] = actions
+            tables.append(table)
     return tables
 
 
@@ -2692,7 +2770,7 @@ def _build_tool_summary(results: list[dict]) -> str:
 
             def _dump(items, prefix=""):
                 for item in items:
-                    t_names = "、".join(x["name"] for x in item.get("teachers", [])[:3]) or "未知"
+                    t_names = "、".join(x["name"] for x in item.get("teachers", [])[:3]) or "（该页未标注教师）"
                     hint = item.get("program_hint") or {}
                     if hint:
                         hint_txt = (f"｜方案:{hint.get('program', '')[:20]}/"
@@ -2705,8 +2783,17 @@ def _build_tool_summary(results: list[dict]) -> str:
                     credit_txt = f"{credit}学分" if credit else ""
                     curl = item.get("community_url") or ""
                     curl_txt = f" | 评课页: {curl}" if curl else ""
+                    # 2026-09-22：同名多页披露 + 小样本标注，避免"一门课一个分数"被当成定论
+                    pages_n = item.get("same_name_pages") or 0
+                    pages_txt = (f" | 该课在评课社区共 {pages_n} 页（每位老师/班次一页），"
+                                 f"各页分数区间 {item.get('score_range', '—')}"
+                                 if pages_n > 1 else "")
+                    note_txt = f" | 注意: {item['sample_note']}" if item.get("sample_note") else ""
                     lines.append(f"- {item.get('name', '?')}（{credit_txt}） | {t_names} | {item.get('rating_avg')}分·{item.get('rate_count')}条"
-                                 f" | 近3次开课 {terms_txt}{hint_txt} | 评论{len(item.get('top_reviews') or [])}条{curl_txt}")
+                                 f" | 近3次开课 {terms_txt}{hint_txt}{pages_txt}{note_txt}"
+                                 f" | 评论{len(item.get('top_reviews') or [])}条{curl_txt}")
+                    if item.get("page_note"):
+                        lines.append(f"  分数来处: {item['page_note']}")
                     if item.get("reasons"):
                         lines.append(f"  推荐依据: {'；'.join(item['reasons'])}")
                     for rv in (item.get("top_reviews") or [])[:6]:
@@ -2746,6 +2833,13 @@ def _build_tool_summary(results: list[dict]) -> str:
                 lines.append(note_txt)
             for limitation in res.get("limitations") or []:
                 lines.append(f"限制（回答必须说明）: {limitation}")
+            # 2026-09-22：用户实测"看到分数后不知道怎么继续查"——把下钻路径明确交给模型转述
+            lines.append(
+                "【下钻指引·回答里必须给同学一条继续查的路】同一门课在评课社区通常有多个页面"
+                "（每位老师/每个班次一页，有的页不标注老师），分数差异可能很大。"
+                "想具体了解某门课，可以继续问「<课名>有哪些老师」看各班对比，"
+                "或「<课名>的评论」看评论原文；也可直接打开上面列出的评课页链接。"
+            )
             # 选课季语义提示：方案学期“2秋”指大二上学期，避免 LLM 把评课库历史开课学期当“下学期”
             try:
                 from tools.advisor_tools import _infer_next_selection_term
@@ -2759,6 +2853,10 @@ def _build_tool_summary(results: list[dict]) -> str:
             # 单位是「班」：courses 每行=一个班, 合教组合整体展示, 不拆单人（勿写成"位老师"）。
             # 样本条数已由工具侧按「保底 1 条/班 + 轮转补足」限好，此处不再二次截断。
             lines.append(f"[{tool}] 课程「{res['course']}」共 {len(res['teachers'])} 个班（均分 {res.get('rating_avg')}·{res.get('rate_count')}条）:")
+            if res.get("community_url"):
+                lines.append(f"  评课页: {res['community_url']}")
+            if res.get("page_note"):
+                lines.append(f"  口径说明: {res['page_note']}")
             for t in res["teachers"]:
                 lines.append(f"- {t['name']} | {t['rating_avg']}分·{t['rate_count']}条 | 维度 {t.get('dims_mode', {})}")
             sample = res.get("reviews_sample") or []
@@ -2773,6 +2871,12 @@ def _build_tool_summary(results: list[dict]) -> str:
                     f"  （该课程共 {total_units} 个班, 本次评论样本只覆盖了评分靠前的 {covered_units} 个班; "
                     f"未被覆盖的班**不得声称「没有评论」**, 只能说本次未取到样本）"
                 )
+            # 2026-09-22：同学看到分数后要知道"还能怎么查"
+            lines.append(
+                f"  【下钻指引·回答里必须给同学一条继续查的路】想看某个班的评论原文，可以问"
+                f"「{res['course']} 涂涛 老师怎么样」（把老师名换成表里那位）；想按老师横向比较，"
+                f"这张表已经是各班对比；也可直接打开上面的评课页链接。"
+            )
         elif res.get("ambiguity") and tool != "analyze_teacher":
             # 方案类工具：学院级命中多专业 → 必须先让用户确认，不得替用户选一个
             names = "、".join(str(c.get("name") or "") for c in (res.get("candidates") or []))
