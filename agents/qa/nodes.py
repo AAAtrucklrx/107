@@ -1759,6 +1759,29 @@ def _looks_like_course_name(term: str) -> bool:
         return True
 
 
+_COURSE_KEYWORD_TAIL_ROLES = ("老师", "教师", "教授", "班级", "班", "的")
+
+
+def _keyword_candidates(raw: str) -> list[str]:
+    """原词 + 逐层剥掉尾部角色词（老师/教师/教授/班级/班/的）的候选，长的优先。
+
+    2026-09-22：用户问「线性代数（B1）老师推荐」时，正则抓到的整词是「线性代数（B1）老师」，
+    查库校验失败 → 关键词被整条丢掉 → 退化成"没有可核验候选"的空答（用户 09-21 实测）。
+    真正该丢的是尾巴上的「老师」，课程名本身要留住。
+    """
+    out = [raw]
+    cur = raw
+    while True:
+        nxt = cur
+        for token in _COURSE_KEYWORD_TAIL_ROLES:
+            if nxt.endswith(token) and len(nxt) > len(token):
+                nxt = nxt[:-len(token)]
+        if nxt == cur:
+            return out
+        out.append(nxt)
+        cur = nxt
+
+
 def _extract_course_keywords(query: str) -> list[str]:
     """从问句中提取课程名关键词("图论课推荐"→["图论"];"散打I推荐"→["散打I"];"推荐AI方向的选修课"→[])。
 
@@ -1769,20 +1792,23 @@ def _extract_course_keywords(query: str) -> list[str]:
     「下学期给我推荐一些课程」切出 ["下学期给我","一些"]、「帮我推荐几门课」切出
     ["帮我","几门"]。这些伪关键词进入 recommend_courses 的课程范围硬过滤（永不放宽），
     候选被直接清零——用户实测「下学期给我推荐一些课程」得到"0 门"的空答（09-19 线上）。
-    现在追加两道闸：停用词收尾过滤 + **评课库命中校验**。
+    现在三道闸：① 停用词收尾过滤；② 剥掉尾部角色词后重试（"线性代数（B1）老师"→"线性代数（B1）"）；
+    ③ **评课库命中校验**（课名原词优先，剥尾后能命中就用剥尾的）。
     """
     keywords: list[str] = []
     for match in re.finditer(
         r"([\u4e00-\u9fffA-Za-z0-9·（）()]{2,12}?)(?:课(?:程)?|推荐|怎么样|如何|咋样)",
         query,
     ):
-        word = match.group(1)
-        if any(word.endswith(stop) for stop in _COURSE_KEYWORD_STOP):
-            continue
-        if not _looks_like_course_name(word):
-            continue
-        if word not in keywords:
-            keywords.append(word)
+        chosen = None
+        for candidate in _keyword_candidates(match.group(1)):
+            if any(candidate.endswith(stop) for stop in _COURSE_KEYWORD_STOP):
+                continue
+            if _looks_like_course_name(candidate):
+                chosen = candidate
+                break
+        if chosen and chosen not in keywords:
+            keywords.append(chosen)
     return keywords
 
 

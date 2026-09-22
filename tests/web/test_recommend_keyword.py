@@ -214,3 +214,34 @@ def test_real_course_name_still_takes_exact_lookup_path(tmp_path, monkeypatch) -
     out = _call(keywords=["数学分析"])
     assert out.get("source") == "exact_course"
     assert [item["name"] for item in out["recommendations"]] == ["数学分析(B1)"]
+
+
+# ── 2026-09-22 增补：剥掉尾部角色词（「线性代数（B1）老师推荐」） ──────────
+# 用户实测（09-21 23:06）：问「线性代数（B1）老师推荐」，正则抓到整词「线性代数（B1）老师」，
+# 查库校验失败 → 关键词被整条丢掉 → 退化成"没有可核验候选"的空答（还转去联网）。
+# 真正该丢的是尾巴上的「老师」，课程名要留住。
+
+def test_extractor_strips_teacher_role_suffix(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(advisor_tools, "_cdb", _mini_db(tmp_path))
+    assert _extract_profile("操作系统原理与设计老师推荐", {})["keywords"] == ["操作系统原理与设计"]
+    assert _extract_profile("数学分析(B1)老师推荐", {})["keywords"] == ["数学分析(B1)"]
+    assert _extract_profile("图论老师怎么样", {})["keywords"] == ["图论"]
+
+
+def test_keyword_candidates_prefers_longest_valid_form() -> None:
+    """原词优先，剥尾后能命中才用剥尾的（避免把真课程名的尾巴削掉）。"""
+    from agents.qa.nodes import _keyword_candidates
+
+    assert _keyword_candidates("线性代数（B1）老师") == ["线性代数（B1）老师", "线性代数（B1）"]
+    assert _keyword_candidates("图论") == ["图论"]
+    assert _keyword_candidates("思想道德与法治") == ["思想道德与法治"]
+
+
+def test_teacher_question_reaches_course_listing(tmp_path, monkeypatch) -> None:
+    """剥尾后不再是空关键词：同一句能落到该课程的各班（而不是"0 门"）。"""
+    monkeypatch.setattr(advisor_tools, "_cdb", _mini_db(tmp_path))
+    keywords = _extract_profile("操作系统原理与设计老师推荐", {})["keywords"]
+    assert keywords == ["操作系统原理与设计"]
+    out = _call(keywords=keywords)
+    assert out.get("source") == "exact_course"
+    assert [item["name"] for item in out["recommendations"]] == ["操作系统原理与设计"]

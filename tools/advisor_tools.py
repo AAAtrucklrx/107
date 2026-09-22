@@ -1251,8 +1251,32 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
         rows = _exact_course_rows(conn, c_key)
         if not rows:
             continue  # 该关键词未命中课程, 试下一个
+        # 2026-09-22 修「未知老师 + 评分极低」（用户 09-21 实测「线性代数课程推荐」）：
+        # ① 0 条样本的行不进评分表 —— 此前被渲染成「未知 | 0.0分·0条」，读起来像是"这课 0 分"，
+        #    其实是"没有任何评课数据"；改为单独计数并在 limitations 里说明。
+        # ② 样本量 < `_MIN_CODE_SAMPLE` 的行排到最后并标注 —— 避免「1 条 10.0 分」被当成强信号，
+        #    也避免两条 1 条样本的裸「线性代数」排在 92 条样本的班级前面。
+        # ③ 评课页连教师都没标注、样本又极少（< _MIN_CODE_SAMPLE）的行同样是噪声页：
+        #    用户看到的就是「未知 | 10.0分·1条」，既不认识也无可参考性 —— 单独计数、不入表。
+        def _teacher_text(row) -> str:
+            return (row["teacher_names"] or "").strip()
+
+        unrated_count = sum(1 for row in rows if not (row["rate_count"] or 0))
+        unlabeled_count = sum(
+            1 for row in rows
+            if (row["rate_count"] or 0) > 0
+            and (row["rate_count"] or 0) < _MIN_CODE_SAMPLE
+            and not _teacher_text(row)
+        )
+        rated_rows = [
+            row for row in rows
+            if (row["rate_count"] or 0)
+            and not ((row["rate_count"] or 0) < _MIN_CODE_SAMPLE and not _teacher_text(row))
+        ]
+        ordered_rows = ([row for row in rated_rows if (row["rate_count"] or 0) >= _MIN_CODE_SAMPLE]
+                        + [row for row in rated_rows if (row["rate_count"] or 0) < _MIN_CODE_SAMPLE])
         items = []
-        for row in rows:  # 指定课程直查必须列全所有班级, 不受 max_results 截断
+        for row in ordered_rows:  # 指定课程直查必须列全所有班级, 不受 max_results 截断
             # 班级多时每班仅带 1 条评论, 保证 LLM 输出预算内能列全所有班级
             reviews = _top_reviews(conn, row["id"], limit=1, content_limit=700)
             teachers = row["teacher_names"] or ""
@@ -1261,7 +1285,8 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
                 if rv.get("url"):
                     community_url = rv["url"]
                     break
-            items.append({
+            count = row["rate_count"] or 0
+            item = {
                 "name": row["name"],
                 "code": row["code"] or "",
                 "credit": row["credit"],
@@ -1269,12 +1294,17 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
                 "rating_avg": round(row["rating_avg"], 1) if row["rating_avg"] is not None else None,
                 "rating_label": _rating_label(row["rating_avg"]),
                 "community_url": community_url,
-                "rate_count": row["rate_count"] or 0,
+                "rate_count": count,
                 "teachers": [{"name": t.strip()} for t in teachers.split(",") if t.strip()],
                 "top_reviews": reviews,
                 "reasons": ["指定课程直查: 该课程全部班级(第三方评课数据, 仅供参考)"],
-            })
-        return {
+            }
+            if count < _MIN_CODE_SAMPLE:
+                # 明确标注小样本，别让上层按"给分好/差"下结论
+                item["sample_note"] = f"样本量少（仅 {count} 条），参考价值有限"
+                item["reasons"].append("该班级评课样本量少、评分波动大，不建议据此判断给分或难度")
+            items.append(item)
+        result = {
             "recommendations": items,
             "groups": {"required": items},
             "progress": None,
@@ -1283,7 +1313,25 @@ def _recommend_exact_course(conn: sqlite3.Connection, keywords: list[str],
             "keyword_fallback": False,
             "program_context": None,
             "source": "exact_course",
+            "limitations": [],
         }
+        if unrated_count:
+            result["unrated_class_count"] = unrated_count
+            result["limitations"].append(
+                f"另有 {unrated_count} 个班级在评课社区没有任何评课数据，未列入评分表"
+                "（班级本身存在，是否开课请在教务系统核对）。"
+            )
+        if unlabeled_count:
+            result["unlabeled_class_count"] = unlabeled_count
+            result["limitations"].append(
+                f"另有 {unlabeled_count} 个评课页既没有标注教师、样本又不足 {_MIN_CODE_SAMPLE} 条，"
+                "未列入评分表（无法归属到具体老师，参考价值有限）。"
+            )
+        if any((row["rate_count"] or 0) < _MIN_CODE_SAMPLE for row in rated_rows):
+            result["limitations"].append(
+                "样本量少于 3 条的班级已排在最后并标注；它们评分波动大，不建议据此比较给分。"
+            )
+        return result
     return None
 
 
