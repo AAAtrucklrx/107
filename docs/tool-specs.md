@@ -474,7 +474,7 @@ grade: str | None = None
 interests: list[str] | str | None = None
 preference_type: "balanced" | "easy_grade" | "learn_hard" | None = None
 preference: str | None = None
-keywords: list[str] | str | None = None       # 课程范围硬限定
+keywords: list[str] | str | None = None       # 课程范围硬限定（问句功能词/量词会被忽略，见下）
 max_results: int = 10
 taken_courses: list[str] | None = None         # None 表示未知
 current_year_index: int | None = None
@@ -507,6 +507,10 @@ personal_tree: dict | list | None = None
     },
     "profile_note": {"name": "均衡兼顾", "source": "explicit|gpa_default|default"},
     "limitations": [...],
+    "program_term_courses": {   # 可选：仅当硬关键词把候选清空且方案可用时出现
+        "target_term": "2春", "required": [...], "elective": [...],
+        "count": 9, "credits": 25.5
+    },
     "total_candidates": 110,
     "filtered_count": 10
 }
@@ -516,11 +520,16 @@ personal_tree: dict | list | None = None
 ```
 1. 数据边界：个人方案 > 同专业同年级通用方案 > 无方案透明降级。
 2. 硬条件：keywords / course_scope；兴趣、工作量、教师、目标学期仅在用户说“只要/必须”时升级为硬过滤。
+   - keywords 只丢**形态上是问句功能词/量词**的词（“下学期给我”“一些”“帮我”，2026-09-22 修复），
+     并在 `limitations` 里列明；**库里查不到的课名不丢** —— 用户真报了不存在的课仍如实回 0 门、不放宽。
 3. 软排序：兴趣、工作量、给分、挑战性、教师、目标学期默认只影响排序；软偏好零命中时保留硬范围内候选。
 4. 缺省画像：本轮明确需求优先；仅在没有明确偏好时按 GPA 选择 easy_grade / balanced / learn_hard。
 5. 分组：必修 → 方案内选修 → 方向补充；方向补充只由本轮明确兴趣触发，自动从已修课推测的兴趣不触发。
-6. 评分：真实评课均分结合小样本收缩，避免少量满分评论压过稳定课程。
+6. 评分：真实评课均分结合小样本收缩；方案课程号按“精确码（样本量≥3）→ 前缀码+同名 → 同名最大样本”
+   映射到评课页（2026-09-22 修「教务 6 位前缀码命中 n=1 残缺行」，如计算机组成原理 1.0→8.0）。
 7. 透明性：已修记录未知时不声称“未修缺口”；硬条件零命中不放宽，并写入 limitations。
+8. 空池兜底（2026-09-22）：硬关键词把候选清空且方案可用时，另开 `program_term_courses` 字段给出
+   目标学期的方案课程清单（含无评课映射课，`rated=false`）；`recommendations` 仍为空，硬条件不放宽。
 ```
 
 **冲突边界**：

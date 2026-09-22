@@ -293,3 +293,44 @@ def test_route_composes_once_week_view_done() -> None:
     state["tool_results"] = [{"tool": "get_week_view", "status": "done"}]
     out = nodes._direct_tool_route(state)
     assert out["decision"] == "compose" and out["tool_calls"] == []
+
+
+# ── 2026-09-22：日维度必须优先于「课表」（09-19 线上缺陷） ──────────────
+# 症状：问「请查询我今天的课表…」被 `elif "课表"` 抢到 query_schedule（整学期），
+# 模型把 5~14 周的课铺进本周，编出「图论 第2周」当成今天的课；
+# 而 query_daily_schedule("今天") 实测 0 条（2026-09-19 周六、第 3 周）。
+
+def test_route_today_schedule_uses_daily_not_semester() -> None:
+    out = nodes._direct_tool_route(_route_state("请查询我今天的课表，按时间顺序列出。"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["query_daily_schedule"]
+    assert out["tool_calls"][0]["args"]["date"] == "今天"
+
+
+def test_route_tomorrow_schedule_uses_daily() -> None:
+    out = nodes._direct_tool_route(_route_state("我明天的课"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["query_daily_schedule"]
+    assert out["tool_calls"][0]["args"]["date"] == "明天"
+
+
+def test_route_weekday_schedule_uses_daily() -> None:
+    """周X 也是日维度（'我周四有什么课'），此前同样被整学期课表抢走。"""
+    out = nodes._direct_tool_route(_route_state("我周四有什么课"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["query_daily_schedule"]
+    assert out["tool_calls"][0]["args"]["date"] == "周四"
+
+
+def test_route_day_agenda_uses_daily() -> None:
+    out = nodes._direct_tool_route(_route_state("我今天的安排"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["query_daily_schedule"]
+
+
+def test_route_week_word_still_wins_over_day_word() -> None:
+    """边界：'本周' 仍归周视图（它按教学周过滤，是"本周"的唯一权威）。"""
+    out = nodes._direct_tool_route(_route_state("我这周课表"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["get_week_view"]
+
+
+def test_route_semester_schedule_unaffected_by_day_branch() -> None:
+    """边界：没有日期词的"我的课表"仍看整学期列表。"""
+    out = nodes._direct_tool_route(_route_state("我的课表"))
+    assert [c["tool"] for c in out["tool_calls"]] == ["query_schedule"]

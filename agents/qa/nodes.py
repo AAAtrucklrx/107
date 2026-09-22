@@ -1159,8 +1159,15 @@ def _direct_tool_route(state: QaState) -> dict | None:
             agenda_word = any(
                 k in query for k in ("日程", "安排", "汇总", "会议", "组会", "生日", "待办")
             )
+            day_phrase = _extract_date_phrase(query)
             if week_word and ("课" in query or agenda_word):
                 calls = [{"tool": "get_week_view", "args": {"start_date": _target_week_start(query)}}]
+            # 2026-09-22：**日维度必须排在「课表」之前**。此前「请查询我今天的课表…」
+            # 落到 query_schedule（整学期），模型自己把 5~14 周的课铺进本周，编出
+            # 「图论 第2周」当成今天的课；而 query_daily_schedule("今天") 实测 0 条
+            # （2026-09-19 周六、第 3 周）。日期词优先，整学期课表只留给"我的课表"这类问句。
+            elif day_phrase and ("课" in query or agenda_word):
+                calls = [{"tool": "query_daily_schedule", "args": {"date": day_phrase}}]
             elif "课表" in query:
                 calls = [{"tool": "query_schedule", "args": {}}]
         if calls:
@@ -1730,7 +1737,26 @@ def _extract_teacher(query: str) -> str | None:
 _COURSE_KEYWORD_STOP = (
     "推荐", "选修", "必修", "通识", "通修", "水", "好", "哪些", "什么",
     "这", "那", "专业", "公共", "核心", "实验", "的", "课", "程",
+    # 2026-09-22 增补：问句里的功能词 / 时间词 / 量词，曾被当成课程名
+    # （「下学期给我推荐一些课程」→ ["下学期给我","一些"]、「帮我推荐几门课」→ ["帮我","几门"]）。
+    "我", "帮我", "给我", "请", "根据", "一些", "几门", "门", "学期", "方案", "方向", "时候",
 )
+
+
+def _looks_like_course_name(term: str) -> bool:
+    """term 在评课库里能精确或前缀命中才算课程名（2026-09-22 新增）。
+
+    "图论"/"散打I"/"数学分析"/"量子信息" 通过；"下学期给我"/"一些"/"帮我"/"几门" 不通过。
+    库不可用或导入失败时返回 True（无法核验就不改变既有语义）。
+    """
+    try:
+        from tools.advisor_tools import course_name_exists
+    except Exception:  # noqa: BLE001
+        return True
+    try:
+        return bool(course_name_exists(term))
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def _extract_course_keywords(query: str) -> list[str]:
@@ -1738,6 +1764,12 @@ def _extract_course_keywords(query: str) -> list[str]:
 
     识别「XX课/XX课程/XX推荐/XX怎么样/XX如何/XX咋样」模式,且 XX 不是常见非课程词,
     避免把"选修课/推荐课/水课"等当成课程名(这些会污染 recommend_courses 的硬过滤)。
+
+    2026-09-22 修复：该正则会把「推荐/课程」**前面的任意 2~12 字**当成课程名，于是
+    「下学期给我推荐一些课程」切出 ["下学期给我","一些"]、「帮我推荐几门课」切出
+    ["帮我","几门"]。这些伪关键词进入 recommend_courses 的课程范围硬过滤（永不放宽），
+    候选被直接清零——用户实测「下学期给我推荐一些课程」得到"0 门"的空答（09-19 线上）。
+    现在追加两道闸：停用词收尾过滤 + **评课库命中校验**。
     """
     keywords: list[str] = []
     for match in re.finditer(
@@ -1746,6 +1778,8 @@ def _extract_course_keywords(query: str) -> list[str]:
     ):
         word = match.group(1)
         if any(word.endswith(stop) for stop in _COURSE_KEYWORD_STOP):
+            continue
+        if not _looks_like_course_name(word):
             continue
         if word not in keywords:
             keywords.append(word)

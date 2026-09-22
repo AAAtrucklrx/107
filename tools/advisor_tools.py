@@ -151,6 +151,125 @@ def _match_courses(conn: sqlite3.Connection, name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def course_name_exists(term: str, conn: sqlite3.Connection | None = None) -> bool:
+    """term 是否像一个真实课程名：评课库归一化后精确命中，或以它开头。
+
+    2026-09-22：用于把"下学期给我""一些""帮我"这类**解析噪声**挡在课程范围硬过滤之外——
+    它们的共同特征是在整个评课库里找不到任何同名/同前缀课程。真实课程名/方向词都能命中
+    （"图论" 精确、"数学分析" 前缀 84 门、"量子信息" 前缀 19 门）。
+    库不可用时不作判定（返回 True），避免在无法核验时改变既有语义。
+    """
+    key = _norm_course_name(term or "")
+    if len(key) < 2:
+        return False
+    owned = conn is None
+    if owned:
+        try:
+            conn = _cdb()
+        except sqlite3.Error:
+            return True
+    try:
+        row = conn.execute(
+            f"SELECT 1 FROM courses c WHERE {_SQL_NORM_NAME} = ? OR {_SQL_NORM_NAME} LIKE ? LIMIT 1",
+            (key, key + "%"),
+        ).fetchone()
+        return row is not None
+    except sqlite3.Error:
+        return True
+    finally:
+        if owned:
+            conn.close()
+
+
+# 问句功能词/量词/时间词（2026-09-22）：形态上不是课程名的"检索词"是解析噪声。
+# 只用**词首/词尾锚定**匹配，避免误伤真课程名（"思想道德与法治" 不以"想"开头）。
+_KEYWORD_LEADING_NOISE = (
+    "我", "你", "请", "帮", "给", "根据", "按照", "如何", "怎么", "哪些", "什么",
+    "一些", "几门", "几个", "下学期", "这学期", "本学期", "上学期", "推荐", "选课",
+    "想", "要", "有没有", "有什么", "顺便", "麻烦",
+)
+_KEYWORD_TRAILING_NOISE = (
+    "我", "你", "一些", "几门", "几个", "门", "学期", "方案", "推荐",
+    "的", "和", "与", "及", "哪些", "什么", "怎么", "如何", "吗", "呢", "时候", "方向",
+)
+
+
+def is_keyword_noise(term: str) -> bool:
+    """检索词是否只是问句的功能词/量词（而非课程名）。
+
+    2026-09-22：「下学期给我推荐一些课程」被旧抽取器切成 ["下学期给我","一些"]，
+    这些词进了课程范围硬过滤 → 候选清零。这里只判"形态"（词首/词尾锚定），
+    **不看库里有没有**——用户真报了一个库里没有的课名时仍按硬条件处理、如实回 0 门，
+    绝不偷偷换成别的推荐（scripts/verify_tools.py「过窄课程范围不放宽」）。
+    """
+    key = _norm_course_name(term or "")
+    if len(key) < 2:
+        return True
+    if any(key.startswith(token) for token in _KEYWORD_LEADING_NOISE):
+        return True
+    return any(key.endswith(token) for token in _KEYWORD_TRAILING_NOISE)
+
+
+def _in_term(term: str | None, target_term: str | None) -> bool:
+    """课程所属学期段是否包含目标学期（与 `_term_urgency`/硬过滤同口径：逗号分隔精确匹配）。"""
+    if not target_term:
+        return False
+    segments = [s.strip() for s in re.split(r"[,，、/]", term or "") if s.strip()]
+    return bool(segments) and target_term in segments
+
+
+def _program_term_courses(program_rows: list[dict], unmatched: list, target_term: str | None,
+                          taken: set[str]) -> dict:
+    """目标学期内、尚未修读的方案课程清单（**不做评分排序**，供空池兜底展示）。
+
+    2026-09-22：硬关键词把候选清空时，只回"0 门"对用户没用。这里把"你方案里这个学期
+    到底该上什么课"如实列出，含**没有评课映射**的课（rated=false），学分合计照算。
+    """
+    required: list[dict] = []
+    elective_rated: list[dict] = []
+    elective_unrated: list[dict] = []
+
+    def _add(row: dict, is_required: bool, rated: bool) -> None:
+        item = {
+            "name": row.get("name"),
+            "code": row.get("code") or "",
+            "credit": row.get("credit"),
+            "term": row.get("program_term") or row.get("term") or "",
+            "category": row.get("program_category") or row.get("category") or "",
+            "required": "必修" if is_required else "选修",
+            "rated": rated,
+        }
+        if is_required:
+            required.append(item)
+        elif rated:
+            elective_rated.append(item)   # 有评课映射的排前面，便于模型优先讲重点
+        else:
+            elective_unrated.append(item)
+
+    for row in program_rows:
+        if _norm_course_name(row.get("name") or "") in taken:
+            continue
+        if _in_term(row.get("program_term"), target_term):
+            _add(row, row.get("program_required") == "必修", True)
+    for row in unmatched or []:
+        if not isinstance(row, dict):
+            continue
+        if _norm_course_name(row.get("name") or "") in taken:
+            continue
+        if _in_term(row.get("term"), target_term):
+            _add(row, row.get("required") == "必修", False)
+    elective = elective_rated + elective_unrated
+    items = required + elective
+    return {
+        "target_term": target_term,
+        "required": required,
+        "elective": elective,
+        "count": len(items),
+        "credits": round(sum(float(i.get("credit") or 0) for i in items), 1),
+        "note": "方案课程清单（未做评分排序；rated=false 表示该课暂无评课映射）",
+    }
+
+
 # 偏好状态（Phase 2a：按"当前学生"分桶，多用户会话隔离；脚本/测试未设置时用默认桶）
 _profiles: dict[str, dict] = {}
 
@@ -959,27 +1078,58 @@ def _load_local_program_rows(conn: sqlite3.Connection, prog_id: int,
         row.update({"program_name": prog_name, "program_grade": grade, "program_source": "generic"})
         out.append(row)
     all_rows = conn.execute(
-        "SELECT name FROM program_courses WHERE program_id=?", (prog_id,),
+        "SELECT code, name, required, credit, category, term FROM program_courses WHERE program_id=?",
+        (prog_id,),
     ).fetchall()
     rated = {_norm_course_name(r.get("name") or "") for r in out}
-    unmatched = [r["name"] for r in all_rows if _norm_course_name(r["name"]) not in rated]
+    # 2026-09-22：unmatched 由"课程名列表"升级为"课程行 dict 列表"（带学分/学期/类别），
+    # 供空池兜底按学期列出方案课程；调用方只用 len()/真值，语义不变。
+    unmatched = [
+        {
+            "code": r["code"], "name": r["name"], "credit": r["credit"],
+            "term": r["term"], "category": r["category"], "required": r["required"],
+        }
+        for r in all_rows if _norm_course_name(r["name"] or "") not in rated
+    ]
     return _dedupe_rows(out), len(all_rows), unmatched
 
 
+# 方案课程号是**教务前缀码**（"011145"），评课库里却可能存在同名残缺行（"011145", n=1）
+# 或完整码行（"01114501" / "01114502"）。单条样本的残缺行不足以代表整门课：
+# 2026-09-22 实测「计算机组成原理」被判成 1.0 分（n=1），真实页是 8.0/52 与 9.4/31。
+_MIN_CODE_SAMPLE = 3
+
+
 def _find_rated_course(conn: sqlite3.Connection, course: dict) -> dict | None:
+    """把方案课程行映射到评课库行（样本量优先，2026-09-22 修"前缀码命中残缺行"）。
+
+    顺序：
+      ① 课程号精确命中且样本量 ≥ `_MIN_CODE_SAMPLE`；
+      ② 方案课程号作**前缀** + 同名，取样本量最大者（教务 6 位码 ↔ 评课 9 位码）；
+      ③ 同名取样本量最大者（原逻辑兜底；足以避开 n=1 的残缺行）。
+    """
     row = None
     code = str(course.get("code") or "").strip()
+    name_key = _norm_course_name(course.get("name") or "")
     if code:
         row = conn.execute(
             f"SELECT {_RATED_SELECT} FROM courses c JOIN course_rates r ON r.course_id=c.id "
-            "WHERE UPPER(c.code)=UPPER(?) ORDER BY r.rating_count DESC LIMIT 1",
-            (code,),
+            "WHERE UPPER(c.code)=UPPER(?) AND r.rating_count >= ? "
+            "ORDER BY r.rating_count DESC LIMIT 1",
+            (code, _MIN_CODE_SAMPLE),
         ).fetchone()
-    if row is None and course.get("name"):
+        if row is None and name_key and len(code) >= 4:
+            row = conn.execute(
+                f"SELECT {_RATED_SELECT} FROM courses c JOIN course_rates r ON r.course_id=c.id "
+                f"WHERE UPPER(c.code) LIKE UPPER(?) AND {_SQL_NORM_NAME}=? "
+                "AND r.rating_count >= ? ORDER BY r.rating_count DESC LIMIT 1",
+                (code + "%", name_key, _MIN_CODE_SAMPLE),
+            ).fetchone()
+    if row is None and name_key:
         row = conn.execute(
             f"SELECT {_RATED_SELECT} FROM courses c JOIN course_rates r ON r.course_id=c.id "
             f"WHERE {_SQL_NORM_NAME}=? ORDER BY r.rating_count DESC LIMIT 1",
-            (_norm_course_name(course["name"]),),
+            (name_key,),
         ).fetchone()
     return _row_dict(row) if row is not None else None
 
@@ -994,7 +1144,15 @@ def _load_personal_program_rows(conn: sqlite3.Connection, personal_tree) \
     for course in courses:
         row = _find_rated_course(conn, course)
         if row is None:
-            unmatched.append(course.get("name") or course.get("code") or "未命名课程")
+            # 同 _load_local_program_rows：保留学分/学期/类别，供空池兜底按学期展示
+            unmatched.append({
+                "code": course.get("code") or "",
+                "name": course.get("name") or course.get("code") or "未命名课程",
+                "credit": course.get("credit"),
+                "term": course.get("term") or "",
+                "category": course.get("category") or "",
+                "required": course.get("required") or "",
+            })
             continue
         row.update({
             "program_required": course.get("required") or "",
@@ -1491,6 +1649,21 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         program_rows, program_total, unmatched = _load_local_program_rows(conn, prog_id, prog_name)
         program_name, program_source = prog_name, "generic"
 
+    # 伪关键词护栏（2026-09-22）：只丢弃**形态上不是课程名**的检索词（问句功能词/量词/
+    # 时间词，如「下学期给我推荐一些课程」被旧抽取器切出的 ["下学期给我","一些"]）。
+    # 这类词进了课程范围硬过滤（永不放宽）→ 候选清零 → 用户收到"0 门"的空答。
+    # 注意：**不按"库里有没有"来丢**——用户真报了一个库里没有的课名时，仍保持硬条件并
+    # 如实回 0 门（scripts/verify_tools.py「过窄课程范围不放宽」），绝不偷偷换成别的推荐。
+    if hard_keywords:
+        kept: list[str] = []
+        dropped: list[str] = []
+        for keyword in hard_keywords:
+            (dropped if is_keyword_noise(keyword) else kept).append(keyword)
+        if dropped:
+            profile["_dropped_keywords"] = dropped
+        profile["keywords"] = kept
+        hard_keywords = kept
+
     # 指定课程直查模式: 有明确课程名关键词时绕过培养方案, 直接返回该课程全部班级
     # (合教组合整体展示), 不带方案上下文; 关键词全部未命中课程时回退培养方案流程。
     if hard_keywords:
@@ -1559,6 +1732,12 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
         limitations.append("未取得完整已修课程记录，无法确认所有必修缺口或排除全部已修课。")
     if unmatched:
         limitations.append(f"培养方案中有 {len(unmatched)} 门课程缺少评课映射，未参与评分排序。")
+    if profile.get("_dropped_keywords"):
+        limitations.append(
+            "已忽略不是课程名的检索词："
+            + "、".join(str(k) for k in profile["_dropped_keywords"])
+            + "（问句功能词/量词，不构成课程范围限制）。"
+        )
     if profile.get("_conflict_not_checked"):
         limitations.append(
             "本次只完成课程推荐，候选课尚未与个人课表做冲突检查；确定候选后请使用独立冲突检查。"
@@ -1570,6 +1749,22 @@ def recommend_courses(profile: dict | None = None, major: str | None = None,
     if (result.get("keyword_fallback") or result.get("need_fallback")) \
             and not profile.get("_hard_preferences"):
         limitations.append("指定方向未命中足够候选，已回退到更宽的评课候选池。")
+
+    # 空池兜底（2026-09-22）：真·硬关键词把候选清空时不再只回"0 门"，另开字段给出
+    # 目标学期的方案课程清单（推荐列表仍为空、硬条件未被放宽，只是多一段透明清单）。
+    if hard_keywords and not result.get("recommendations") and program_total:
+        fallback = _program_term_courses(
+            program_rows, unmatched,
+            _canonical_target_term(profile.get("target_term"), current_yi),
+            taken,
+        )
+        if fallback["count"]:
+            result["program_term_courses"] = fallback
+            limitations.append(
+                f"指定方向未命中可核验候选；已改为列出你方案内 {fallback['target_term']} 的"
+                f"课程清单（{fallback['count']} 门，未做评分排序）。"
+            )
+
     result["limitations"] = limitations
     return result
 
