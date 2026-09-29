@@ -1,6 +1,6 @@
 """
 小蜗 — 用户意图分类器
-12 类常见意图，基于示例句向量相似度分类（复用知识库嵌入模型，示例向量缓存）
+18 类常见意图（2026-09-29 扩充：世界知识 / 课程对比 / 关于小蜗），基于示例句向量相似度分类（复用知识库嵌入模型，示例向量缓存）
 嵌入模型不可用时降级为关键词匹配
 意图定义见 agents/qa/intents.py（单一事实来源）
 """
@@ -13,6 +13,20 @@ from agents.qa.intents import INTENTS
 log = get_logger("xiaowo.intent")
 
 _TOP3_SCORE_FLOOR = 1e-9
+# 域外判据（2026-09-29）：最高相似度低于此阈值且句中没有校园词 → 判为「世界知识」，
+# 而不是硬塞进最接近的校内意图（线上实测 20.2% 的低置信度多为此类）。
+_OUT_OF_SCOPE_FLOOR = 0.35
+_CAMPUS_WORDS = (
+    "科大", "中科大", "中国科学技术大学", "蜗壳", "学号", "课表", "选课", "成绩", "绩点", "gpa",
+    "考试", "学分", "培养方案", "转专业", "辅修", "导师", "院系", "学院", "校区", "宿舍", "食堂",
+    "图书馆", "教务处", "助学金", "奖学金", "评课", "空教室", "日程", "社团", "校医院", "校园卡",
+    "报到", "开学", "放假", "补考", "缓考", "选课冲突", "班主任", "辅导员", "ustc",
+)
+
+
+def _looks_campus(text: str) -> bool:
+    probe = (text or "").casefold()
+    return any(word.casefold() in probe for word in _CAMPUS_WORDS)
 
 
 class IntentClassifier:
@@ -61,6 +75,9 @@ class IntentClassifier:
             offset += len(examples)
 
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+        top3 = [{"intent": k, "score": round(v, 4)} for k, v in ranked[:top_n]]
+        if ranked[0][1] < _OUT_OF_SCOPE_FLOOR and not _looks_campus(text):
+            return {"intent": "世界知识", "top3": top3, "method": "embedding+out_of_scope"}
         return {
             "intent": ranked[0][0],
             "top3": [{"intent": k, "score": round(v, 4)} for k, v in ranked[:top_n]],
@@ -76,6 +93,9 @@ class IntentClassifier:
                 len(query_tokens & set(_tokenize_cjk(ex))) for ex in examples
             )
         ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+        top3 = [{"intent": k, "score": round(v, 4)} for k, v in ranked[:top_n]]
+        if ranked[0][1] < _OUT_OF_SCOPE_FLOOR and not _looks_campus(text):
+            return {"intent": "世界知识", "top3": top3, "method": "embedding+out_of_scope"}
         return {
             "intent": ranked[0][0],
             "top3": [{"intent": k, "score": v} for k, v in ranked[:top_n]],

@@ -89,6 +89,10 @@ class WebStore:
                 ("intent", "ALTER TABLE web_chat_runs ADD COLUMN intent TEXT"),
                 ("intent_score", "ALTER TABLE web_chat_runs ADD COLUMN intent_score REAL"),
                 ("intent_top3", "ALTER TABLE web_chat_runs ADD COLUMN intent_top3 TEXT"),
+                ("question", "ALTER TABLE web_chat_runs ADD COLUMN question TEXT"),
+                ("rewritten_query", "ALTER TABLE web_chat_runs ADD COLUMN rewritten_query TEXT"),
+                ("rewrite_ms", "ALTER TABLE web_chat_runs ADD COLUMN rewrite_ms REAL"),
+                ("rewrite_fallback", "ALTER TABLE web_chat_runs ADD COLUMN rewrite_fallback INTEGER"),
             ):
                 if column not in run_columns:
                     conn.execute(ddl)
@@ -378,6 +382,10 @@ class WebStore:
         intent: str,
         score: float | None = None,
         top3: list[dict[str, Any]] | None = None,
+        question: str = "",
+        rewritten_query: str = "",
+        rewrite_ms: float | None = None,
+        rewrite_fallback: bool | None = None,
     ) -> None:
         """记录本轮意图分类结果（2026-09-29）。
 
@@ -386,11 +394,23 @@ class WebStore:
         """
         with self._write_lock, self._connect() as conn:
             conn.execute(
-                "UPDATE web_chat_runs SET intent = ?, intent_score = ?, intent_top3 = ? WHERE run_id = ?",
+                """
+                UPDATE web_chat_runs
+                SET intent = ?, intent_score = ?, intent_top3 = ?,
+                    question = COALESCE(?, question),
+                    rewritten_query = COALESCE(?, rewritten_query),
+                    rewrite_ms = COALESCE(?, rewrite_ms),
+                    rewrite_fallback = COALESCE(?, rewrite_fallback)
+                WHERE run_id = ?
+                """,
                 (
                     (intent or None),
                     score,
                     json.dumps(top3, ensure_ascii=False) if top3 else None,
+                    self._cipher.seal(question) if question else None,
+                    self._cipher.seal(rewritten_query) if rewritten_query else None,
+                    rewrite_ms,
+                    None if rewrite_fallback is None else int(bool(rewrite_fallback)),
                     run_id,
                 ),
             )

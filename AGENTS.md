@@ -22,6 +22,11 @@
   = policy / stable_general / announcement(TTL 7) / dynamic_service(TTL 30)；后两类允许 `volatile`，
   policy/stable_general 仍要 `stable`；**来源等级不再卡**（含未知）；红线仍是 sensitivity=clean、
   on_topic、unique。存量回填用 `deploy/server/review_backfill.py`（`--apply`，可 `--revoke-batch` 回滚）。
+- **意图与查询改写（2026-09-29）**：意图 **18 类**（新增 世界知识/课程对比/关于小蜗，知识问答示例 8→18）；
+  **域外判据**（最高分 <0.35 且无校园词 → 世界知识，走世界知识通道）；工具桶合并上限 2→3；
+  省略句/指代由 `agents/qa/rewrite.py` **LLM 改写**（thinking 关闭、触发式、守护线程并行、3s 预算、失败回退原问句，
+  `XIAOWO_REWRITE_ENABLED=0` 可关）；遥测落 `web_chat_runs`（intent/intent_score/intent_top3/question/rewritten_query/rewrite_ms/rewrite_fallback，question 与 rewritten_query 经 FieldCipher 加密）。
+  实测：真实 119 条问题低置信度 **20.2% → 0.8%**；改写热态 0.55s。
 - **登录界面（2026-09-29）**：运维台 `ops_web` 有独立登录页（会话 cookie，`/logout` 服务端吊销）；
   小蜗前台有整页 `LoginPage`（统一认证/演示身份），头像菜单合并为单一「登录」入口。
 - 规则：动手前 `git status` + `git diff`，只改任务声明的文件；改完跑全量验证并报告；**不自提交**（经批准后按铁律 3 提交）。

@@ -54,6 +54,9 @@ class AnswerBundle:
     intent: str = ""
     intent_score: float | None = None
     intent_top3: list[dict[str, Any]] = field(default_factory=list)
+    rewritten_query: str = ""
+    rewrite_ms: float | None = None
+    rewrite_fallback: bool | None = None
     # 联网引用里、待**后台抓整页后入审核库**的 URL（2026-09-16）。
     # 为什么不是直接给 ingestion_candidates：smart 的 references 只给片段，而
     # `ReviewStore.enqueue_candidate` 硬性要求整页 `snapshot_text` → 必须补一次抓取，

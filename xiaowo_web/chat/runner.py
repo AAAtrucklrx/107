@@ -572,6 +572,9 @@ class LegacyQaRunner:
                 else None
             ),
             intent_top3=list(result.get("intent_top3") or []),
+            rewritten_query=str(result.get("rewritten_query") or ""),
+            rewrite_ms=result.get("rewrite_ms"),
+            rewrite_fallback=result.get("rewrite_fallback"),
             cache_source_hashes=source_hashes,
             terminal_reason="local_answer",
             thoughts=thoughts,

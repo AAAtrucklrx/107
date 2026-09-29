@@ -1191,3 +1191,30 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - **新工具（另侧 7aa21ca 已注册）**：`search_all_lessons`（全校开课检索，客户端关键词过滤；tool count 口径 30，registry 实测 29 键——`_TOOL_LIST` 未同步项另侧待修）；`query_exam` 主源已切换为**教务个人考试安排**（jw `/for-std/exam-arrange/info/{dataId}`，含考场/校区；catalog 公共考试列表降为兜底）；`get_current_teach_week` 教学周校准（CAS 用户，30min TTL）。
 - **官方站点直采（本机 2026-09-03）**：`scripts/collect_official_pages.py`（SOURCES 配置驱动，teach 教务 RSS `/category/notice/feed` 起步）+ `deploy/server/official_collect_loop.sh`（每日 05:45）→ 经"采集→审核→发布"管线进发布库（级别 official_primary）；闭环验证：2 条"一〇七杯"通知 active、检索命中。
 - **发布知识检索说明**：`ApprovedKnowledgeRetriever` 为 BM25 词法（`_BuiltinBM25` + CJK 分词），发布 chroma 向量仅作产物备存（当前 gen-3CpW 60 条已对齐）——未启用语义混合检索。
+
+
+## 多轮上下文与查询改写（2026-09-29）
+
+**历史策略**：web 层注入**最近 12 条消息（约 6 轮）**（`xiaowo_web/chat/manager.py` → `conversation["messages"][-12:]`），
+经 `QaRunRequest.chat_history` 进入 QA 图；**无摘要**，超长会话只保留最近窗口（远指代会失效，属已知边界）。
+
+**意图体系**：18 类（`agents/qa/intents.py`，单一事实来源），新增 `世界知识` / `课程对比` / `关于小蜗`；
+`知识问答` 示例扩到 18 条（补食堂/图书馆/校车/宿舍/医疗/校园卡/校史/校长/合作/赛事）。
+**域外判据**：最高相似度 < 0.35 且句中无校园词 → 判 `世界知识`（走世界知识通道 + 「非联网核实」免责），
+不再硬塞校内意图（实测真实 119 条问题：低置信度 20.2% → 0.8%）。
+
+**工具桶**：`_BUCKET_TOOLS` 三桶（personal / course / general），`_INTENT_BUCKET` 显式映射；
+**合并上限 3**（此前 2）以覆盖跨桶复合问法；`活动推荐` → `general`（其工具 `query_activities` 本就在 `_ALWAYS_TOOLS`）。
+
+**multi_intent 信号**：top1 与 top2 分差 < 0.05 且不同桶 → 工具提示里告知 think「本轮可能是多意图」，
+允许同一轮并行多个独立工具（不改硬路由）。
+
+**查询改写（`agents/qa/rewrite.py`）**
+- **触发**：有历史 **且**（问句 ≤8 字 或 含指代词/追问词：它/那门/这个/上面/刚才/继续/怎么样…）；其余零开销
+- **关思考**：用 `create_llm()`（默认 `extra_body.thinking.type=disabled`），`max_tokens` 很小
+- **并行**：守护线程与分类/检索同时跑，`join(timeout=剩余预算)`；默认预算 **3s**（`XIAOWO_REWRITE_TIMEOUT`）
+- **回退**：超时/异常/输出异常 → 原问句（fail-open），并记 `rewrite_fallback=True`
+- **采纳**：改写成功即用改写问句**本地重分类**（~20ms，不再调 LLM），意图与工具候选随之更新
+- **遥测**：`web_chat_runs.rewritten_query / rewrite_ms / rewrite_fallback`（question 与 rewritten_query 均经 FieldCipher 加密）
+- **实测**：热态改写 **0.55s**；冷启动首调约 6s（池未热时会超时回退，不影响延迟）
+- **开关**：`XIAOWO_REWRITE_ENABLED=0` 一键关闭

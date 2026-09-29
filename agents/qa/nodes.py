@@ -20,6 +20,7 @@ from agents.tool_registry import _build_tool_registry
 from agents.qa.intents import intent_hint
 from agents.qa.state import QaState
 from knowledge.intent_classifier import classify
+from agents.qa.rewrite import RewriteWorker, should_rewrite
 from utils.llm_client import create_llm, llm_content
 from utils.logger import get_logger
 
@@ -252,6 +253,40 @@ def _enrich_program_args(args: dict, state: QaState, sid: str, include_taken: bo
 
 # ── 模块信号 → 意图（仅作软提示，不强制覆盖） ──────────
 
+_ELLIPTICAL_HINTS = ("它", "他", "她", "那门", "那个", "那这", "这个", "这些", "上面", "刚才", "继续",
+                     "还有呢", "呢？", "呢?", "哪些", "怎么样")
+
+
+def _looks_elliptical(query: str) -> bool:
+    """短句或含指代/追问词 → 视为省略句，需要上轮上下文补全（2026-09-29）。"""
+    text = (query or "").strip()
+    if not text:
+        return False
+    if len(text) <= 8:
+        return True
+    return any(token in text for token in _ELLIPTICAL_HINTS)
+
+
+_rewrite_worker: "RewriteWorker | None" = None
+
+
+def set_rewrite_worker(worker) -> None:
+    """注入/替换查询改写器（测试用；传 None 恢复默认）。"""
+    global _rewrite_worker
+    _rewrite_worker = worker
+
+
+def _get_rewrite_worker() -> RewriteWorker:
+    global _rewrite_worker
+    if _rewrite_worker is None:
+        import os
+
+        _rewrite_worker = RewriteWorker(
+            timeout=float(os.environ.get("XIAOWO_REWRITE_TIMEOUT", "3.0"))
+        )
+    return _rewrite_worker
+
+
 MODULE_TO_INTENT = {
     "智能问答": "知识问答",
     "课业助手": "查课表",
@@ -336,7 +371,9 @@ _BUCKET_TOOLS: dict[str, tuple[str, ...]] = {
         "collect_preferences", "recommend_courses", "query_program",
         "get_my_program", "get_program_progress", "plan_semester",
     ),
-    "general": (),
+    # general（2026-09-29 修补）：此前是空元组（死配置，导致"无映射意图→通用桶"名不副实）。
+    # 现与 _ALWAYS_TOOLS 对齐，供活动推荐等无专属桶的意图显式引用。
+    "general": ("search_faq", "get_faq_categories", "render_link", "query_activities"),
 }
 _ALWAYS_TOOLS = ("search_faq", "get_faq_categories", "render_link", "query_activities")
 
@@ -345,6 +382,10 @@ _INTENT_BUCKET: dict[str, str] = {
     "查空教室": "personal", "日程查询": "personal", "日程管理": "personal",
     "选课冲突": "personal", "退补选评估": "personal",
     "课程搜索": "course", "选课推荐": "course", "教师点评": "course",
+    "课程对比": "course",  # 2026-09-29：compare_courses 有了明确归属
+    # 活动类工具（query_activities）本就在 _ALWAYS_TOOLS 中常驻，这里显式映射，
+    # 让"活动推荐"（约占真实流量 12-16%）有确定归属，便于后续按桶裁剪
+    "活动推荐": "general",
 }
 
 
@@ -357,13 +398,36 @@ def _tools_for_intent(intent: str, top3: list[dict] | None = None) -> str:
     buckets: list[str] = []
     for item in [intent, *((top3 or []) and [entry.get("intent") for entry in (top3 or [])][1:-1] or [])]:
         bucket = _INTENT_BUCKET.get(str(item or "") or "")
-        if bucket and bucket not in buckets and len(buckets) < 2:
+        if bucket and bucket not in buckets and len(buckets) < 3:  # 2026-09-29: 2→3，跨桶复合问法不再丢工具
             buckets.append(bucket)
     for bucket in buckets:
         for name in _BUCKET_TOOLS.get(bucket, ()):
             names.add(name)
     ordered = [name for name in _TOOL_CATALOG if name in names]
-    return ", ".join(_TOOL_CATALOG[name] for name in ordered) + _ecosystem_tool_fragment()
+    note = ""
+    if _is_multi_intent(top3):
+        note = ("\n注意：本轮可能是**多意图**问题（top1/top2 置信度接近且不同类），"
+                "需要时可在同一轮并行调用相互独立的多个工具。")
+    return ", ".join(_TOOL_CATALOG[name] for name in ordered) + _ecosystem_tool_fragment() + note
+
+
+def _is_multi_intent(top3: list[dict] | None) -> bool:
+    """top1/top2 分数接近（<0.05）且不同桶 → 视为多意图（2026-09-29）。
+
+    只作为 think 的提示信号：多意图时放宽工具候选、少问一次澄清。
+    """
+    items = [t for t in (top3 or []) if isinstance(t, dict)]
+    if len(items) < 2:
+        return False
+    try:
+        gap = float(items[0].get("score") or 0) - float(items[1].get("score") or 0)
+    except (TypeError, ValueError):
+        return False
+    if gap >= 0.05:
+        return False
+    b1 = _INTENT_BUCKET.get(str(items[0].get("intent") or ""))
+    b2 = _INTENT_BUCKET.get(str(items[1].get("intent") or ""))
+    return bool(b1) and bool(b2) and b1 != b2
 
 
 
@@ -374,9 +438,63 @@ def embedding_parse(state: QaState) -> dict:
     query = state.get("query", "")
     module_signal = state.get("module_signal") or "自动判断"
 
+    # ⑤ 查询改写（2026-09-29）：省略句/指代才触发；守护线程并行，到点回退原问句，
+    # 因此对 p50 延迟几乎无影响（改写与下面的分类/检索同时在跑）。
+    import threading
+
+    history_all = state.get("chat_history") or []
+    rewrite_holder: dict = {"query": "", "ms": 0.0, "fallback": True, "done": False}
+    rewrite_thread = None
+    rewrite_deadline = 0.0
+    _worker = _get_rewrite_worker()
+    if _worker.enabled() and should_rewrite(query, history_all):
+        rewrite_deadline = time.time() + _worker.timeout
+
+        def _run_rewrite() -> None:
+            try:
+                q2, ms2, fb2 = _worker.rewrite(query, history_all, deadline=rewrite_deadline)
+                rewrite_holder.update({"query": q2, "ms": ms2, "fallback": fb2, "done": True})
+            except Exception:  # noqa: BLE001 — 改写失败一律沉默回退
+                pass
+
+        rewrite_thread = threading.Thread(target=_run_rewrite, daemon=True)
+        rewrite_thread.start()
+
     result = classify(query)
     top3 = result.get("top3") or []
     intent = result.get("intent", "知识问答")
+
+    # 2026-09-29：省略句/指代的上下文先验 —— 短句或含指代词时，用上一轮用户问句一起分类，
+    # 仅在"合起来分得更准（分数更高）"时采用；两条都是本地嵌入分类（各 ~20ms），零 LLM 成本。
+    prev_user = ""
+    for item in reversed(history_all):
+        if isinstance(item, dict) and item.get("role") == "user" and item.get("content"):
+            prev_user = str(item["content"]).strip()
+            break
+    rewritten_query, rewrite_ms, rewrite_fallback = "", 0.0, True
+    if rewrite_thread is not None:
+        rewrite_thread.join(timeout=max(0.0, rewrite_deadline - time.time()))
+        if rewrite_holder["done"]:
+            rewritten_query = str(rewrite_holder["query"] or "")
+            rewrite_ms = float(rewrite_holder["ms"] or 0.0)
+            rewrite_fallback = bool(rewrite_holder["fallback"])
+            if rewritten_query and rewritten_query != query:
+                # 改写成功即采纳其分类（改写后问句信息量严格更大；裸短句的高分不可信）。
+                alt = classify(rewritten_query)  # 本地重分类（~20ms），不额外调 LLM
+                alt_top = (alt.get("top3") or [{}])[0].get("score") or 0
+                base_top = (top3 or [{}])[0].get("score") or 0
+                result, top3, intent = alt, alt.get("top3") or [], alt.get("intent", intent)
+                log.info("采纳改写问句并重分类：%r → %s(%s)（原 %s(%s)）",
+                         rewritten_query[:24], intent, alt_top, result.get("intent"), base_top)
+
+    # 改写成功时跳过规则化先验：LLM 改写比分句拼接更可靠（两者都会改 intent，避免互相覆盖）
+    if prev_user and not rewritten_query and _looks_elliptical(query):
+        joined = classify(f"{prev_user} {query}")
+        joined_top = (joined.get("top3") or [{}])[0].get("score") or 0
+        base_top = (top3 or [{}])[0].get("score") or 0
+        if joined_top > base_top:
+            result, top3, intent = joined, joined.get("top3") or [], joined.get("intent", intent)
+            log.info(f"省略句上下文先验生效：{query!r} + 上轮 {prev_user[:16]!r} → {intent}({joined_top})")
 
     # 闲聊/问候快路径：不检索知识库（检索会给"你好"这类句返回 12 条 0 分候选，
     # 导致 compose 的闲聊条件落空而调用 LLM），直接标记由 compose 模板回应
@@ -387,6 +505,9 @@ def embedding_parse(state: QaState) -> dict:
             "candidates_found": bool(state.get("candidates_found")),
             "retrieval_log": list(state.get("retrieval_log") or []),
             "chitchat": True,
+            "rewritten_query": rewritten_query,
+            "rewrite_ms": rewrite_ms,
+            "rewrite_fallback": rewrite_fallback,
         }
 
     # 模块信号仅在分类置信度低时参考（弱信号，不强制）
@@ -460,7 +581,9 @@ def embedding_parse(state: QaState) -> dict:
         and not found
         and not WECHAT_TRIGGER_RE.search(query)
     )
-    return {"intent": intent, "intent_top3": top3, "candidates": candidates,
+    return {"rewritten_query": rewritten_query, "rewrite_ms": rewrite_ms,
+            "rewrite_fallback": rewrite_fallback,
+            "intent": intent, "intent_top3": top3, "candidates": candidates,
             "candidates_found": found, "retrieval_log": retrieval_log,
             "world_knowledge": world_knowledge}
 
@@ -525,7 +648,8 @@ WECHAT_TRIGGER_RE = re.compile(r"科大|中科大|USTC|中国科学技术大学"
 
 # 世界知识通道允许的意图（通用常识可能被 embedding 归为知识问答/活动推荐；
 # 校园工具意图一律排除，防止"查成绩/空教室"等被世界知识通道截走）
-_WORLD_INTENTS = frozenset({"知识问答", "活动推荐"})
+_WORLD_INTENTS = frozenset({"知识问答", "活动推荐", "世界知识"})
+# 2026-09-29：新增「世界知识」意图后，非校园话题不再硬塞校内意图，# 直接走世界知识通道（LLM 直答 + 「非联网核实」免责）
 
 
 def is_world_knowledge_query(query: str) -> bool:

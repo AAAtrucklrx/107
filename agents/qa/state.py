@@ -12,6 +12,9 @@ class QaState(TypedDict):
     query: str  # 用户原始问题
     module_signal: str  # 侧边栏模块信号（"自动判断" 或模块名，仅作软提示）
     intent: str  # embedding 意图分类结果（参考信号）
+    rewritten_query: str
+    rewrite_ms: float
+    rewrite_fallback: bool
     intent_top3: list[dict]  # 意图 Top3（含分数）
     candidates: list[dict]  # 知识库候选召回片段（embedding_parse 与 retrieve 填充）
     candidates_found: bool  # 候选召回是否达到阈值

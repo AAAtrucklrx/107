@@ -33,7 +33,13 @@ CREATE TABLE IF NOT EXISTS web_chat_runs (
     -- 意图埋点（2026-09-29）：本地嵌入分类结果，供分布统计与回归评测（不调 LLM）
     intent TEXT,
     intent_score REAL,
-    intent_top3 TEXT
+    intent_top3 TEXT,
+    -- 意图/改写遥测（2026-09-29）：question 与 rewritten_query 经 FieldCipher 加密落库，
+    -- 让低置信度样例可复盘、并给"改写没有拖慢速度"留下实测证据
+    question TEXT,
+    rewritten_query TEXT,
+    rewrite_ms REAL,
+    rewrite_fallback INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_web_chat_runs_owner
