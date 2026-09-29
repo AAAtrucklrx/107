@@ -29,7 +29,11 @@ CREATE TABLE IF NOT EXISTS web_chat_runs (
     updated_at REAL NOT NULL,
     expires_at REAL NOT NULL,
     cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
-    error_code TEXT
+    error_code TEXT,
+    -- 意图埋点（2026-09-29）：本地嵌入分类结果，供分布统计与回归评测（不调 LLM）
+    intent TEXT,
+    intent_score REAL,
+    intent_top3 TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_web_chat_runs_owner

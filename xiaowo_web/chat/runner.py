@@ -565,6 +565,13 @@ class LegacyQaRunner:
             limitations=limitations,
             structured=list(result.get("structured") or []),
             retrieval=retrieval_signal,
+            intent=intent,
+            intent_score=(
+                float(top3[0].get("score"))
+                if (top3 := (result.get("intent_top3") or [])) and isinstance(top3[0], dict)
+                else None
+            ),
+            intent_top3=list(result.get("intent_top3") or []),
             cache_source_hashes=source_hashes,
             terminal_reason="local_answer",
             thoughts=thoughts,

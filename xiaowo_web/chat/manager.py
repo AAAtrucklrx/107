@@ -235,6 +235,21 @@ class ChatManager:
             self._fail(request.run_id, "INTERNAL_ERROR", "处理请求时发生错误，请重试。")
 
     async def _complete(self, job: _Job, bundle: AnswerBundle) -> None:
+        # 意图埋点（2026-09-29）：本地嵌入分类结果写进 web_chat_runs，零 LLM 调用；
+        # 埋点失败绝不影响答题。
+        try:
+            # _Job 只持有 request：run_id 在 job.request.run_id（2026-09-29 修正）
+            run_id = getattr(getattr(job, "request", None), "run_id", None)
+            if run_id:
+                self.store.set_run_intent(
+                    run_id,
+                    str(getattr(bundle, "intent", "") or ""),
+                    getattr(bundle, "intent_score", None),
+                    list(getattr(bundle, "intent_top3", None) or []),
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
         request = job.request
         self._stage(request.run_id, "answering", "正在生成回答")
         # B2: think 决策过程逐条推送(回答之前), 前端折叠卡展示

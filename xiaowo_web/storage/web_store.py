@@ -81,6 +81,20 @@ class WebStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_answer_feedback_namespace ON answer_feedback(namespace, created_at DESC, id DESC)"
             )
+            # 意图埋点列（2026-09-29）：老库就地补列，新库由 schema 建好
+            run_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(web_chat_runs)").fetchall()
+            }
+            for column, ddl in (
+                ("intent", "ALTER TABLE web_chat_runs ADD COLUMN intent TEXT"),
+                ("intent_score", "ALTER TABLE web_chat_runs ADD COLUMN intent_score REAL"),
+                ("intent_top3", "ALTER TABLE web_chat_runs ADD COLUMN intent_top3 TEXT"),
+            ):
+                if column not in run_columns:
+                    conn.execute(ddl)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_web_chat_runs_intent ON web_chat_runs(intent, created_at DESC)"
+            )
             conn.commit()
         self.prune_expired()
 
@@ -357,6 +371,30 @@ class WebStore:
             conn.commit()
         self._notify_event(run_id, sequence)
         return self._event_envelope(run_id, sequence, event_type, payload, timestamp)
+
+    def set_run_intent(
+        self,
+        run_id: str,
+        intent: str,
+        score: float | None = None,
+        top3: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """记录本轮意图分类结果（2026-09-29）。
+
+        意图此前完全不落库 → 线上既统计不了分布，也挑不出错例做回归。
+        纯本地写列，不触发任何 LLM 调用；埋点失败必须不影响答题（调用方 try/except）。
+        """
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE web_chat_runs SET intent = ?, intent_score = ?, intent_top3 = ? WHERE run_id = ?",
+                (
+                    (intent or None),
+                    score,
+                    json.dumps(top3, ensure_ascii=False) if top3 else None,
+                    run_id,
+                ),
+            )
+            conn.commit()
 
     def finish_run(
         self,

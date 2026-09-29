@@ -109,16 +109,36 @@ def test_pre_reviewer_is_fail_closed() -> None:
 
 
 def test_auto_approve_eligibility_rules() -> None:
-    """资格门槛：官方主源 + 稳定 + 不冲突 + 相关 + 分类允许 90 天，缺一不可。"""
-    verdict = _reviewer(_STABLE).review(_TEXT, {})
-    assert verdict.auto_approve_eligible(level="official_primary", category="policy")
-    assert verdict.auto_approve_eligible(level="official_primary", category="stable_general")
-    # 公告(7天)/办事(30天)放不下 90 天，且天然时效 → 不自动批准
-    assert not verdict.auto_approve_eligible(level="official_primary", category="announcement")
-    assert not verdict.auto_approve_eligible(level="official_primary", category="dynamic_service")
-    # 公众号/自媒体等级一律人工（智能搜索拿不到账号名，见 09-17 决定）
-    assert not verdict.auto_approve_eligible(level="unverified", category="policy")
-    assert not verdict.auto_approve_eligible(level="general", category="policy")
+    """资格门槛（2026-09-29 用户决定放宽后）：分类白名单 + 时效类允许 volatile + 不卡来源等级；红线仍严格。"""
+    stable = _reviewer(_STABLE).review(_TEXT, {})
+    # 长期类：仍必须 stable；来源等级不再卡（含未知/一般等级）
+    for category in ("policy", "stable_general"):
+        assert stable.auto_approve_eligible(level="official_primary", category=category)
+        assert stable.auto_approve_eligible(level="general", category=category)
+        assert stable.auto_approve_eligible(level="", category=category)
+    # 时效类：已纳入白名单（靠短 TTL：公告 7 天 / 办事 30 天自动过期兜底）
+    for category in ("announcement", "dynamic_service"):
+        assert stable.auto_approve_eligible(level="official_primary", category=category)
+
+    # 时效类允许 volatile；长期类不允许（避免把"天气预报"这类误当长期知识）
+    volatile = _reviewer({**_STABLE, "stability": "volatile"}).review(_TEXT, {})
+    assert volatile.auto_approve_eligible(level="official_primary", category="announcement")
+    assert volatile.auto_approve_eligible(level="official_primary", category="dynamic_service")
+    assert not volatile.auto_approve_eligible(level="official_primary", category="policy")
+    assert not volatile.auto_approve_eligible(level="official_primary", category="stable_general")
+
+    # 三条红线：敏感 / 重复 / 冲突 / 跑题 —— 无论分类与等级一律不自动批准
+    for bad in (
+        _reviewer({**_STABLE, "sensitivity": "sensitive"}).review(_TEXT, {}),
+        _reviewer({**_STABLE, "duplication": "duplicate"}).review(_TEXT, {}),
+        _reviewer({**_STABLE, "duplication": "conflict"}).review(_TEXT, {}),
+        _reviewer(_OFF_TOPIC).review(_TEXT, {}),
+    ):
+        for category in ("announcement", "dynamic_service", "policy", "stable_general"):
+            assert not bad.auto_approve_eligible(level="official_primary", category=category)
+
+    # 白名单之外的分类：不批准
+    assert not stable.auto_approve_eligible(level="official_primary", category="other")
 
 
 # ---------------------------------------------------------------- 相关性闸门
@@ -212,29 +232,37 @@ def test_auto_approve_on_uses_the_manual_publish_chain(tmp_path) -> None:
     assert auto_detail == {"category": "policy", "ttl_days": 90}
 
 
-def test_timeliness_category_blocks_auto_approve(tmp_path) -> None:
-    """双重把关：即便预审判"稳定"，关键词分类若是公告/办事类也**不自动批准**。
+def test_timeliness_category_auto_approves_with_short_ttl(tmp_path) -> None:
+    """2026-09-29 政策变更：公告/办事类**纳入**自动批准，但必须用短 TTL（公告 7 天）。
 
-    `_classify` 是确定性关键词分类（公告 7 天 / 办事 30 天放不下 90 天，且天然时效），
-    与 LLM 判定互相独立——两者都同意才自动批准。失败方向是**保守的**：只少批，不错批。
+    旧断言"公告类一律不自动批准"已随用户决定作废；新的兜底是 **TTL 到期自动过期**，
+    所以这里既验证"确实被自动批准"，也验证"落库的过期时间就是 7 天档"。
     """
+    import sqlite3
+    import time
+
     settings = make_settings(tmp_path)
     store = ReviewStore(settings)
     store.initialize()
     store.enqueue_candidate(
         "demo",
-        {**_candidate(), "title": "关于选课的通知", "snapshot_text": "关于选课的通知：请同学们按时办理选课手续，具体安排见系统。"},
+        {**_candidate(), "title": "关于选课的通知",
+         "snapshot_text": "关于选课的通知：请同学们按时办理选课手续，具体安排见系统。"},
     )
     worker = IngestionWorker(
         store, pre_reviewer=_reviewer(_STABLE), auto_approve=True, worker_id="w-announce"
     )
     assert worker.run_once() == "done"
-    item = _items(store)[0]
-    assert item["category"] == "announcement", item["category"]
-    assert item["status"] == "draft"
-    assert _details(settings.review_db_path, "auto_approve") == []
-    # 但仍要如实记录"本可自动批准 = False"（因为分类放不下 90 天）
-    assert _details(settings.review_db_path, "pre_review")[0]["auto_approve_eligible"] is False
+    # 审计里如实记录"本可自动批准 = True"（分类已允许 + 短 TTL）
+    assert _details(settings.review_db_path, "pre_review")[0]["auto_approve_eligible"] is True
+    # 短 TTL 兜底：过期时间落在 7 天档（不是默认的 90 天）
+    conn = sqlite3.connect(settings.review_db_path)
+    try:
+        row = conn.execute("SELECT expires_at FROM review_chunks ORDER BY expires_at LIMIT 1").fetchone()
+    finally:
+        conn.close()
+    assert row and row[0], "自动批准后应写入过期时间"
+    assert 6 <= (row[0] - time.time()) / 86400 <= 8, f"公告类 TTL 应为 7 天，实际={row[0]}"
 
 
 def test_same_snapshot_jobs_share_one_item_without_failing(tmp_path) -> None:
