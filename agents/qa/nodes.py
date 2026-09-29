@@ -336,6 +336,9 @@ _TOOL_ENTRIES = (
     "recommend_courses(课程推荐, 参数可传 profile={\"major\",\"grade\",\"interests\",\"preference_type\",\"workload_preference\",\"course_scope\",\"preferred_teachers\",\"target_term\",\"gpa\"} 或同名顶层参数)",
     "compare_courses(课程对比, 参数 course_a/course_b)",
     "analyze_teacher(教师评价/课程老师对比, 参数 teacher_name 或 course)",
+    "search_all_lessons(全校开课查询, 参数 keyword=关键词, 返回本学期全部教学班的开课院系/教师/上课安排)",
+    "get_course_reviews(取更多学生评课, 参数 course_name/teacher/limit, 用户追问「多一点评论」时调用)",
+    "compare_programs(两个专业的方案级培养方案差异, 参数 major_a/major_b/grade)",
     "add_event(添加日程)",
     "get_day_view(日视图)",
     "get_week_view(周视图)",
@@ -370,6 +373,8 @@ _BUCKET_TOOLS: dict[str, tuple[str, ...]] = {
         "search_courses", "get_semester_list", "analyze_teacher", "compare_courses",
         "collect_preferences", "recommend_courses", "query_program",
         "get_my_program", "get_program_progress", "plan_semester",
+        # 2026-09-29：这三个此前只在 tools/ 里注册、没进目录，等于 think 不知道它们存在
+        "search_all_lessons", "get_course_reviews", "compare_programs",
     ),
     # general（2026-09-29 修补）：此前是空元组（死配置，导致"无映射意图→通用桶"名不副实）。
     # 现与 _ALWAYS_TOOLS 对齐，供活动推荐等无专属桶的意图显式引用。
