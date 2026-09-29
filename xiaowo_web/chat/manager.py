@@ -239,13 +239,18 @@ class ChatManager:
         # 埋点失败绝不影响答题。
         try:
             # _Job 只持有 request：run_id 在 job.request.run_id（2026-09-29 修正）
-            run_id = getattr(getattr(job, "request", None), "run_id", None)
+            request = job.request
+            run_id = getattr(request, "run_id", None)
             if run_id:
                 self.store.set_run_intent(
                     run_id,
                     str(getattr(bundle, "intent", "") or ""),
                     getattr(bundle, "intent_score", None),
                     list(getattr(bundle, "intent_top3", None) or []),
+                    question=str(getattr(request, "question", "") or ""),
+                    rewritten_query=str(getattr(bundle, "rewritten_query", "") or ""),
+                    rewrite_ms=getattr(bundle, "rewrite_ms", None),
+                    rewrite_fallback=getattr(bundle, "rewrite_fallback", None),
                 )
         except Exception:  # noqa: BLE001
             pass
