@@ -1218,3 +1218,18 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - **遥测**：`web_chat_runs.rewritten_query / rewrite_ms / rewrite_fallback`（question 与 rewritten_query 均经 FieldCipher 加密）
 - **实测**：热态改写 **0.55s**；冷启动首调约 6s（池未热时会超时回退，不影响延迟）
 - **开关**：`XIAOWO_REWRITE_ENABLED=0` 一键关闭
+
+### 教师名清洗（2026-09-29）
+
+`utils/teacher_name.py` 统一处理评课社区教师字段的两类噪声：
+
+| 噪声 | 例子 | 清洗后 |
+|---|---|---|
+| 合教（一行多名字） | `刘世勇, 何卫东` / `王官武、俞书宏、邓兆祥` | 拆成多个姓名 |
+| 括号碎片（抓取残留） | `I）（刘国柱` / `英）（严以京` / `李四(合教)` / `（张三）` | `刘国柱` / `严以京` / `李四` / `张三` |
+| 噪声词 | `等` / `合教` / `待定` | 丢弃（`待定` 整条丢弃，不回退） |
+| 外教名 | `Li Ming` | 整段保留（不被"取最长单词"截断成 `Ming`） |
+
+- 算法：先按分隔符与括号切段，再在每段取最长中文段（姓名 2–6 字），并列时保留靠前的；去重保序
+- 接入：`tools/lesson_local.py`（本地全校开课查询的教师字段）、`tools/advisor_tools._norm_teacher`（`analyze_teacher` / `compare_courses` 的合教拆分；清洗为空时保留原值，绝不丢 token）
+- 实测：`course_data.db::teachers` 共 **2982** 条，含括号/字母/逗号的 **1419** 条 → 清洗后 **100% 规范（0 残留）**

@@ -14,6 +14,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from utils.teacher_name import clean_names
+
 _REVIEW_DB = Path(__file__).resolve().parents[1] / "data" / "course_data.db"
 
 
@@ -53,7 +55,7 @@ def search_lessons_local(student_id: str = None, keyword: str = None, limit: int
     lessons = [{
         "code": r["code"] or "",
         "course_name": r["name"] or "",
-        "teachers": [x for x in (r["teachers"] or "").split("、") if x],
+        "teachers": clean_names(r["teachers"]),
         "schedule": "",
         "open_department": r["dept"] or "",
         "credits": r["credit"],

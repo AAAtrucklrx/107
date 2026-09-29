@@ -327,9 +327,11 @@ def _dims_info(conn: sqlite3.Connection, course_id: int) -> dict:
 
 
 def _norm_teacher(name: str) -> list[str]:
-    """合教名拆分: '计永胜, 石攀, 周永刚' → ['计永胜', '石攀', '周永刚']"""
-    parts = re.split(r"[,，、/]", name or "")
-    parts = [p.strip() for p in parts if p.strip()]
+    """合教名拆分 + 括号碎片清洗（2026-09-29）:
+    '计永胜, 石攀' → ['计永胜','石攀']；'I）（刘国柱' → ['刘国柱']。"""
+    from utils.teacher_name import clean_names
+
+    parts = clean_names(name)
     return parts or [name]
 
 
