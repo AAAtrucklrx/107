@@ -47,6 +47,15 @@ start_one xiaowo-official-collect "$RUN_DIR/official_collect.pid" "$LOG_DIR/offi
 start_one xiaowo-sentinel "$RUN_DIR/sentinel.pid" "$LOG_DIR/sentinel.log" \
   "$PY" "$ROOT/deploy/server/sentinel.py"
 
+# 出网守卫（每 5min：校外出网体检；被校园网降级时用保存的凭据自动重开，异常写 run/net_alert.txt）
+# 2026-09-29 新增：09-27「网络通」权限失效导致静默降级两天才被发现
+start_one xiaowo-net-guard "$RUN_DIR/net_guard.pid" "$LOG_DIR/net_guard.log" \
+  "$PY" "$ROOT/deploy/server/net_guard.py"
+
+# 运维台 Web 服务（只读仪表盘；默认 0.0.0.0:8899 + Basic 认证，便于端口转发查看）
+start_one xiaowo-ops-web "$RUN_DIR/ops_web.pid" "$LOG_DIR/ops_web.log" \
+  "$PY" "$ROOT/deploy/server/ops_web.py"
+
 # 评课月度调度循环（若未运行则拉起）
 if [ -f "$RUN_DIR/icourse_loop.pid" ] && kill -0 "$(cat "$RUN_DIR/icourse_loop.pid")" 2>/dev/null; then
   echo "[icourse] 月度调度循环已在运行"

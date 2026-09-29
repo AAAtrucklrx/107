@@ -89,3 +89,12 @@ deploy/server/run/
 deploy/server/*.out
 deploy/server/*.log
 deploy/server/__pycache__/
+
+# 运维台生成产物（用 `bash deploy/server/ops.sh html|onepager` 随时重新生成）
+deploy/server/ops_dashboard.html
+deploy/server/运维一页纸.md
+deploy/server/运维一页纸.html
+
+# 运维/审核运行产物报告（可随时重新生成）
+deploy/server/审核积压_dryrun_*.md
+deploy/server/审核回填_batch_*.md
