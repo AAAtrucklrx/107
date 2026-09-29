@@ -4169,3 +4169,68 @@ button:disabled {
     max-width: 80px;
   }
 }
+
+/* ── 正式登录页（2026-09-29）──────────────────────────────── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, var(--primary) 0%, #0a6bc4 42%, var(--surface-muted) 42%, var(--surface) 100%);
+}
+.login-page__card {
+  width: min(94vw, 420px);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgb(6 40 75 / 0.22);
+  padding: 22px 24px 18px;
+}
+.login-page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.login-page__close {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  padding: 4px; border-radius: 8px; line-height: 0;
+}
+.login-page__close:hover { background: var(--surface-muted); color: var(--ink); }
+.login-page__title { font-size: 19px; margin: 16px 0 6px; }
+.login-page__lead { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.login-page__features { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 6px; font-size: 13px; }
+.login-page__features li::before { content: "✓"; color: var(--primary); font-weight: 700; margin-right: 8px; }
+.login-page__primary {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 11px; border: 0; border-radius: 10px;
+  background: var(--primary); color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+}
+.login-page__primary:hover { background: var(--primary-hover); }
+.login-page__primary:disabled { opacity: 0.6; cursor: default; }
+.login-page__note { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+.login-page__ghost {
+  width: 100%; margin-top: 10px; padding: 9px; border: 1px solid var(--line);
+  border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.login-page__ghost:hover { border-color: var(--line-strong); color: var(--ink); }
+.login-page__error { color: #c0392b; font-size: 12px; margin: 8px 0 0; }
+
+/* 登录页：正式入口 / 演示入口分区（2026-09-29） */
+.login-page__option { display: grid; gap: 8px; }
+.login-page__option-title { font-size: 14px; margin: 0; }
+.login-page__option-hint { color: var(--muted); font-size: 12px; margin: 0 0 4px; }
+.login-page__divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
+.login-page__divider::before,
+.login-page__divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+.login-page__secondary {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px; border: 1px solid var(--primary);
+  border-radius: 10px; background: var(--surface-raised); color: var(--primary);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.login-page__secondary:hover { background: var(--primary-soft); }
+.login-page__secondary:disabled { opacity: 0.6; cursor: default; }
+.login-page__notice {
+  display: flex; align-items: flex-start; gap: 6px; margin: 10px 0 0;
+  padding: 8px 10px; border-radius: 8px; background: var(--primary-soft);
+  color: var(--ink); font-size: 12px; line-height: 1.5;
+}
+.login-page__notice code { background: #fff; padding: 0 4px; border-radius: 4px; font-size: 11px; }

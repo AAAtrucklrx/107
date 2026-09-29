@@ -1074,7 +1074,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   <div className="message-login-required" role="note">
                     <LogIn size={15} />
                     <span>{message.content || "个人学业问题需要先登录。"}</span>
-                    <small>请点左下角头像 →「进入演示身份」或「科大统一认证」，登录后重试。</small>
+                    <small>请点左下角头像 →「登录（统一认证 / 演示身份）」，登录后重试。</small>
                   </div>
                 )}
                 {!!message.claims?.some((claim) => claim.status === "conflict") && (

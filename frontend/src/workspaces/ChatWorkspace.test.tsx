@@ -286,7 +286,7 @@ test("匿名问个人数据时给登录引导而不是故障（P3-10 回归）",
 
   const card = await screen.findByRole("note");
   expect(card).toHaveTextContent("个人学业问题需要先登录。");
-  expect(card).toHaveTextContent("进入演示身份");
+  expect(card).toHaveTextContent("登录（统一认证 / 演示身份）");
   expect(screen.queryByText("本次回答未完成")).toBeNull();
 });
 

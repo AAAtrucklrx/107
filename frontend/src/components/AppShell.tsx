@@ -29,6 +29,7 @@ interface AppShellProps {
   theme: Theme;
   onThemeToggle: () => void;
   onDemoLogin: () => Promise<void>;
+  onOpenLogin: () => void;   // 2026-09-29：打开独立正式登录页
   onLogout: () => Promise<void>;
   onDemoReset: () => Promise<void>;
   onOpenAdmin: () => void;
@@ -98,6 +99,7 @@ export function AppShell({
   theme,
   onThemeToggle,
   onDemoLogin,
+  onOpenLogin,
   onLogout,
   onDemoReset,
   onOpenAdmin,
@@ -221,6 +223,7 @@ export function AppShell({
               theme={theme}
               onThemeToggle={onThemeToggle}
               onDemoLogin={onDemoLogin}
+              onOpenLogin={onOpenLogin}
               onLogout={onLogout}
               onDemoReset={onDemoReset}
               onOpenAdmin={onOpenAdmin}
@@ -247,6 +250,7 @@ export function AppShell({
             theme={theme}
             onThemeToggle={onThemeToggle}
             onDemoLogin={onDemoLogin}
+            onOpenLogin={onOpenLogin}
             onLogout={onLogout}
             onDemoReset={onDemoReset}
             onOpenAdmin={onOpenAdmin}
@@ -287,6 +291,7 @@ interface AccountMenuProps {
   theme: Theme;
   onThemeToggle: () => void;
   onDemoLogin: () => Promise<void>;
+  onOpenLogin: () => void;   // 2026-09-29：打开独立正式登录页
   onLogout: () => Promise<void>;
   onDemoReset: () => Promise<void>;
   onOpenAdmin: () => void;
@@ -301,6 +306,7 @@ function AccountMenu({
   theme,
   onThemeToggle,
   onDemoLogin,
+  onOpenLogin,
   onLogout,
   onDemoReset,
   onOpenAdmin,
@@ -360,22 +366,14 @@ function AccountMenu({
               恢复演示初始状态
             </DropdownMenu.Item>
           )}
-          {!authenticated && config.auth_mode === "demo" && (
+          {!authenticated && (
             <DropdownMenu.Item
               className="account-menu__item account-menu__item--primary"
               disabled={busy}
-              onSelect={() => void onDemoLogin()}
+              onSelect={onOpenLogin}
             >
               <LogIn size={17} />
-              进入演示身份
-            </DropdownMenu.Item>
-          )}
-          {!authenticated && config.auth_mode === "cas" && (
-            <DropdownMenu.Item className="account-menu__item account-menu__item--primary" asChild>
-              <a href="/api/v1/auth/cas/login">
-                <LogIn size={17} />
-                科大统一认证
-              </a>
+              登录（统一认证 / 演示身份）
             </DropdownMenu.Item>
           )}
           {authenticated && (

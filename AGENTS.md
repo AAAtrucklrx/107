@@ -18,6 +18,12 @@
 - **数据安全体系（2026-09-03 上线）**：demo reset 默认禁用+密钥+清空前自动导出；每日备份 `deploy/server/backup_daily.sh`（7 项，日 7 份+周 5 份）；业务哨兵 `sentinel.py`（readiness 的 approved_index/search_quality）；数据事故恢复 SOP 见 `docs/部署规格与记录_2026-09-01.md` §14/§16。**纪律：外部小蜗包（云盘/旧机）不得解压覆盖工作区——尤其 data/ 与 .env（2026-09-03 曾致 review.db 损坏，已恢复）。**
 - **已确认的推荐边界**（用户定案，不得重新引入）：推荐只处理课程选择；课程范围是硬条件；兴趣/工作量/教师/目标学期默认软排序，只有“只要/必须”升级为硬过滤；复合“推荐且不冲突”只推荐并说明未查课表；独立 `check_course_conflict` 保留；`force_calls`/`pending_force_calls` 已永久移除。
 - **已确认的身份边界**：登录后的专业/年级只取当前用户 CAS/成绩档案，取不到不猜且不继承匿名选择；个人方案失败时可按已验证身份显示通用方案，但必须标注“专业通用参考，不是个人培养方案”。
+- **自动入库策略（2026-09-29 用户决定放宽，激进档；勿擅自改回）**：`_AUTO_APPROVE_CATEGORIES`
+  = policy / stable_general / announcement(TTL 7) / dynamic_service(TTL 30)；后两类允许 `volatile`，
+  policy/stable_general 仍要 `stable`；**来源等级不再卡**（含未知）；红线仍是 sensitivity=clean、
+  on_topic、unique。存量回填用 `deploy/server/review_backfill.py`（`--apply`，可 `--revoke-batch` 回滚）。
+- **登录界面（2026-09-29）**：运维台 `ops_web` 有独立登录页（会话 cookie，`/logout` 服务端吊销）；
+  小蜗前台有整页 `LoginPage`（统一认证/演示身份），头像菜单合并为单一「登录」入口。
 - 规则：动手前 `git status` + `git diff`，只改任务声明的文件；改完跑全量验证并报告；**不自提交**（经批准后按铁律 3 提交）。
 
 ## 部署现状（本服务器 = 生产/比赛环境，已完整部署）
@@ -26,6 +32,8 @@
 |---|---|---|
 | Web（SPA+API+SSE） | 8000（公网 8850 转发） | `competition + demo`，公网访问 `http://114.214.241.119:8850`（origin 单值校验，改地址须同步 `.env` 的 `XIAOWO_PUBLIC_ORIGIN`）；**联网已启用**（readiness 六项：database/review_database/approved_index/search_quality/web_evidence/evidence_extractor，前两项+web_evidence+evidence_extractor 为硬门槛） |
 | 审核/发布 worker | — | `python -m xiaowo_web.worker`，常驻 |
+| 运维台 Web ops_web | **8899** | 只读运维仪表盘（**独立登录页**，会话 cookie；Basic 认证保留给脚本）：`/` 仪表盘 · `/onepager` 一页纸 · `/json` 原始快照 · `/health` 存活；`bash deploy/server/ops.sh web` 查地址与账号（2026-09-29 新增，供端口转发/对接查看） |
+| 出网守卫 net_guard | — | 每 5min 体检校外出网；被校园网降级时自动重开网络通并写 `run/net_alert.txt`（2026-09-29 新增，因 09-27 静默降级两天才被发现） |
 | Streamlit 回退 | 8502 | 仅紧急回退 |
 
 - 公众号联网通道：科大相关问题并行检索微信公众号与全网（结果合并核验，不再只搜公众号；`XIAOWO_WECHAT_ENABLED=true`，官方号白名单 = **13 个用户确认账号精确匹配**（蜗壳小道消息/中科大本科招生/科科小黑板/中国科大教务/科大国际/南七集市/青春科大/USTCCS 等，大小写不敏感）+「中国科学技术大学|中科大|中国科大|蜗壳」子串回退；图片 OCR 走平台 unlimited-ocr；熔断+限频+SSRF 域白名单保护；详见 `docs/公众号联网通道_spec_2026-09.md` 与 `docs/部署规格与记录_2026-09-01.md` §11）。
@@ -68,6 +76,9 @@ $PY -m pytest tests/web -q          # 269 passed（2026-09-15 实测）
 # 需 LLM（向外部发送学号/画像，需授权）：scripts/qa_consistency.py 12/12 · scripts/qa_new_docs.py 10/10
 $PY init_check.py   # 数据库/评课库/知识库校验（含 db_manager 轻量迁移）
 # 前端（改 frontend/ 后）：cd frontend && npm ci --cache ../.npm-cache && npm run build
+# 运维台（2026-09-29）：bash deploy/server/ops.sh（终端总览）/ ops.sh html --open（单文件仪表盘）
+#   / ops.sh onepager（运维一页纸）/ ops.sh web（运维台 Web 地址+账号，端口 8899）
+#   / ops.sh logs web 80 / ops.sh net（出网体检，异常自动重开网络通）
 # 部署操作：./deploy/server/{start_all,stop_all,status}.sh
 ```
 

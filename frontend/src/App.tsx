@@ -2,6 +2,7 @@ import { AlertCircle, LoaderCircle, RefreshCw } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "./components/AdminShell";
 import type { AdminPage } from "./components/AdminShell";
+import { LoginPage } from "./components/LoginPage";
 import { AppShell } from "./components/AppShell";
 import { apiMutation, bootstrap } from "./lib/api";
 import { ChatWorkspace } from "./workspaces/ChatWorkspace";
@@ -60,6 +61,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [seededQuestion, setSeededQuestion] = useState<string | undefined>();
   const [demoResetVersion, setDemoResetVersion] = useState(0);
+  const [loginOpen, setLoginOpen] = useState(false);  // 2026-09-29：独立正式登录页
 
   const navigateWorkspace = useCallback((next: Workspace, replace = false) => {
     setAdminPage(null);
@@ -127,6 +129,7 @@ export function App() {
         body: "{}",
       });
       setSession(next);
+      setLoginOpen(false);
       navigateWorkspace("academic");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "演示登录失败。" );
@@ -198,6 +201,18 @@ export function App() {
     );
   }
 
+  if (loginOpen) {
+    return (
+      <LoginPage
+        config={config}
+        busy={busy}
+        error={error}
+        onDemoLogin={() => void handleDemoLogin()}
+        onClose={() => setLoginOpen(false)}
+      />
+    );
+  }
+
   if (adminPage && session.capabilities.knowledge_review) {
     return (
       <AdminShell
@@ -225,6 +240,7 @@ export function App() {
       theme={theme}
       onThemeToggle={() => setTheme((value) => value === "light" ? "dark" : "light")}
       onDemoLogin={handleDemoLogin}
+      onOpenLogin={() => setLoginOpen(true)}
       onLogout={handleLogout}
       onDemoReset={handleDemoReset}
       onOpenAdmin={() => navigateAdmin("knowledge")}  // 2026-09-17：菜单入口也进知识审核（此前写死 tools，绕过 adminPageFromPath 的默认页修复）
