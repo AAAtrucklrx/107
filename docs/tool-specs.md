@@ -1046,7 +1046,7 @@ TOOL_REGISTRY = {
 
 ## 2026-08-22 增补（v2.2：工具生态 + 活动数据线）
 
-> 注册表现状：**28 个内置工具 + 1 个随仓库提供的生态自检工具 `eco:echo`**（`agents/tool_registry.py` 合并 `tools/ecosystem/`）。本文上半部分的旧状态说明以本节和各工具最新正文为准。
+> 注册表现状：**31 个内置工具**（2026-09-29 与真实注册对齐：补入 search_all_lessons / get_course_reviews / compare_programs）。生态自检工具 `eco:echo` 已下线（校园工具改走跳转链接），`tools/ecosystem/` 框架保留供将来接入第三方工具（`agents/tool_registry.py` 仍会合并）。本文上半部分的旧状态说明以本节和各工具最新正文为准。
 
 ### 更正与重写说明（覆盖上文对应条目）
 

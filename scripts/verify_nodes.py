@@ -220,11 +220,10 @@ def main() -> None:
     t("think-路由已有结果转合成不崩溃（轮2回归）",
       _t.get("decision") == "compose" and _t.get("tool_calls") == [], str(_t))
     _vt = _valid_tools()
-    # P4-1 起：内置 28 工具 + 生态工具（eco: 前缀，动态加载；echo 为协议自检样例）
+    # 2026-09-29：内置 31 工具（目录与真实注册对齐）；生态自检 eco:echo 已下线（框架保留）
     _eco = [v for v in _vt if v.startswith("eco:")]
-    t("工具校验-注册表含内置28+生态工具", len(_vt) - len(_eco) >= 28
-      and "check_course_conflict" in _vt and "evaluate_selection_pressure" in _vt
-      and "eco:echo" in _vt, f"{len(_vt)} 工具（生态 {len(_eco)}）")
+    t("工具校验-注册表含内置31工具（生态自检 eco:echo 已下线）",
+      len(_vt) >= 31 and not _eco, f"{len(_vt)} 工具（生态 {len(_eco)}）")
     t("工具校验-合法工具ok", _check_tool_choice("query_grade", set()) == "ok", "")
     t("工具校验-未知工具unknown", _check_tool_choice("not_a_tool", set()) == "unknown", "")
     t("工具校验-重复调用done", _check_tool_choice("query_grade", {"query_grade"}) == "done", "")

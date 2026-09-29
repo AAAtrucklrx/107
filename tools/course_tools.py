@@ -1356,11 +1356,14 @@ def search_all_lessons(student_id: str = None, keyword: str = None) -> dict:
         return {"student_id": sid, "lessons": [], "count": 0,
                 "source": "locked", "message": _LOGIN_MSG}
 
+    cas = _cas()
+    if not (cas and cas.is_logged_in()):
+        # 2026-09-29：未登录不再返回空 —— 用本地评课库给出"谁开过/哪些学期/哪个院系"
+        # 本地版走独立模块（本文件模块级名字会被包装成 StructuredTool，不能当函数调）
+        from tools.lesson_local import search_lessons_local
+
+        return search_lessons_local(sid, keyword)
     try:
-        cas = _cas()
-        if not (cas and cas.is_logged_in()):
-            return {"student_id": sid, "lessons": [], "count": 0,
-                    "source": "fallback", "message": "全校开课查询需要教务登录会话，当前不可用"}
         api = _catalog()
         current_sem = api.get_current_semester() if api else None
         sem_id = current_sem.get("id") if current_sem and "error" not in current_sem else None
