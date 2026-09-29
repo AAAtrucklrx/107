@@ -20,7 +20,10 @@ log = get_logger(__name__)
 
 # 自动批准的固定有效期：90 天（用户 2026-09-17 批准）。只有 `policy`(90) 与
 # `stable_general`(180) 两个分类放得下 90 天，公告(7)/办事(30) 天然时效、不参与自动批准。
-_AUTO_APPROVE_TTL_DAYS = 90
+# 按分类取 TTL（2026-09-29：公告/办事类纳入自动批准，必须用各自的短 TTL，
+# 否则 store.auto_approve_item 会因超过 _TTL_LIMITS[category] 抛错而被静默跳过）
+_AUTO_APPROVE_TTL_DAYS = {"policy": 90, "stable_general": 90,
+                          "announcement": 7, "dynamic_service": 30}
 
 
 _PROMPT_INJECTION = re.compile(
@@ -320,7 +323,7 @@ class IngestionWorker:
                 job.namespace,
                 item_id,
                 category=draft.category,
-                ttl_days=_AUTO_APPROVE_TTL_DAYS,
+                ttl_days=_AUTO_APPROVE_TTL_DAYS.get(draft.category, 7),
                 actor_key="system:auto",
                 request_id=f"auto-approve:{job.job_id}",
                 now=now,
