@@ -1233,3 +1233,5 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - 算法：先按分隔符与括号切段，再在每段取最长中文段（姓名 2–6 字），并列时保留靠前的；去重保序
 - 接入：`tools/lesson_local.py`（本地全校开课查询的教师字段）、`tools/advisor_tools._norm_teacher`（`analyze_teacher` / `compare_courses` 的合教拆分；清洗为空时保留原值，绝不丢 token）
 - 实测：`course_data.db::teachers` 共 **2982** 条，含括号/字母/逗号的 **1419** 条 → 清洗后 **100% 规范（0 残留）**
+
+> 统一身份认证的半自动登录与会话托管（方案 B）见 `docs/统一认证与会话托管_方案B_20261023.md`。

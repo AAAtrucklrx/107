@@ -46,7 +46,7 @@ def main() -> int:
         where += " AND created_at >= ?"
         params.append(time.time() - args.days * 86400)
     rows = [dict(r) for r in conn.execute(
-        f"SELECT run_id, intent, intent_score, intent_top3, created_at FROM web_chat_runs WHERE {where}"
+        f"SELECT run_id, intent, intent_score, intent_top3, created_at, question FROM web_chat_runs WHERE {where}"
         " ORDER BY created_at DESC", params)]
     total = len(rows)
     print(f"=== 已埋点运行：{total} 条" + (f"（最近 {args.days} 天）" if args.days else "（全部）") + " ===")
@@ -79,11 +79,15 @@ def main() -> int:
         for r in lowrows:
             q = ""
             if settings is not None:
-                m = conn.execute(
-                    "SELECT content_value FROM web_messages WHERE run_id = ? AND role = 'user' LIMIT 1",
-                    (r["run_id"],)).fetchone()
-                if m and m["content_value"]:
-                    q = _decrypt(settings, m["content_value"])[:48]
+                # 优先用运行行上的 question（匿名会话不落 web_messages，只有这列才有原文）
+                if r.get("question"):
+                    q = _decrypt(settings, r["question"])[:48]
+                if not q:
+                    m = conn.execute(
+                        "SELECT content_value FROM web_messages WHERE run_id = ? AND role = 'user' LIMIT 1",
+                        (r["run_id"],)).fetchone()
+                    if m and m["content_value"]:
+                        q = _decrypt(settings, m["content_value"])[:48]
             top3 = ", ".join(f"{t.get('intent')}:{t.get('score')}" for t in
                              (json.loads(r["intent_top3"]) if r["intent_top3"] else [])[:3])
             print(f"  {(r['intent_score'] or 0):.3f} [{r['intent']:<6}] {q or '(问题已过期/不可读)'}  ← {top3}")
