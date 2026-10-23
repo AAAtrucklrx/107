@@ -98,3 +98,7 @@ deploy/server/运维一页纸.html
 # 运维/审核运行产物报告（可随时重新生成）
 deploy/server/审核积压_dryrun_*.md
 deploy/server/审核回填_batch_*.md
+
+# 脚本本地依赖（软链到调研目录的 node_modules）与登录产物
+scripts/node_modules
+scripts/*.local.json

@@ -155,6 +155,61 @@ class CASClient:
         return self._session
 
     @property
+    def load_cookies_from_file(self, path: str) -> bool:
+        """从 `scripts/sso_login_browser.mjs` 导出的 JSON 加载会话 cookie（半自动登录闭环）。
+
+        背景（2026-10-23 实测）：中科大 SSO 登录会强制短信二次验证 + 有风控指纹，
+        服务端无法全自动登录；因此改为「真实浏览器 + 人工输入 → 导出 cookie →
+        本函数加载 → 后续 API 复用」。**不涉及密码**，只导入会话票据。
+
+        Args:
+            path: cookie JSON 路径（由 sso_login_browser.mjs 生成，权限 600）
+
+        Returns:
+            True 表示 cookie 已加载且会话可用（`/home/menu` 探测通过）
+        """
+        import json as _json
+        from pathlib import Path as _Path
+
+        try:
+            payload = _json.loads(_Path(path).read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            log.error(f"cookie 文件读取失败: {type(exc).__name__}: {exc}")
+            return False
+        items = payload.get("cookies") or []
+        if not items:
+            log.error("cookie 文件里没有 cookies 字段")
+            return False
+        loaded = 0
+        for c in items:
+            try:
+                domain = str(c.get("domain") or "").lstrip(".")
+                self._session.cookies.set(
+                    str(c["name"]), str(c["value"]),
+                    domain=domain or None, path=str(c.get("path") or "/"),
+                )
+                loaded += 1
+            except Exception:  # noqa: BLE001 — 单条坏 cookie 不影响其余
+                continue
+        self._logged_in = self.probe_jw_session()
+        log.info(f"已加载会话 cookie {loaded} 条（{path}），会话可用={self._logged_in}")
+        return self._logged_in
+
+    def probe_jw_session(self) -> bool:
+        """用一次只读请求确认教务会话是否有效（不依赖账号密码）。"""
+        try:
+            resp = self._session.get(
+                f"{self.JW_BASE}/home/menu", timeout=self.TIMEOUT, allow_redirects=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"教务会话探测失败: {type(exc).__name__}")
+            return False
+        if resp.status_code != 200:
+            log.info(f"教务会话探测: HTTP {resp.status_code}")
+            return False
+        location = (resp.headers.get("Location") or "").lower()
+        return "cas/login" not in location and "id.ustc.edu.cn" not in location
+
     def is_logged_in(self) -> bool:
         return self._logged_in
 

@@ -98,6 +98,58 @@ async def login_demo(
     return _session_payload(demo_principal, demo_principal.csrf_token)
 
 
+@router.post("/sso_cookie")
+async def import_sso_cookie(
+    request: Request,
+    response: Response,
+    principal: Annotated[Principal, Depends(require_mutation)],
+) -> dict:
+    """方案 B：把浏览器导出的学校会话加密后托管到**我们域**的 HttpOnly cookie（不落库）。
+
+    前置：用户已在浏览器完成统一认证（半自动登录），本接口只接收 CookieJar；
+    会先用一次只读请求校验会话真实可用，再加密写 cookie。**不接收、不存储密码**。
+    """
+    from services.cas_client import CASClient
+    from services.session_vault import (
+        COOKIE_NAME, CookiePayloadError, SessionVault, apply_cookies, validate_payload,
+    )
+
+    settings = request.app.state.settings
+    vault = SessionVault(settings.session_vault_key, ttl_seconds=settings.session_vault_ttl_seconds)
+    if not vault.enabled:
+        raise ApiError(503, "SESSION_VAULT_DISABLED", "会话托管未启用（缺少 XIAOWO_SESSION_VAULT_KEY）。")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        raise ApiError(400, "INVALID_JSON", "请求体不是合法 JSON。")
+    try:
+        essential = validate_payload((body or {}).get("cookies"))
+    except CookiePayloadError as exc:
+        raise ApiError(400, exc.code, str(exc))
+    client = CASClient()
+    if apply_cookies(client.session, essential) == 0 or not client.probe_jw_session():
+        raise ApiError(400, "COOKIE_UNUSABLE", "该会话无法通过教务校验，请重新登录。")
+    blob = vault.seal(essential)
+    if len(blob) > 4000:
+        raise ApiError(400, "COOKIE_TOO_LARGE", "会话数据过大，无法写入浏览器 cookie。")
+    response.set_cookie(COOKIE_NAME, blob, **vault.cookie_kwargs())
+    log.info("会话已托管到浏览器 cookie: %d 条必要项, %d 字符", len(essential), len(blob))
+    return {"ok": True, "cookie": COOKIE_NAME, "ttl": vault.ttl, "size": len(blob), "items": len(essential)}
+
+
+@router.delete("/sso_cookie")
+async def clear_sso_cookie(
+    request: Request,
+    response: Response,
+    principal: Annotated[Principal, Depends(require_mutation)],
+) -> dict:
+    """清除托管在浏览器的会话（退出登录时调用）。"""
+    from services.session_vault import COOKIE_NAME
+
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"ok": True, "cookie": COOKIE_NAME}
+
+
 @router.post("/logout")
 async def logout(
     request: Request,

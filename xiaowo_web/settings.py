@@ -147,6 +147,8 @@ class WebSettings:
     # 演示重置保护（2026-09-03 事故加固）：默认关闭端点；开启需额外密钥头
     demo_reset_enabled: bool = False
     demo_reset_key: str = ""
+    session_vault_key: str = ""            # 方案 B：会话托管密钥（为空则功能关闭）
+    session_vault_ttl_seconds: int = 43_200  # 12 小时
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -215,6 +217,8 @@ class WebSettings:
                 ).resolve(),
                 admin_ids=admin_ids,
                 data_key=source.get("XIAOWO_DATA_KEY", "").strip(),
+                session_vault_key=source.get("XIAOWO_SESSION_VAULT_KEY", "").strip(),
+                session_vault_ttl_seconds=int(source.get("XIAOWO_SESSION_VAULT_TTL", "43200")),
                 session_secret=source.get("XIAOWO_SESSION_SECRET", "").strip(),
                 trusted_proxy_cidrs=_split_csv(source, "XIAOWO_TRUSTED_PROXY_CIDRS"),
                 sidecar_allowed_hosts=frozenset(
