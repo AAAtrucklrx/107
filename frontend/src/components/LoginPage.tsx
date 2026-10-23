@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Info, LogIn, ShieldCheck, X } from "lucide-react";
 import { Brand } from "./Brand";
+import { SsoImportPanel } from "./SsoImportPanel";
 import type { PublicConfig } from "../types";
 
 /**
@@ -116,7 +117,8 @@ export function LoginPage({
           </p>
         )}
 
-        <button type="button" className="login-page__ghost" onClick={onClose}>
+        <SsoImportPanel />
+          <button type="button" className="login-page__ghost" onClick={onClose}>
           先匿名体验
         </button>
       </div>

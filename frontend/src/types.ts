@@ -32,6 +32,8 @@ export interface Profile {
 }
 
 export interface SessionPayload {
+  /** 方案 B：教务会话是否已由浏览器 cookie 托管（GET /auth/session） */
+  jw_session?: boolean;
   principal: {
     id: string | null;
     auth_mode: "anonymous" | "demo" | "cas";

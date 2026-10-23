@@ -93,9 +93,13 @@ class SessionVault:
         return cookies if isinstance(cookies, list) else None
 
     # ── HTTP cookie 属性（写用户浏览器时用）──────────────────
-    def cookie_kwargs(self) -> dict[str, Any]:
-        return {"httponly": True, "secure": True, "samesite": "lax",
-                "max_age": self.ttl, "path": "/"}
+    def cookie_kwargs(self, *, secure: bool | None = None) -> dict[str, Any]:
+        """写浏览器 cookie 的属性。`secure` 默认 True；本地 http 调试时传 False。
+
+        生产必须走 HTTPS（Secure=True），否则票据在明文链路上传输。
+        """
+        return {"httponly": True, "secure": True if secure is None else bool(secure),
+                "samesite": "lax", "max_age": self.ttl, "path": "/"}
 
 
 def apply_cookies(session, cookies: list[dict[str, Any]]) -> int:

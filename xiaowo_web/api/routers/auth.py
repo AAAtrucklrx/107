@@ -132,7 +132,7 @@ async def import_sso_cookie(
     blob = vault.seal(essential)
     if len(blob) > 4000:
         raise ApiError(400, "COOKIE_TOO_LARGE", "会话数据过大，无法写入浏览器 cookie。")
-    response.set_cookie(COOKIE_NAME, blob, **vault.cookie_kwargs())
+    response.set_cookie(COOKIE_NAME, blob, **vault.cookie_kwargs(secure=settings.cookie_secure))
     log.info("会话已托管到浏览器 cookie: %d 条必要项, %d 字符", len(essential), len(blob))
     return {"ok": True, "cookie": COOKIE_NAME, "ttl": vault.ttl, "size": len(blob), "items": len(essential)}
 

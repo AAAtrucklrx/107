@@ -45,7 +45,19 @@ def _catalog():
 
 
 def _cas():
-    """获取 CASClient 实例（未登录返回 None）"""
+    """获取 CASClient 实例（未登录返回 None）。
+
+    2026-10-23（方案 B）：**优先取当前请求的会话**（来自用户浏览器 cookie 解包），
+    没有则回退到进程级单例（兼容旧的"服务端自己登录一次"模式）。
+    """
+    try:
+        from services.jw_session import current_client
+
+        client = current_client()
+        if client is not None:
+            return client
+    except Exception:  # noqa: BLE001
+        pass
     sc = ServiceContainer()
     return sc.cas_client if sc.has_cas() else None
 
