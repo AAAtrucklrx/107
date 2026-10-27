@@ -1,0 +1,168 @@
+/* Shared product tokens. Layout breakpoints: phone <640; tablet 640–1024; desktop >1024. */
+:root {
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+  --canvas: #f6f8fc;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-muted: #eef2f8;
+  --ink: #182333;
+  --muted: #526078;
+  --faint: #5c6b80;
+  --line: #dce3ed;
+  --line-strong: #a5b2c4;
+  --primary: #2359df;
+  --primary-hover: #1746bd;
+  --primary-soft: #eaf0ff;
+  --on-primary: #ffffff;
+  --accent: var(--primary);
+  --on-accent: var(--on-primary);
+  --on-user-bubble: #ffffff;
+  --retrieval: #087477;
+  --retrieval-soft: #e2f3f0;
+  --success: #24724d;
+  --success-soft: #e6f5eb;
+  --warning: #885b09;
+  --warning-soft: #fff3d6;
+  --danger: #b33143;
+  --danger-soft: #ffedf0;
+  --blue-soft: var(--primary-soft);
+  --cyan-soft: var(--retrieval-soft);
+  --rail: var(--surface);
+  --rail-raised: var(--surface-muted);
+  --rail-line: var(--line);
+  --rail-ink: var(--ink);
+  --rail-muted: var(--muted);
+  --glass: var(--surface);
+  --glass-strong: var(--surface-raised);
+  --glass-weak: var(--surface-muted);
+  --glass-rail: var(--surface);
+  --glass-solid: var(--surface);
+  --gborder: var(--line);
+  --gborder-soft: var(--line);
+  --gblur: none;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-sheet: 20px;
+  --shadow-low: 0 4px 20px rgb(29 48 84 / 5%);
+  --shadow: 0 16px 48px rgb(29 48 84 / 15%);
+  --gshadow: var(--shadow-low);
+  --gshadow-lg: var(--shadow);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+  --text-small: 13px;
+  --text-body: 15px;
+  --text-heading: clamp(21px, 2.4vw, 26px);
+  --duration-fast: 140ms;
+  --duration-page: 200ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --tt: var(--duration-fast) var(--ease-out);
+  --touch-target: 44px;
+  --rail-width: 224px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --user-bubble: var(--primary);
+  font-family: var(--font-sans);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --canvas: #111722;
+  --surface: #192231;
+  --surface-raised: #202c3d;
+  --surface-muted: #243146;
+  --ink: #eef3fc;
+  --muted: #b5c2d7;
+  --faint: #a3b3cb;
+  --line: #35445c;
+  --line-strong: #6d7f9b;
+  --primary: #9bbcff;
+  --primary-hover: #c1d5ff;
+  --primary-soft: #263c64;
+  --on-primary: #122344;
+  --retrieval: #8ed7d0;
+  --retrieval-soft: #1b3d40;
+  --success: #94dbb1;
+  --success-soft: #203d31;
+  --warning: #f0cb80;
+  --warning-soft: #413521;
+  --danger: #ffa8b5;
+  --danger-soft: #492c38;
+  --shadow-low: 0 4px 20px rgb(0 0 0 / 12%);
+  --shadow: 0 16px 48px rgb(0 0 0 / 35%);
+  --user-bubble: #294e8c;
+  color-scheme: dark;
+}
+
+/* Brand color is independent from light/dark mode. Primary is readable text;
+   accent is the stronger filled control color. Yellow must never carry white text. */
+:root[data-style="frog"] {
+  --canvas: #fcfaf0;
+  --surface: #fffef9;
+  --surface-raised: #ffffff;
+  --surface-muted: #f2f0e6;
+  --ink: #292b25;
+  --muted: #686b60;
+  --faint: #74766a;
+  --line: #ece9df;
+  --line-strong: #aaa080;
+  --primary: #766511;
+  --primary-hover: #594300;
+  --primary-soft: #fff3bc;
+  --on-primary: #ffffff;
+  --accent: #f5d963;
+  --on-accent: #34331f;
+  --user-bubble: #f5d963;
+  --on-user-bubble: #34331f;
+  --shadow-low: 0 4px 20px rgb(83 65 15 / 4%);
+  --shadow: 0 16px 48px rgb(83 65 15 / 12%);
+}
+:root[data-style="frog"][data-theme="dark"] {
+  --canvas: #1c1b16;
+  --surface: #26241d;
+  --surface-raised: #302d23;
+  --surface-muted: #373226;
+  --ink: #f6f0df;
+  --muted: #c8bea6;
+  --faint: #b8ac90;
+  --line: #484131;
+  --line-strong: #83775a;
+  --primary: #f1d477;
+  --primary-hover: #f9e6a3;
+  --primary-soft: #443a1c;
+  --on-primary: #302709;
+  --accent: #f1cf58;
+  --on-accent: #302709;
+  --user-bubble: #f1cf58;
+  --on-user-bubble: #302709;
+  --shadow-low: 0 4px 20px rgb(0 0 0 / 12%);
+  --shadow: 0 16px 48px rgb(0 0 0 / 30%);
+}
+
+html, body, #root { min-width: 0; font-family: var(--font-sans); }
+body { font-size: var(--text-body); margin: 0; color: var(--ink); background: var(--canvas); background-image: none; }
+.brand__logo, :root[data-theme="dark"] .brand__logo { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+button, input, textarea, select { font: inherit; }
+button, [role="button"], select { min-height: var(--touch-target); }
+button, [role="button"] { min-width: var(--touch-target); touch-action: manipulation; }
+input:not([type="checkbox"]):not([type="radio"]) { min-height: var(--touch-target); }
+button, a, input, textarea, select { transition-duration: var(--duration-fast); }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid var(--primary); outline-offset: 3px;
+}
+button:disabled { cursor: not-allowed; }
+::selection { background: var(--primary-soft); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

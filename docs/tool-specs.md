@@ -1235,3 +1235,11 @@ SSE 只发送 `run.created`、固定枚举的 `stage.changed`、`source.found`�
 - 实测：`course_data.db::teachers` 共 **2982** 条，含括号/字母/逗号的 **1419** 条 → 清洗后 **100% 规范（0 残留）**
 
 > 统一身份认证的半自动登录与会话托管（方案 B）见 `docs/统一认证与会话托管_方案B_20261023.md`。
+
+### Android 移动会话（2026-10-24）
+
+`mobile/` 以 Capacitor 复用现有 React 与问答/工具 API，不修改工具的查询或回答决策。移动认证默认关闭；启用后新增 `/auth/mobile/bootstrap`、`authorize`、`exchange`，以精确 App Origin、PKCE 单次 code 与短随机 Bearer 隔离浏览器 Cookie 会话。学校登录采用其自定义 SSO + jw service，密码和短信均在学校页面人工输入，不以本应用作为 CAS callback。
+
+后端将必要学校 Cookie 和身份加密保存在独立移动会话库；原生 Keystore 只保护小蜗令牌。`GET /auth/session` 返回验证身份，已确认学校过期返回401，暂时网络故障返回503以保留重试机会；DELETE 教务连接或 logout 撤销 token 并终止所属运行。SSE 使用 Authorization 请求头，令牌不放在 URL。无效移动 Bearer 不回退到可能并存的浏览器 Cookie。
+
+已验证学号绑定请求级教务客户端，经过问答执行线程与并行工具线程分别克隆，ServiceContainer 优先采用当前请求客户端，避免串号。系统 WebView 临时 Cookie 落盘由用户明确接受，成功/取消/退出/下次启动执行清理；Android 设备残留检查属于发布验收，不以模拟测试替代。详见 `mobile/README.md` 与 `mobile/PRIVACY.md`。

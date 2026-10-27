@@ -2,60 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  --canvas: #eef3f7;
-  --surface: #fcfdfe;
-  --surface-raised: #ffffff;
-  --surface-muted: #e6edf2;
-  --ink: #16222d;
-  --muted: #61707d;
-  --faint: #85929d;
-  --line: #cbd6df;
-  --line-strong: #aebcc8;
-  --primary: #034ea1;
-  --primary-hover: #023f83;
-  --primary-soft: #dbe9f7;
-  --retrieval: #099ba8;
-  --retrieval-soft: #d9eff0;
-  --success: #287f59;
-  --success-soft: #dcefe5;
-  --warning: #a96e17;
-  --warning-soft: #f5ead5;
-  --danger: #c24343;
-  --danger-soft: #f7e0e0;
-  --shadow: 0 10px 30px rgb(22 34 45 / 0.08);
-  --rail-width: 224px;
-  font-family: "Noto Sans SC Variable", sans-serif;
-  font-synthesis: none;
-  letter-spacing: 0;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --canvas: #101518;
-  --surface: #171d21;
-  --surface-raised: #1d252a;
-  --surface-muted: #222b31;
-  --ink: #ecf1f4;
-  --muted: #a4b0b8;
-  --faint: #7d8a93;
-  --line: #344149;
-  --line-strong: #4a5963;
-  --primary: #6ea9e8;
-  --primary-hover: #91c0f1;
-  --primary-soft: #1b344d;
-  --retrieval: #58c3c8;
-  --retrieval-soft: #15383b;
-  --success: #6bc596;
-  --success-soft: #18382b;
-  --warning: #e1af5f;
-  --warning-soft: #3c2e19;
-  --danger: #ef8181;
-  --danger-soft: #452323;
-  --shadow: 0 12px 36px rgb(0 0 0 / 0.28);
-}
-
 * {
   box-sizing: border-box;
   letter-spacing: 0;
@@ -575,9 +521,7 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.icon-button,
-.message-action,
-.send-button {
+.icon-button {
   display: inline-grid;
   width: 34px;
   height: 34px;
@@ -590,8 +534,7 @@ button:disabled {
   cursor: pointer;
 }
 
-.icon-button:hover,
-.message-action:hover {
+.icon-button:hover {
   border-color: var(--line);
   background: var(--surface-muted);
   color: var(--ink);
@@ -862,8 +805,7 @@ button:disabled {
   color: var(--warning);
 }
 
-.workspace-inline-error,
-.conversation-error {
+.workspace-inline-error {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -922,60 +864,10 @@ button:disabled {
 
 /* Chat */
 
-.chat-workspace {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  grid-template-columns: 244px minmax(0, 1fr);
-  background: var(--surface);
-}
-
-.chat-history-pane {
-  min-width: 0;
-  min-height: 0;
-  border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 45%, var(--surface));
-}
-
-.chat-history {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  padding: 17px 12px 12px;
-}
-
-.chat-history__header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 5px 12px;
-}
-
-.chat-history__header div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.chat-history__header strong {
-  font-family: "Noto Serif SC Variable", serif;
-  font-size: 14px;
-}
-
 .chat-history__list {
   min-height: 0;
   flex: 1;
   overflow: auto;
-}
-
-.chat-history__empty {
-  padding: 22px 8px;
-  color: var(--faint);
-  font-size: 11px;
-  text-align: center;
 }
 
 .history-row {
@@ -1054,64 +946,12 @@ button:disabled {
   font-size: 10px;
 }
 
-.conversation-pane {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  background: var(--surface);
-}
-
 /* 显式行号:error 条不渲染时(无错误),grid 只有 3 个子元素会错位
    (message-scroll 落到 auto 行被回答撑高、composer 落到 1fr 行塌缩被挤出视口)。
    固定行号后无论 error 是否存在,滚动区恒为 1fr 行、输入框恒为 auto 行。 */
-.conversation-pane > .message-scroll {
-  grid-row: 3;
-}
-
-.conversation-pane > .composer {
-  grid-row: 4;
-}
-
-.conversation-header {
-  display: flex;
-  min-height: 61px;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  padding: 9px 22px;
-}
-
-.conversation-header > div:first-of-type {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.conversation-header strong {
-  font-family: "Noto Serif SC Variable", serif;
-  font-size: 14px;
-}
 
 .conversation-header__history {
   display: none;
-}
-
-.privacy-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--faint);
-  font-size: 10px;
-}
-
-.message-scroll {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  scroll-behavior: smooth;
-  padding: 28px max(24px, calc((100% - 790px) / 2)) 22px;
 }
 
 .chat-empty {
@@ -1163,43 +1003,6 @@ button:disabled {
 .prompt-seeds button:hover {
   border-color: var(--primary);
   color: var(--primary);
-}
-
-.message {
-  display: grid;
-  max-width: 790px;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 12px;
-  margin: 0 auto 28px;
-}
-
-.message__identity {
-  display: flex;
-  height: 25px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-  padding-top: 2px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.message__body {
-  min-width: 0;
-}
-
-.message--user .message__body {
-  width: fit-content;
-  max-width: min(620px, 100%);
-  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line));
-  border-radius: 6px 6px 2px 6px;
-  background: var(--primary-soft);
-  padding: 10px 13px;
-}
-
-.message--user .markdown-body p {
-  margin: 0;
 }
 
 .markdown-body {
@@ -1480,24 +1283,6 @@ button:disabled {
   animation: pulse 1.5s ease-out infinite;
 }
 
-.message-login-required {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent);
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.message-login-required small {
-  color: var(--muted);
-}
-
-.message-failure,
 .claim-conflict {
   display: flex;
   align-items: flex-start;
@@ -1526,66 +1311,7 @@ button:disabled {
   margin-top: 12px;
 }
 
-.message-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-top: 10px;
-}
-
-.message-action {
-  width: 30px;
-  height: 30px;
-}
-
-.message-action--web {
-  color: var(--retrieval);
-}
-
 /* B5: 用户消息编辑重生成 */
-.user-message {
-  position: relative;
-}
-
-.message-edit-button {
-  position: absolute;
-  top: -6px;
-  right: -8px;
-  width: 26px;
-  height: 26px;
-  opacity: 0;
-  color: var(--muted);
-  transition: opacity 0.15s ease;
-}
-
-.user-message:hover .message-edit-button {
-  opacity: 1;
-}
-
-.user-message-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.user-message-editor textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-1);
-  color: var(--text);
-  padding: 10px 12px;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.user-message-editor__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
 /* B2: 可折叠思考过程卡 */
 .thought-card {
@@ -1921,92 +1647,6 @@ button:disabled {
 
 .source-item__dates dt {
   font-weight: 700;
-}
-
-.composer {
-  width: min(790px, calc(100% - 48px));
-  flex: none;
-  margin: 0 auto 18px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--surface-raised);
-  box-shadow: 0 8px 24px rgb(22 34 45 / 0.07);
-}
-
-.composer:focus-within {
-  border-color: color-mix(in srgb, var(--primary) 65%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-.composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 52px;
-  max-height: 160px;
-  resize: vertical;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  padding: 13px 14px 5px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.composer textarea::placeholder {
-  color: var(--faint);
-}
-
-.composer__footer {
-  display: flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 3px 6px 6px 9px;
-}
-
-.retrieval-control {
-  display: inline-grid;
-  grid-template-columns: repeat(3, 1fr);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface-muted);
-  padding: 2px;
-}
-
-.retrieval-control button {
-  display: inline-flex;
-  min-width: 57px;
-  height: 27px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.retrieval-control button[data-active="true"] {
-  background: var(--surface-raised);
-  color: var(--ink);
-  box-shadow: 0 1px 3px rgb(22 34 45 / 0.12);
-}
-
-.retrieval-control button:nth-child(2)[data-active="true"] {
-  color: var(--retrieval);
-}
-
-.send-button {
-  width: 34px;
-  height: 34px;
-  background: var(--primary);
-  color: white;
-}
-
-.send-button:hover {
-  background: var(--primary-hover);
 }
 
 .send-button--stop {
@@ -3729,9 +3369,6 @@ button:disabled {
 }
 
 @media (max-width: 1120px) {
-  .chat-workspace {
-    grid-template-columns: 210px minmax(0, 1fr);
-  }
 
   .module-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3787,42 +3424,8 @@ button:disabled {
     padding: 0;
   }
 
-  .chat-workspace {
-    display: block;
-    height: 100%;
-  }
-
-  .chat-history-pane {
-    display: none;
-  }
-
-  .conversation-pane {
-    height: 100%;
-  }
-
-  .conversation-header {
-    min-height: 52px;
-    padding: 6px 12px;
-  }
-
   .conversation-header__history {
     display: inline-grid;
-  }
-
-  .conversation-header > div:first-of-type {
-    margin-right: auto;
-    padding-left: 5px;
-  }
-
-  .privacy-note {
-    max-width: 110px;
-    justify-content: flex-end;
-    font-size: 8px;
-    text-align: right;
-  }
-
-  .message-scroll {
-    padding: 19px 13px 14px;
   }
 
   .chat-empty {
@@ -3837,34 +3440,8 @@ button:disabled {
     flex-direction: column;
   }
 
-  .message {
-    grid-template-columns: 35px minmax(0, 1fr);
-    gap: 8px;
-    margin-bottom: 22px;
-  }
-
-  .message__identity {
-    justify-content: flex-start;
-    font-size: 0;
-  }
-
-  .message__identity svg {
-    width: 17px;
-    height: 17px;
-    color: var(--primary);
-  }
-
   .markdown-body {
     font-size: 12px;
-  }
-
-  .composer {
-    width: calc(100% - 22px);
-    margin-bottom: 9px;
-  }
-
-  .retrieval-control button {
-    min-width: 50px;
   }
 
   .source-item__dates {
@@ -4158,15 +3735,6 @@ button:disabled {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .retrieval-control button {
-    min-width: 45px;
-    font-size: 9px;
-  }
-
-  .privacy-note {
-    max-width: 80px;
   }
 }
 

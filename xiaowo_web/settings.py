@@ -149,6 +149,11 @@ class WebSettings:
     demo_reset_key: str = ""
     session_vault_key: str = ""            # 方案 B：会话托管密钥（为空则功能关闭）
     session_vault_ttl_seconds: int = 43_200  # 12 小时
+    mobile_auth_enabled: bool = False
+    mobile_debug_loopback: bool = False
+    mobile_auth_db_path: Path = PROJECT_ROOT / "data" / "mobile_auth.db"
+    mobile_vault_key: str = ""
+    mobile_token_seconds: int = 43_200
     cookie_name: str = "xiaowo_session"
     csrf_cookie_name: str = "xiaowo_csrf"
     cas_state_cookie_name: str = "xiaowo_cas_state"
@@ -219,6 +224,11 @@ class WebSettings:
                 data_key=source.get("XIAOWO_DATA_KEY", "").strip(),
                 session_vault_key=source.get("XIAOWO_SESSION_VAULT_KEY", "").strip(),
                 session_vault_ttl_seconds=int(source.get("XIAOWO_SESSION_VAULT_TTL", "43200")),
+                mobile_auth_enabled=_env_bool(source, "XIAOWO_MOBILE_AUTH_ENABLED"),
+                mobile_debug_loopback=_env_bool(source, "XIAOWO_MOBILE_DEBUG_LOOPBACK"),
+                mobile_auth_db_path=Path(source.get("XIAOWO_MOBILE_AUTH_DB_PATH", str(PROJECT_ROOT / "data" / "mobile_auth.db"))).resolve(),
+                mobile_vault_key=source.get("XIAOWO_MOBILE_VAULT_KEY", "").strip(),
+                mobile_token_seconds=int(source.get("XIAOWO_MOBILE_TOKEN_SECONDS", "43200")),
                 session_secret=source.get("XIAOWO_SESSION_SECRET", "").strip(),
                 trusted_proxy_cidrs=_split_csv(source, "XIAOWO_TRUSTED_PROXY_CIDRS"),
                 sidecar_allowed_hosts=frozenset(
@@ -302,6 +312,22 @@ class WebSettings:
 
     def validate(self) -> None:
         public_origin = _origin_tuple(self.public_origin, "XIAOWO_PUBLIC_ORIGIN")
+        if self.mobile_auth_enabled:
+            if not self.data_key:
+                raise SettingsError("移动认证必须配置 XIAOWO_DATA_KEY 以加密个人历史")
+            if len(self.mobile_vault_key.encode()) < 32:
+                raise SettingsError("移动认证必须配置至少32字节独立 XIAOWO_MOBILE_VAULT_KEY")
+            if self.mobile_vault_key in {self.data_key, self.session_vault_key, self.session_secret}:
+                raise SettingsError("移动认证密钥必须与其他用途密钥独立")
+            if not 60 <= self.mobile_token_seconds <= 43200:
+                raise SettingsError("移动令牌有效期必须在60到43200秒之间")
+            parsed = urlparse(self.public_origin)
+            debug_loopback = (self.environment is AppEnvironment.DEVELOPMENT and self.mobile_debug_loopback
+                              and parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1", "localhost"})
+            if not self.cookie_secure and not debug_loopback:
+                raise SettingsError("移动认证要求HTTPS；开发HTTP仅限显式启用的回环地址")
+            if self.mobile_auth_db_path.resolve() in {self.app_db_path.resolve(), self.review_db_path.resolve()}:
+                raise SettingsError("移动认证必须使用独立数据库")
         if self.environment is AppEnvironment.PRODUCTION and self.auth_mode is AuthMode.DEMO:
             raise SettingsError("production 环境禁止 demo 认证")
         if self.auth_mode is AuthMode.ANONYMOUS and self.admin_ids:

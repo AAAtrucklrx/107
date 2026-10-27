@@ -67,21 +67,13 @@ def test_route_after_parse() -> None:
 
 
 def test_world_knowledge_node_answer_with_disclaimer(monkeypatch) -> None:
-    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.messages import AIMessage
+    from langchain_core.runnables import RunnableLambda
 
-    class FakeLLM:
-        def __init__(self, *_a, **_k):
-            pass
-
-    class FakeChain:
-        def invoke(self, _vars):
-            return type("R", (), {"content": "合肥有包公园、三河古镇等景点。（以上为通用信息，非联网核实，仅供参考）"})()
-
-    def fake_create(*_a, **_k):
-        from langchain_core.prompts import ChatPromptTemplate as C
-        return ChatPromptTemplate.from_messages([("system", "x")]) | FakeChain()
-
-    monkeypatch.setattr("utils.llm_client.create_llm", fake_create)
+    response = AIMessage(content="合肥有包公园、三河古镇等景点。（以上为通用信息，非联网核实，仅供参考）")
+    # Patch the lookup site and supply a valid LangChain runnable so the real
+    # prompt/response pipeline is exercised without contacting a model.
+    monkeypatch.setattr(nodes, "create_llm", lambda **_k: RunnableLambda(lambda _prompt: response))
     out = world_knowledge(_state())
     assert "包公园" in out["answer"]
     assert "非联网核实" in out["answer"]

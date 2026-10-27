@@ -162,10 +162,21 @@ class ServiceContainer:
     @property
     def cas_client(self) -> CASClient:
         """当前学生桶内的 CAS 客户端（不存在则新建，未登录态）。"""
+        from services.jw_session import current_client, request_context_active
+        if request_context_active():
+            client = current_client()
+            if client is not None:
+                return client
+            from services.cas_client import CASClient
+            return CASClient()
         return self.init_cas_client()
 
     def has_cas(self) -> bool:
         """安全检查当前学生桶是否已登录（不新建客户端、不抛异常）"""
+        from services.jw_session import current_client, request_context_active
+        if request_context_active():
+            client = current_client()
+            return client is not None and client.is_logged_in
         client = self._cas_clients.get(current_student())
         return client is not None and client.is_logged_in
 

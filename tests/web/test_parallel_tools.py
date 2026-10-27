@@ -192,9 +192,12 @@ def test_structured_extension_specs() -> None:
     assert tables[0]["rows"][0] == ["2秋", "线性代数", "4"]
 
 
-def test_create_llm_disables_thinking() -> None:
+def test_create_llm_disables_thinking(monkeypatch) -> None:
     """P1②：create_llm 通过 extra_body 关闭官网推理（省 0.5-1s/次）。"""
     from utils.llm_client import create_llm
+    # A prior failure-path test may open the process-wide breaker. This test
+    # checks constructor options, with no model request or real credentials.
+    monkeypatch.setattr("utils.llm_client._LLM_DOWN_UNTIL", 0.0)
     llm = create_llm(model="deepseek-v4-flash", temperature=0)
     extra = (llm.model_kwargs or {}).get("extra_body") or {}
     assert extra.get("thinking", {}).get("type") == "disabled"

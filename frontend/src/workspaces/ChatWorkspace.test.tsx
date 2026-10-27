@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, vi } from "vitest";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChatWorkspace } from "./ChatWorkspace";
+import { AppearanceProvider } from "../appearance/AppearanceProvider";
+import { listLocalConversations } from "../lib/anonymousHistory";
 import { ApiClientError, apiMutation, streamRunEvents } from "../lib/api";
 import type { PublicConfig, SessionPayload, SseEnvelope } from "../types";
 
@@ -86,7 +88,7 @@ const session: SessionPayload = {
 test("chat renders verified complete segments, citations, and saves anonymous history locally", async () => {
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
   await user.type(input, "公开校历是什么？");
   await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(screen.getByText(/已核验的完整回答/)).toBeInTheDocument());
@@ -97,13 +99,32 @@ test("chat renders verified complete segments, citations, and saves anonymous hi
   expect(putLocalConversation).toHaveBeenCalledTimes(1);
 });
 
+test("server placeholders use the current brand and disappear before the first answer delta", async () => {
+  let continueStream: () => void = () => {};
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "answer.segment", at: "2026-10-26", data: { placeholder: true, markdown: "小蜗正在为你整理答案，请稍候…" } });
+    await new Promise<void>((resolve) => { continueStream = resolve; });
+    options.onEvent({ id: 2, run_id: "run-fixture", type: "answer.delta", at: "2026-10-26", data: { delta: "真实的增量回答" } });
+    options.onEvent({ id: 3, run_id: "run-fixture", type: "answer.completed", at: "2026-10-26", data: { terminal_reason: "completed", claims: [], sources: [] } });
+  });
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  await user.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "校历？");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(await screen.findByText("小蛙助手正在为你整理答案，请稍候…")).toBeInTheDocument();
+  expect(screen.queryByText(/小蜗正在/)).not.toBeInTheDocument();
+  continueStream();
+  expect(await screen.findByText("真实的增量回答")).toBeInTheDocument();
+  expect(screen.queryByText(/正在为你整理答案/)).not.toBeInTheDocument();
+});
+
 test("public starter prompt fills and focuses the composer without sending", async () => {
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
 
-  await user.click(screen.getByRole("button", { name: /本学期校历/ }));
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
-  expect(input).toHaveValue("请查询本学期校历安排，并列出开学、考试周和重要教学节点。");
+  await user.click(screen.getByRole("button", { name: "找自习室" }));
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
+  expect(input).toHaveValue("帮我找一个适合自习的空教室。");
   await waitFor(() => expect(input).toHaveFocus());
   expect(screen.queryByText(/已核验的完整回答/)).not.toBeInTheDocument();
 });
@@ -125,7 +146,8 @@ test("personal academic capability selects valid personal starter prompts", asyn
   // 今日弹窗（Radix 模态）打开时背景为 aria-hidden，先关闭再校验启动提示
   await userEvent.setup().click(screen.getByRole("button", { name: "知道了" }));
   expect(screen.getByRole("button", { name: /今日课表/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /本周日程/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "找自习室" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "选课建议" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /独立冲突检查/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /本学期校历/ })).not.toBeInTheDocument();
 });
@@ -139,13 +161,13 @@ test("seeded academic question suppresses starters until a new conversation", as
     </Tooltip.Provider>,
   );
 
-  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("请点评离散数学");
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("请点评离散数学");
   expect(screen.queryByRole("heading", { name: "常见问题" })).not.toBeInTheDocument();
   expect(onSeedConsumed).toHaveBeenCalledTimes(1);
 
   await user.click(screen.getByRole("button", { name: "新建对话" }));
   expect(screen.getByRole("heading", { name: "常见问题" })).toBeInTheDocument();
-  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("");
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("");
 });
 
 test("structured cards dedupe by content: identical pushes collapse, same-shape distinct cards both survive", async () => {
@@ -175,7 +197,7 @@ test("structured cards dedupe by content: identical pushes collapse, same-shape 
 
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
-  await user.type(screen.getByRole("textbox", { name: "向小蜗提问" }), "组合数学");
+  await user.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "组合数学");
   await user.click(screen.getByRole("button", { name: "发送" }));
 
   await waitFor(() => expect(screen.getByText(/两张卡的回答/)).toBeInTheDocument());
@@ -207,7 +229,7 @@ test("structured table scores and give-scores carry semantic cell levels", async
 
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
-  await user.type(screen.getByRole("textbox", { name: "向小蜗提问" }), "离散数学各班老师");
+  await user.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "离散数学各班老师");
   await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(screen.getByText("看表。")).toBeInTheDocument());
 
@@ -241,7 +263,7 @@ test("反馈提交失败会说明原因并保持可重试（P1-2 回归）", asy
   // 演示身份会自动弹「今日」弹窗，先关掉
   await user.click(screen.getByRole("button", { name: "知道了" }));
 
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
   await user.type(input, "公开校历是什么？");
   await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(screen.getByText(/已核验的完整回答/)).toBeInTheDocument());
@@ -280,13 +302,13 @@ test("匿名问个人数据时给登录引导而不是故障（P3-10 回归）",
   );
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
 
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
   await user.type(input, "我的GPA是多少");
   await user.click(screen.getByRole("button", { name: "发送" }));
 
   const card = await screen.findByRole("note");
   expect(card).toHaveTextContent("个人学业问题需要先登录。");
-  expect(card).toHaveTextContent("登录（统一认证 / 演示身份）");
+  expect(card).toHaveTextContent("前往「我的」连接学校账号");
   expect(screen.queryByText("本次回答未完成")).toBeNull();
 });
 
@@ -315,7 +337,7 @@ test("课程卡片可点追问：点击行/按钮只填充输入框、不自动�
 
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
   await user.type(input, "量子物理怎么样");
   await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(screen.getByText(/量子物理的评课情况/)).toBeInTheDocument());
@@ -324,12 +346,12 @@ test("课程卡片可点追问：点击行/按钮只填充输入框、不自动�
 
   // ① 整行可点 → 把该行的追问问句填进输入框
   await user.click(screen.getByLabelText("点击追问：量子物理有哪些老师？"));
-  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("量子物理有哪些老师？");
-  await waitFor(() => expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveFocus());
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("量子物理有哪些老师？");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveFocus());
 
   // ② 卡片级快捷按钮同理
   await user.click(screen.getByRole("button", { name: "量子物理 的评论原文" }));
-  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("量子物理的评论");
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("量子物理的评论");
 
   // ③ 只填充、不自动发送（没有新的 run 请求）
   expect(vi.mocked(apiMutation).mock.calls.length).toBe(callsBefore);
@@ -354,7 +376,7 @@ test("没有追问问句的卡片保持纯展示：无提示、点击不填充�
 
   const user = userEvent.setup();
   render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
-  const input = screen.getByRole("textbox", { name: "向小蜗提问" });
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
   await user.type(input, "现在有哪些空教室");
   await user.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect(screen.getByText(/空闲教室如下/)).toBeInTheDocument());
@@ -363,5 +385,157 @@ test("没有追问问句的卡片保持纯展示：无提示、点击不填充�
   expect(document.querySelector(".structured-table-row--ask")).toBeNull();
   await user.click(screen.getByText("3C301"));
   // 纯展示卡片：点行不填充任何东西（发送后输入框本就是空的）
-  expect(screen.getByRole("textbox", { name: "向小蜗提问" })).toHaveValue("");
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("");
+});
+
+test("mascot follows request completion and settles when the workspace unmounts", async () => {
+  const states: string[] = [];
+  const listener = (event: Event) => states.push((event as CustomEvent<{ type: string }>).detail.type);
+  const view = render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  window.addEventListener("xiaowo:mascot", listener);
+  try {
+    await userEvent.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "图书馆在哪里？");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(states).toEqual(["think", "success"]));
+    view.unmount();
+    expect(states.at(-1)).toBe("idle");
+  } finally { window.removeEventListener("xiaowo:mascot", listener); }
+});
+
+test("a school login requirement gives mascot guidance without a failure expression", async () => {
+  vi.mocked(apiMutation).mockRejectedValueOnce(new ApiClientError("AUTH_REQUIRED", "个人学业问题需要先登录。", 401));
+  const events: { type: string; message?: string }[] = [];
+  const listener = (event: Event) => events.push((event as CustomEvent<{ type: string; message?: string }>).detail);
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  window.addEventListener("xiaowo:mascot", listener);
+  try {
+    await userEvent.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "我的课表？");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByRole("note");
+    expect(events.map(event => event.type)).toEqual(["think", "idle"]);
+    expect(events[1].message).toContain("学校账号");
+  } finally { window.removeEventListener("xiaowo:mascot", listener); }
+});
+
+test("late run creation cannot animate another workspace after unmount", async () => {
+  let resolveCreate!: (value: unknown) => void;
+  vi.mocked(apiMutation).mockImplementationOnce(() => new Promise(resolve => { resolveCreate = resolve; }) as never);
+  const states: string[] = [];
+  const listener = (event: Event) => states.push((event as CustomEvent<{ type: string }>).detail.type);
+  const view = render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  window.addEventListener("xiaowo:mascot", listener);
+  try {
+    await userEvent.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "公开校历？");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    view.unmount();
+    resolveCreate({ run_id: "late", conversation_id: null, requested_mode: "auto", effective_mode: "auto", events_url: "/late" });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(states).toEqual(["think", "idle"]);
+  } finally { window.removeEventListener("xiaowo:mascot", listener); }
+});
+
+test("insufficient evidence gives a no-result reaction instead of celebrating", async () => {
+  vi.mocked(streamRunEvents).mockImplementationOnce(async (_path, options) => {
+    options.onEvent({ id: 1, run_id: "run-fixture", type: "answer.completed", at: "2026-10-26T00:00:00Z", data: { answer_id: "empty", claims: [], sources: [], terminal_reason: "EVIDENCE_INSUFFICIENT" } });
+  });
+  const states: string[] = [];
+  const listener = (event: Event) => states.push((event as CustomEvent<{ type: string }>).detail.type);
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  window.addEventListener("xiaowo:mascot", listener);
+  try {
+    await userEvent.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "未知的政策？");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(states).toEqual(["think", "error"]));
+  } finally { window.removeEventListener("xiaowo:mascot", listener); }
+});
+
+test("stop works while run creation is pending and ignores its late response", async () => {
+  let resolveCreate!: (value: unknown) => void;
+  let createSignal: AbortSignal | null | undefined;
+  const streamsBefore = vi.mocked(streamRunEvents).mock.calls.length;
+  vi.mocked(apiMutation).mockImplementationOnce((_path, _csrf, options) => {
+    createSignal = options?.signal;
+    return new Promise(resolve => { resolveCreate = resolve; }) as never;
+  });
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  await userEvent.type(screen.getByRole("textbox", { name: "向小蛙助手提问" }), "课程推荐？");
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  await userEvent.click(screen.getByRole("button", { name: "停止回答" }));
+  expect(createSignal?.aborted).toBe(true);
+  expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+  resolveCreate({ run_id: "late-stopped", conversation_id: null, events_url: "/late-stopped" });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(vi.mocked(streamRunEvents).mock.calls.length).toBe(streamsBefore);
+});
+
+
+test("pocket tools keep search controls off the home and preserve the typed draft", async () => {
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
+  await user.type(input, "还没写完的问题");
+  await user.click(screen.getByRole("button", { name: "校园工具与搜索设置" }));
+  const sheet = screen.getByRole("dialog", { name: "校园工具" });
+  await user.click(within(sheet).getByRole("switch"));
+  await user.click(within(sheet).getByRole("button", { name: "关闭面板" }));
+  expect(input).toHaveValue("还没写完的问题");
+  expect(screen.getByRole("button", { name: "校园工具与搜索设置" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "校园工具与搜索设置" }));
+  expect(within(screen.getByRole("dialog")).getByRole("switch")).toHaveAttribute("aria-checked", "false");
+});
+
+test("the compact schedule entry still gives anonymous users the login boundary", async () => {
+  vi.mocked(apiMutation).mockRejectedValueOnce(new ApiClientError("AUTH_REQUIRED", "个人学业问题需要先登录。", 401));
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  await user.click(screen.getByRole("button", { name: "今日课表" }));
+  expect(screen.getByRole("textbox", { name: "向小蛙助手提问" })).toHaveValue("请查询我今天的课表，并按时间列出课程和地点。");
+  await user.click(screen.getByRole("button", { name: "发送" }));
+  expect(await screen.findByRole("note")).toHaveTextContent("个人学业问题需要先登录");
+});
+
+test("home only offers the latest saved conversation and restores its actual messages", async () => {
+  vi.mocked(listLocalConversations).mockResolvedValueOnce([
+    { conversation_id: "local-recent", title: "我的自习地点", created_at: "2026-10-25T00:00:00Z", updated_at: "2026-10-26T00:00:00Z", mode: "local", messages: [{ id: "saved-q", role: "user", content: "东区哪里能自习？", createdAt: "2026-10-26T00:00:00Z", status: "completed" }] },
+    { conversation_id: "local-older", title: "以前聊过的校历", created_at: "2026-10-24T00:00:00Z", updated_at: "2026-10-25T00:00:00Z", mode: "auto", messages: [] },
+  ]);
+  const user = userEvent.setup();
+  render(<Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider>);
+  const latest = await screen.findByRole("button", { name: "我的自习地点" });
+  expect(screen.queryByText("以前聊过的校历")).not.toBeInTheDocument();
+  await user.click(latest);
+  expect(screen.getByText("东区哪里能自习？")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "打开会话历史" }));
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: /^以前聊过的校历/ })).toBeInTheDocument();
+});
+
+test("switching the family companion preserves a draft and does not invent recent history", async () => {
+  const user = userEvent.setup();
+  render(<AppearanceProvider><Tooltip.Provider><ChatWorkspace config={config} session={session} /></Tooltip.Provider></AppearanceProvider>);
+  const input = screen.getByRole("textbox", { name: "向小蛙助手提问" });
+  await user.type(input, "准备问奶鼠的问题");
+  await user.click(screen.getByRole("button", { name: "让奶鼠陪我聊" }));
+  expect(screen.getByRole("button", { name: "让奶鼠陪我聊" })).toHaveAttribute("aria-pressed", "true");
+  expect(input).toHaveValue("准备问奶鼠的问题");
+  expect(screen.queryByRole("heading", { name: "最近聊过" })).not.toBeInTheDocument();
+});
+
+test("an inactive personal chat defers its today portal until opened and remembers dismissal", async () => {
+  const personalSession: SessionPayload = {
+    ...session,
+    principal: { ...session.principal, id: "TEST-ACTIVE", auth_mode: "demo", authenticated: true },
+    capabilities: { ...session.capabilities, server_history: true, personal_academic: true },
+  };
+  const user = userEvent.setup();
+  const workspace = (active: boolean) => <Tooltip.Provider><ChatWorkspace config={config} session={personalSession} active={active} /></Tooltip.Provider>;
+  const view = render(workspace(false));
+  expect(screen.queryByRole("dialog", { name: /^今日/ })).not.toBeInTheDocument();
+
+  view.rerender(workspace(true));
+  const today = await screen.findByRole("dialog", { name: /^今日/ });
+  await user.click(within(today).getByRole("button", { name: "知道了" }));
+  view.rerender(workspace(false));
+  view.rerender(workspace(true));
+  expect(screen.queryByRole("dialog", { name: /^今日/ })).not.toBeInTheDocument();
 });

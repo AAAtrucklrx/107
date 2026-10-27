@@ -129,24 +129,14 @@ class FAQVectorStore:
         if _use_api:
             from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
             ef = OpenAIEmbeddingFunction(
-                api_key=LLM_CONFIG["api_key"],
-                api_base=LLM_CONFIG["base_url"],
+                api_key=EMBEDDING_CONFIG["api_key"],
+                api_base=EMBEDDING_CONFIG["api_base"],
                 model_name=EMBEDDING_CONFIG["api_model"],
             )
             log.info("Embedding: API 模式")
             return _cache(_APIEmbedder(ef), "api")
 
-        # 策略2: 本地 SentenceTransformer
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer(
-                EMBEDDING_CONFIG["model_name"],
-                device=EMBEDDING_CONFIG["device"],
-            )
-            log.info("Embedding: 本地模型模式")
-            return _cache(model, "local")
-        except Exception as e2:
-            log.warning(f"Embedding 本地模型不可用: {e2}")
+        # 策略2: 本地模型已下线（2026-10-25 全量切 API embedding）
 
         # 策略3: 关键词 fallback
         log.info("Embedding: 关键词 fallback 模式")
@@ -162,8 +152,8 @@ class FAQVectorStore:
         try:
             import openai
             client = openai.OpenAI(
-                base_url=LLM_CONFIG["base_url"],
-                api_key=LLM_CONFIG["api_key"],
+                base_url=EMBEDDING_CONFIG["api_base"],
+                api_key=EMBEDDING_CONFIG["api_key"],
                 timeout=timeout,
                 max_retries=0,
             )

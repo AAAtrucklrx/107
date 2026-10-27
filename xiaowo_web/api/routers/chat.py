@@ -59,12 +59,22 @@ async def _event_stream(request: Request, run_id: str, after_sequence: int) -> A
     store = request.app.state.store
     cursor = after_sequence
     last_keepalive = time.monotonic()
+    mobile_token = getattr(getattr(request, "state", None), "mobile_token", None)
+    def active() -> bool:
+        return not mobile_token or request.app.state.mobile_auth.resolve(mobile_token) is not None
     while True:
         if await request.is_disconnected():
+            return
+        if not active():
+            principal = getattr(request.state, "mobile_principal", None)
+            if principal is not None:
+                request.app.state.chat_manager.cancel_owner(principal)
             return
         # 单次 to_thread 快照：事件 + 状态一次连接读完，不在事件循环线程上直接做 SQLite I/O
         events, run = await asyncio.to_thread(store.poll_run, run_id, cursor)
         for event in events:
+            if not active():
+                return
             cursor = int(event["id"])
             yield _encode_sse(event)
         if run is None or run.status in _TERMINAL_STATES:
@@ -73,6 +83,8 @@ async def _event_stream(request: Request, run_id: str, after_sequence: int) -> A
             # drain once more before closing the stream.
             events, _ = await asyncio.to_thread(store.poll_run, run_id, cursor)
             for event in events:
+                if not active():
+                    return
                 cursor = int(event["id"])
                 yield _encode_sse(event)
             return

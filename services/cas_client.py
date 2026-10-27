@@ -154,7 +154,6 @@ class CASClient:
         """获取已认证的 session（供 CatalogAPI 等复用）"""
         return self._session
 
-    @property
     def load_cookies_from_file(self, path: str) -> bool:
         """从 `scripts/sso_login_browser.mjs` 导出的 JSON 加载会话 cookie（半自动登录闭环）。
 
@@ -197,19 +196,23 @@ class CASClient:
 
     def probe_jw_session(self) -> bool:
         """用一次只读请求确认教务会话是否有效（不依赖账号密码）。"""
+        self._probe_unavailable = False
         try:
             resp = self._session.get(
                 f"{self.JW_BASE}/home/menu", timeout=self.TIMEOUT, allow_redirects=False,
             )
         except Exception as exc:  # noqa: BLE001
+            self._probe_unavailable = True
             log.warning(f"教务会话探测失败: {type(exc).__name__}")
             return False
         if resp.status_code != 200:
+            self._probe_unavailable = resp.status_code >= 500 or resp.status_code in {408, 429}
             log.info(f"教务会话探测: HTTP {resp.status_code}")
             return False
         location = (resp.headers.get("Location") or "").lower()
         return "cas/login" not in location and "id.ustc.edu.cn" not in location
 
+    @property
     def is_logged_in(self) -> bool:
         return self._logged_in
 

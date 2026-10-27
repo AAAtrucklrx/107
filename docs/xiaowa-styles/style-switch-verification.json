@@ -1,0 +1,136 @@
+{
+  "syntheticDataOnly": true,
+  "origin": "http://127.0.0.1:5175",
+  "startedAt": "2026-10-26T06:31:57.424Z",
+  "checks": [
+    {
+      "width": 320,
+      "theme": "light",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 375,
+      "theme": "light",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 375,
+      "theme": "dark",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 768,
+      "theme": "light",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 768,
+      "theme": "dark",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "checked": [
+        "real menu preserves draft, identity, brightness and bootstrap counts",
+        "completed answer survives both styles",
+        "offline switch preserves loaded conversation and identity",
+        "profile picker and reload preserve selected style independently of brightness"
+      ],
+      "ok": true,
+      "requests": {
+        "session": 6,
+        "config": 6
+      },
+      "errors": []
+    }
+  ],
+  "errors": []
+}

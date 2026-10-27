@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 from typing import Annotated
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -20,6 +22,8 @@ from xiaowo_web.auth.models import Principal
 from xiaowo_web.errors import ApiError
 from xiaowo_web.settings import AuthMode
 
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -73,6 +77,20 @@ async def session(
     response: Response,
     principal: Annotated[Principal, Depends(ensure_principal)],
 ) -> dict:
+    if request.headers.get("authorization") is not None:
+        if principal.auth_mode == "cas":
+            from services.jw_session import current_client
+            client = current_client()
+            if client is None or not await asyncio.to_thread(client.probe_jw_session):
+                if client is not None and getattr(client, "_probe_unavailable", False):
+                    raise ApiError(503, "SCHOOL_UNAVAILABLE", "暂时无法连接教务系统，请稍后重试。")
+                _revoke_mobile(request)
+                raise ApiError(401, "SCHOOL_SESSION_EXPIRED", "学校会话已失效，请重新登录。")
+        payload = _session_payload(principal, "")
+        payload["jw_session"] = bool(getattr(request.state, "jw_session", False))
+        identity = getattr(request.state, "jw_identity", {}) or {}
+        payload["jw_identity"] = {k: identity.get(k, "") for k in ("student_id", "name", "major", "grade", "college")}
+        return payload
     csrf_token = principal.csrf_token or request.cookies.get(
         request.app.state.settings.csrf_cookie_name,
         "",
@@ -81,7 +99,18 @@ async def session(
         principal = request.app.state.auth_service.rotate_csrf(principal)
         csrf_token = principal.csrf_token
         _set_csrf_cookie(response, request, csrf_token)
-    return _session_payload(principal, csrf_token)
+    payload = _session_payload(principal, csrf_token)
+    try:
+        from services.jw_session import client_from_request as _jw_from_request
+        from services.jw_session import identity_for_client as _identity
+
+        _client = _jw_from_request(request)
+        payload["jw_session"] = _client is not None
+        payload["jw_identity"] = _identity(_client) if _client is not None else {}
+    except Exception:  # noqa: BLE001 — 状态字段失败不影响登录
+        payload["jw_session"] = False
+        payload["jw_identity"] = {}
+    return payload
 
 
 @router.post("/demo")
@@ -90,12 +119,36 @@ async def login_demo(
     response: Response,
     principal: Annotated[Principal, Depends(require_mutation)],
 ) -> dict:
+    if request.headers.get("authorization") is not None:
+        raise ApiError(409, "MOBILE_AUTHORIZE_REQUIRED", "移动端请通过学校登录授权。")
     settings = request.app.state.settings
     if settings.auth_mode is not AuthMode.DEMO:
         raise ApiError(404, "AUTH_MODE_DISABLED", "演示登录在当前运行模式下未启用。")
     raw_token, demo_principal = request.app.state.auth_service.login_demo(principal)
     set_session_cookies(response, raw_token, demo_principal, settings)
     return _session_payload(demo_principal, demo_principal.csrf_token)
+
+
+@router.get("/jw-wiring")
+async def jw_wiring(request: Request) -> dict:
+    """调试：确认工具层 _cas() 拿到的是请求级会话（XIAOWO_DEBUG=1 才启用）。"""
+    import os as _os
+
+    if _os.environ.get("XIAOWO_DEBUG") != "1":
+        raise ApiError(404, "NOT_FOUND", "未启用")
+    from services.jw_session import current_client
+    from tools.course_tools import _cas
+
+    cur = current_client()
+    used = _cas()
+    status = None
+    if used is not None:
+        try:
+            status = used.session.get("https://jw.ustc.edu.cn/home/menu", timeout=15).status_code
+        except Exception:  # noqa: BLE001
+            status = -1
+    return {"request_client": cur is not None, "cas_is_request_client": used is cur and cur is not None,
+            "probe_status": status}
 
 
 @router.post("/sso_cookie")
@@ -109,6 +162,8 @@ async def import_sso_cookie(
     前置：用户已在浏览器完成统一认证（半自动登录），本接口只接收 CookieJar；
     会先用一次只读请求校验会话真实可用，再加密写 cookie。**不接收、不存储密码**。
     """
+    if request.headers.get("authorization") is not None:
+        raise ApiError(409, "MOBILE_AUTHORIZE_REQUIRED", "移动端请通过学校登录重新授权。")
     from services.cas_client import CASClient
     from services.session_vault import (
         COOKIE_NAME, CookiePayloadError, SessionVault, apply_cookies, validate_payload,
@@ -141,10 +196,14 @@ async def import_sso_cookie(
 async def clear_sso_cookie(
     request: Request,
     response: Response,
-    principal: Annotated[Principal, Depends(require_mutation)],
 ) -> dict:
     """清除托管在浏览器的会话（退出登录时调用）。"""
     from services.session_vault import COOKIE_NAME
+
+    if request.headers.get("authorization") is not None:
+        _revoke_mobile(request)
+        return {"ok": True, "cookie": COOKIE_NAME}
+    require_mutation(request)
 
     response.delete_cookie(COOKIE_NAME, path="/")
     return {"ok": True, "cookie": COOKIE_NAME}
@@ -154,8 +213,11 @@ async def clear_sso_cookie(
 async def logout(
     request: Request,
     response: Response,
-    principal: Annotated[Principal, Depends(require_mutation)],
 ) -> dict:
+    if request.headers.get("authorization") is not None:
+        _revoke_mobile(request)
+        return {"logged_out": True}
+    principal = require_mutation(request)
     request.app.state.auth_service.logout(principal)
     clear_session_cookies(response, request.app.state.settings)
     if principal.auth_mode == "cas":
@@ -165,7 +227,21 @@ async def logout(
             ServiceContainer().logout(principal.principal_id)
         except Exception:
             pass
+    response.delete_cookie("xiaowo_jw", path="/")   # 退出时同时断开教务会话
     return {"logged_out": True}
+
+
+def _revoke_mobile(request: Request) -> None:
+    from xiaowo_web.auth.mobile import bearer_token, require_mobile_origin
+    require_mobile_origin(request)
+    token = bearer_token(request)
+    service = getattr(request.app.state, "mobile_auth", None)
+    session_id = service.revoke(token) if service else None
+    if session_id is None:
+        raise ApiError(401, "AUTH_REQUIRED", "登录凭据已失效，请重新登录。")
+    # No school-wide logout: revoke only this device and its running answers.
+    principal = Principal("", "anonymous", {}, False, session_id)
+    request.app.state.chat_manager.cancel_owner(principal)
 
 
 @router.post("/demo/reset")

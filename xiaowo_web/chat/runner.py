@@ -432,7 +432,8 @@ class LegacyQaRunner:
             call_args["action_sink"] = _action_sink
         call = partial(runner, request.question, **call_args)
         loop = asyncio.get_running_loop()
-        result = dict(await loop.run_in_executor(self._executor, call))
+        from services.jw_session import in_thread_context
+        result = dict(await loop.run_in_executor(self._executor, in_thread_context(call)))
         merged_candidates: list[dict[str, Any]] = []
         seen_candidates: set[str] = set()
         for candidate in [

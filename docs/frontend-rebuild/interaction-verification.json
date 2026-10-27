@@ -1,0 +1,56 @@
+{
+  "syntheticDataOnly": true,
+  "checks": [
+    {
+      "name": "mascot-click-sleep-busy-reduced-motion",
+      "width": 375,
+      "ok": true
+    },
+    {
+      "name": "multiline-no-mascot-overlap-markdown-table-and-long-scroll",
+      "width": 375,
+      "ok": true,
+      "table": {
+        "width": 307,
+        "scrollWidth": 482,
+        "overflow": "auto"
+      }
+    },
+    {
+      "name": "mascot-click-sleep-busy-reduced-motion",
+      "width": 768,
+      "ok": true
+    },
+    {
+      "name": "multiline-no-mascot-overlap-markdown-table-and-long-scroll",
+      "width": 768,
+      "ok": true,
+      "table": {
+        "width": 578,
+        "scrollWidth": 578,
+        "overflow": "auto"
+      }
+    },
+    {
+      "name": "mascot-click-sleep-busy-reduced-motion",
+      "width": 1440,
+      "ok": true
+    },
+    {
+      "name": "desktop-drag-return-without-laugh",
+      "width": 1440,
+      "ok": true
+    },
+    {
+      "name": "multiline-no-mascot-overlap-markdown-table-and-long-scroll",
+      "width": 1440,
+      "ok": true,
+      "table": {
+        "width": 818,
+        "scrollWidth": 818,
+        "overflow": "auto"
+      }
+    }
+  ],
+  "errors": []
+}

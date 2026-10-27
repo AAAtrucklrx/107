@@ -43,7 +43,7 @@ export function AdminShell({
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
-        <div className="admin-brand"><ShieldCheck size={23} /><div><strong>小蜗</strong><span>管理后台</span></div></div>
+        <div className="admin-brand"><ShieldCheck size={23} /><div><strong>小蛙助手</strong><span>管理后台</span></div></div>
         <div className="admin-environment" data-production={config.environment === "production" || undefined}>
           <FlaskConical size={14} />{environmentLabel}
         </div>
@@ -68,7 +68,7 @@ export function AdminShell({
       </aside>
 
       <header className="admin-mobile-header">
-        <div className="admin-brand"><ShieldCheck size={20} /><div><strong>小蜗</strong><span>管理后台</span></div></div>
+        <div className="admin-brand"><ShieldCheck size={20} /><div><strong>小蛙助手</strong><span>管理后台</span></div></div>
         <button className="icon-button" type="button" aria-label="返回用户端" onClick={onExit}><ArrowLeft size={18} /></button>
       </header>
 

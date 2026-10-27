@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { Source } from "../types";
 import { SourceList } from "./SourceList";
@@ -22,6 +23,25 @@ function withCitePills(content: string): string {
 
 /** GitHub Alerts 语法的语义类型；颜色映射见 index.css（遵循「一色一义」）。 */
 const CALLOUT_KINDS = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
+
+// Answers and retrieved sources are untrusted HTML, including inside the native WebView.
+// Keep the supported presentation vocabulary without frames, forms, scripts or inline styles.
+const blockedTags = new Set(["script", "style", "iframe", "form", "input", "button", "object", "embed", "svg", "math", "link", "meta", "base", "video", "audio", "source"]);
+const answerSchema = {
+  ...defaultSchema,
+  tagNames: defaultSchema.tagNames?.filter((tag) => !blockedTags.has(tag)),
+  strip: [...(defaultSchema.strip ?? []), ...blockedTags],
+  attributes: {
+    ...defaultSchema.attributes,
+    sup: [...(defaultSchema.attributes?.sup ?? []), ["className", "cite"]],
+    blockquote: [
+      ...(defaultSchema.attributes?.blockquote ?? []),
+      ["className", "callout", ...[...CALLOUT_KINDS].map((kind) => `callout--${kind.toLowerCase()}`)],
+      ["dataCallout", ...CALLOUT_KINDS],
+    ],
+  },
+  protocols: { ...defaultSchema.protocols, href: ["https", "http", "mailto"], src: ["https", "http"] },
+};
 
 type MdastNode = {
   type?: string;
@@ -71,7 +91,8 @@ export function RenderedAnswer({ content, sources }: RenderedAnswerProps) {
         <div className="markdown-body">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkCallouts as unknown as typeof remarkGfm]}
-            rehypePlugins={[rehypeRaw]}
+            rehypePlugins={[rehypeRaw, [rehypeSanitize, answerSchema]]}
+            components={{ table: ({ children }) => <div className="answer-table-scroll" role="region" aria-label="回答表格，可横向滚动" tabIndex={0}><table>{children}</table></div> }}
           >
             {withCitePills(content)}
           </ReactMarkdown>

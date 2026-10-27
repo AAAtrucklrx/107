@@ -1,4 +1,4 @@
-export type Workspace = "chat" | "academic" | "campus";
+export type Workspace = "chat" | "academic" | "campus" | "profile";
 export type RetrievalMode = "auto" | "web" | "local";
 export type Theme = "light" | "dark";
 
@@ -34,6 +34,8 @@ export interface Profile {
 export interface SessionPayload {
   /** 方案 B：教务会话是否已由浏览器 cookie 托管（GET /auth/session） */
   jw_session?: boolean;
+  /** 方案 B：登录后从教务取到的真实身份（学号/姓名/学院/专业/年级） */
+  jw_identity?: { student_id?: string; name?: string; college?: string; major?: string; grade?: string };
   principal: {
     id: string | null;
     auth_mode: "anonymous" | "demo" | "cas";

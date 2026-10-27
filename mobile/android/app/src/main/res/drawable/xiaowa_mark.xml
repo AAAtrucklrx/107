@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The original 398 x 800 PNG is bundled unchanged. In square icon bounds,
+     29.85% width / 60% height preserves its aspect ratio and keeps the entire
+     character inside the adaptive icon's central safe area. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="35.075%"
+    android:insetRight="35.075%"
+    android:insetTop="20%"
+    android:insetBottom="20%">
+    <bitmap
+        android:src="@drawable/naiwa_original"
+        android:gravity="fill"
+        android:filter="true" />
+</inset>

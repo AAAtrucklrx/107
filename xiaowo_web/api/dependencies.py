@@ -17,6 +17,16 @@ def get_settings(request: Request) -> WebSettings:
 
 
 def optional_principal(request: Request) -> Principal | None:
+    if request.headers.get("authorization") is not None:
+        from xiaowo_web.auth.mobile import bearer_token
+        token = bearer_token(request)
+        service = getattr(request.app.state, "mobile_auth", None)
+        # Middleware may have resolved this token before an awaited request body.
+        # Recheck here so concurrent logout cannot authorize a new mutation/run.
+        principal = service.resolve(token) if service is not None else None
+        if principal is None:
+            raise ApiError(401, "AUTH_REQUIRED", "登录凭据已失效，请重新登录。")
+        return principal
     settings: WebSettings = request.app.state.settings
     raw_token = request.cookies.get(settings.cookie_name, "")
     return request.app.state.auth_service.resolve(raw_token)
@@ -58,25 +68,62 @@ def clear_session_cookies(response: Response, settings: WebSettings) -> None:
     response.delete_cookie(settings.csrf_cookie_name, path="/")
 
 
+def _promote_with_jw_identity(request: Request, principal: Principal) -> Principal:
+    """方案 B：有有效教务会话时，把匿名主体提升为正式登录态（2026-10-23）。"""
+    if principal.is_authenticated or request.headers.get("authorization") is not None:
+        return principal
+    jw = getattr(request.state, "jw_identity", None) or {}
+    student_id = str(jw.get("student_id") or "")
+    name = str(jw.get("name") or "")
+    if not student_id or not name:
+        return principal
+    settings = request.app.state.settings
+    profile = {
+        **(principal.profile or {}),
+        "id": student_id,
+        "student_id": student_id,
+        "name": name,
+        "major": __import__("re").sub(r"^\d+", "", str(jw.get("major") or "")),
+        "grade": str(jw.get("grade") or ""),
+        "college": str(jw.get("college") or ""),
+    }
+    admins = str(getattr(settings, "admin_ids", "") or "")
+    is_admin = student_id in {a.strip() for a in admins.split(",") if a.strip()}
+    return Principal(
+        principal_id=student_id,
+        auth_mode="cas",
+        profile=profile,
+        is_admin=is_admin,
+        session_key=principal.session_key,
+        csrf_token=principal.csrf_token,
+    )
+
+
 def ensure_principal(request: Request, response: Response) -> Principal:
     principal = optional_principal(request)
     if principal is not None:
-        return principal
+        return _promote_with_jw_identity(request, principal)
     raw_token, principal = request.app.state.auth_service.create_anonymous()
     set_session_cookies(response, raw_token, principal, request.app.state.settings)
-    return principal
+    return _promote_with_jw_identity(request, principal)
 
 
 def require_principal(request: Request) -> Principal:
     principal = optional_principal(request)
     if principal is None:
         raise ApiError(401, "AUTH_REQUIRED", "会话已失效，请刷新页面。")
-    return principal
+    return _promote_with_jw_identity(request, principal)
 
 
 def require_mutation(request: Request) -> Principal:
     settings: WebSettings = request.app.state.settings
     principal = require_principal(request)
+    if request.headers.get("authorization") is not None:
+        from xiaowo_web.auth.mobile import require_json, require_mobile_origin
+        require_mobile_origin(request)
+        if request.method not in {"DELETE", "GET", "HEAD"}:
+            require_json(request)
+        return principal
     origin = request.headers.get("origin", "").rstrip("/")
     if not origin or not hmac.compare_digest(origin, settings.public_origin):
         raise ApiError(403, "ORIGIN_MISMATCH", "请求来源校验失败。")

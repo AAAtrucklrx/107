@@ -1,0 +1,41 @@
+[
+  {
+    "documentWidth": 320,
+    "heading": "21px",
+    "height": 720,
+    "navRect": {
+      "bottom": 720.0000419616699,
+      "height": 60.66666793823242,
+      "left": 0,
+      "right": 320,
+      "top": 659.3333740234375,
+      "width": 320,
+      "x": 0,
+      "y": 659.3333740234375
+    },
+    "textareaRect": {
+      "bottom": 641.6666870117188,
+      "height": 44,
+      "left": 70.66667175292969,
+      "right": 249.33334350585935,
+      "top": 597.6666870117188,
+      "width": 178.6666717529297,
+      "x": 70.66667175292969,
+      "y": 597.6666870117188
+    },
+    "width": 320
+  },
+  {
+    "brandTextDisplay": "none",
+    "documentWidth": 768,
+    "height": 1024,
+    "width": 768
+  },
+  {
+    "documentWidth": 390,
+    "heading": "23px",
+    "height": 844,
+    "visibleControlMinimumHeight": 44,
+    "width": 390
+  }
+]

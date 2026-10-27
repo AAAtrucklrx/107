@@ -2189,12 +2189,14 @@ def act(state: QaState) -> dict:
 
         # 并行执行（≤3 并发；一个失败不影响其余；结果按计划顺序回填）
         from concurrent.futures import ThreadPoolExecutor
+        from services.jw_session import in_thread_context
         max_workers = min(len(plan), 3)
         if max_workers <= 1:
-            results = [_run_one(call) for call in plan]
+            results = [in_thread_context(_run_one)(call) for call in plan]
         else:
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="xiaowo-tool") as pool:
-                results = list(pool.map(_run_one, plan))
+                futures = [pool.submit(in_thread_context(_run_one), call) for call in plan]
+                results = [future.result() for future in futures]
 
         update["tool_results"] = (state.get("tool_results") or []) + results
         update["tool_calls"] = []  # 本轮计划已消费，清空避免残留

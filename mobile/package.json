@@ -1,0 +1,27 @@
+{
+  "name": "xiaowo-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小蛙助手 Android Capacitor shell",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "test:native": "cd android && ./gradlew :app:testDebugUnitTest",
+    "test:device": "cd android && ./gradlew :app:connectedDebugAndroidTest",
+    "build:debug": "node scripts/build.mjs debug",
+    "build:release": "node scripts/build.mjs release"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/network": "7.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9",
+    "typescript": "5.9.3"
+  }
+}

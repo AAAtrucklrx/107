@@ -1,23 +1,12 @@
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import {
-  BookOpen,
-  Bot,
-  Building2,
-  ChevronDown,
-  CircleUserRound,
-  FlaskConical,
-  History,
-  LogIn,
-  LogOut,
-  Moon,
-  SearchCheck,
-  Sun,
-  RotateCcw,
-} from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { BookOpen, MessageCircle, Building2, ChevronLeft, ChevronDown, CircleUserRound, FlaskConical, LogIn, LogOut, Menu, Moon, RotateCcw, SearchCheck, Sun, UserRound, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Brand } from "./Brand";
+import { AppScaffold, useViewportForm } from "../ui/AppScaffold";
+import { TabBar, type NavigationItem } from "../ui/TabBar";
+import { FamilyShortcut } from "../appearance/FamilyPicker";
 import type { PublicConfig, SessionPayload, Theme, Workspace } from "../types";
 
 interface AppShellProps {
@@ -29,260 +18,55 @@ interface AppShellProps {
   theme: Theme;
   onThemeToggle: () => void;
   onDemoLogin: () => Promise<void>;
-  onOpenLogin: () => void;   // 2026-09-29：打开独立正式登录页
+  onOpenLogin: () => void;
   onLogout: () => Promise<void>;
   onDemoReset: () => Promise<void>;
   onOpenAdmin: () => void;
   busy: boolean;
+  mobile?: boolean;
 }
 
-const workspaceMeta: Record<Workspace, { label: string; icon: typeof Bot }> = {
-  chat: { label: "问小蜗", icon: Bot },
-  academic: { label: "我的学业", icon: BookOpen },
-  campus: { label: "校园服务", icon: Building2 },
-};
+const items: NavigationItem[] = [
+  { id: "chat", label: "问答", icon: MessageCircle },
+  { id: "academic", label: "学业", icon: BookOpen },
+  { id: "campus", label: "校园服务", icon: Building2 },
+  { id: "profile", label: "我的", icon: UserRound },
+];
 
-function openHistoryDrawer() {
-  window.dispatchEvent(new CustomEvent("xiaowo:open-history"));
-}
-
-function topbarGreeting(profile: { name?: string | null } | null | undefined, authenticated: boolean) {
-  const hour = new Date().getHours();
-  const greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
-  const name = authenticated && profile?.name ? profile.name : "游客";
-  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
-  return `${greet}，${name} · ${date}`;
-}
-
-function NavButton({
-  workspace,
-  current,
-  onSelect,
-}: {
-  workspace: Workspace;
-  current: Workspace;
-  onSelect: (value: Workspace) => void;
-}) {
-  const meta = workspaceMeta[workspace];
-  const Icon = meta.icon;
-  return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>
-        <button
-          type="button"
-          className="workspace-nav__item"
-          data-active={current === workspace}
-          aria-current={current === workspace ? "page" : undefined}
-          aria-label={meta.label}
-          onClick={() => onSelect(workspace)}
-        >
-          <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
-          <span>{meta.label}</span>
-        </button>
-      </Tooltip.Trigger>
-      <Tooltip.Portal>
-        <Tooltip.Content className="tooltip" side="right" sideOffset={10}>
-          {meta.label}
-          <Tooltip.Arrow className="tooltip__arrow" />
-        </Tooltip.Content>
-      </Tooltip.Portal>
-    </Tooltip.Root>
-  );
-}
-
-export function AppShell({
-  children,
-  config,
-  session,
-  workspace,
-  onWorkspaceChange,
-  theme,
-  onThemeToggle,
-  onDemoLogin,
-  onOpenLogin,
-  onLogout,
-  onDemoReset,
-  onOpenAdmin,
-  busy,
-}: AppShellProps) {
-  const authenticated = session.principal.authenticated;
-  const showAcademic = session.capabilities.personal_academic;
-  const showReview = session.capabilities.knowledge_review;
-  const profile = session.principal.profile;
-
-  // 侧栏展开/收起：Web 默认展开，移动端默认收起；记住上次选择。
-  // 收起态点品牌色块 → 抽屉浮层；常驻态点品牌色块 → 收起。
-  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem("xiaowo-rail");
-      if (saved === "collapsed") return true;
-      if (saved === "expanded") return false;
-      return window.matchMedia?.("(max-width: 760px)")?.matches ?? false;
-    } catch {
-      return false;
-    }
-  });
-  const [railDrawerOpen, setRailDrawerOpen] = useState(false);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("xiaowo-rail", railCollapsed ? "collapsed" : "expanded");
-    } catch {
-      /* 隐私模式下静默 */
-    }
-  }, [railCollapsed]);
-
-  useEffect(() => {
-    if (!railDrawerOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRailDrawerOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [railDrawerOpen]);
-
-  return (
-    <Tooltip.Provider delayDuration={500}>
-      <div className={`app-shell${railCollapsed ? " app-shell--rail-collapsed" : ""}`}>
-        {railCollapsed && (
-          <header className="rail-topbar">
-            <button
-              type="button"
-              className="rail-brand-toggle"
-              onClick={() => setRailDrawerOpen(true)}
-              aria-label="展开导航栏"
-              aria-expanded={railDrawerOpen}
-            >
-              <Brand />
-            </button>
-            <div className="rail-topbar__greeting" role="status">
-              {topbarGreeting(profile, authenticated)}
-            </div>
-            <button
-              type="button"
-              className="icon-button rail-topbar__theme"
-              onClick={openHistoryDrawer}
-              aria-label="会话历史"
-            >
-              <History size={17} />
-            </button>
-            <button
-              type="button"
-              className="icon-button rail-topbar__theme"
-              onClick={onThemeToggle}
-              aria-label={theme === "light" ? "深色主题" : "浅色主题"}
-            >
-              {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
-            </button>
-          </header>
-        )}
-        {railCollapsed && railDrawerOpen && (
-          <div className="rail-scrim" onClick={() => setRailDrawerOpen(false)} aria-hidden="true" />
-        )}
-        <aside
-          className={`desktop-rail${railCollapsed ? " desktop-rail--drawer" : ""}`}
-          data-open={railCollapsed ? railDrawerOpen : true}
-          aria-hidden={railCollapsed && !railDrawerOpen ? true : undefined}
-        >
-          <button
-            type="button"
-            className="rail-brand-toggle"
-            onClick={() => {
-              if (!railCollapsed) {
-                setRailCollapsed(true);
-              } else if (railDrawerOpen) {
-                // 抽屉态点品牌：固定侧栏，回到常驻展开
-                setRailCollapsed(false);
-                setRailDrawerOpen(false);
-              } else {
-                setRailDrawerOpen(false);
-              }
-            }}
-            aria-label={!railCollapsed ? "收起导航栏" : railDrawerOpen ? "固定导航栏" : "关闭导航栏"}
-            aria-expanded={railCollapsed ? railDrawerOpen : true}
-          >
-            <Brand />
-          </button>
-          {config.environment !== "production" && (
-            <div className="environment-stamp" aria-label={config.environment === "competition" ? "比赛环境" : "开发环境"}>
-              <FlaskConical size={14} aria-hidden="true" />
-              <span>{config.environment === "competition" ? "比赛环境" : "开发环境"}</span>
-            </div>
-          )}
-          <nav className="workspace-nav" aria-label="工作区">
-            <NavButton workspace="chat" current={workspace} onSelect={onWorkspaceChange} />
-            {showAcademic && (
-              <NavButton workspace="academic" current={workspace} onSelect={onWorkspaceChange} />
-            )}
-            <NavButton workspace="campus" current={workspace} onSelect={onWorkspaceChange} />
-          </nav>
-          <div className="desktop-rail__footer">
-            <AccountMenu
-              config={config}
-              session={session}
-              theme={theme}
-              onThemeToggle={onThemeToggle}
-              onDemoLogin={onDemoLogin}
-              onOpenLogin={onOpenLogin}
-              onLogout={onLogout}
-              onDemoReset={onDemoReset}
-              onOpenAdmin={onOpenAdmin}
-              showReview={showReview}
-              busy={busy}
-            />
-          </div>
-        </aside>
-
-        <header className="mobile-header">
-          <Brand compact />
-          <div className="mobile-header__actions">
-            <button
-              type="button"
-              className="icon-button"
-              onClick={openHistoryDrawer}
-              aria-label="会话历史"
-            >
-              <History size={18} />
-            </button>
-            <AccountMenu
-            config={config}
-            session={session}
-            theme={theme}
-            onThemeToggle={onThemeToggle}
-            onDemoLogin={onDemoLogin}
-            onOpenLogin={onOpenLogin}
-            onLogout={onLogout}
-            onDemoReset={onDemoReset}
-            onOpenAdmin={onOpenAdmin}
-            showReview={showReview}
-            busy={busy}
-            compact
-          />
-          </div>
-        </header>
-
-        <div className="workbench">
-          {session.principal.auth_mode === "demo" && authenticated && (
-            <div className="demo-band" role="status">
-              <span>演示数据</span>
-              <span>{profile?.id} · {profile?.major} · {profile?.grade}</span>
-            </div>
-          )}
-          <main className="workspace-canvas" data-workspace={workspace}>
-            {children}
-          </main>
-        </div>
-
-        <nav className="mobile-bottom-nav" aria-label="工作区" style={{ "--mobile-nav-count": showAcademic ? 3 : 2 } as CSSProperties}>
-          <NavButton workspace="chat" current={workspace} onSelect={onWorkspaceChange} />
-          {showAcademic && (
-            <NavButton workspace="academic" current={workspace} onSelect={onWorkspaceChange} />
-          )}
-          <NavButton workspace="campus" current={workspace} onSelect={onWorkspaceChange} />
-        </nav>
-      </div>
-    </Tooltip.Provider>
-  );
+export function AppShell(props: AppShellProps) {
+  const { children, config, session, workspace, onWorkspaceChange, mobile = false } = props;
+  const form = useViewportForm();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const identityName = session.principal.authenticated ? session.jw_identity?.name || session.principal.profile?.name || "同学" : "未登录";
+  const select = (next: Workspace) => { setDrawerOpen(false); onWorkspaceChange(next); };
+  const account = <AccountMenu {...props} showReview={session.capabilities.knowledge_review} />;
+  const railLinks = (drawer = false) => <nav aria-label={drawer ? "展开的主导航" : "主导航"} className={drawer ? "scaffold-drawer-links" : "scaffold-rail-links"}>{items.map(({ id, label, icon: Icon }) =>
+    <button key={id} type="button" aria-label={label} aria-current={workspace === id ? "page" : undefined} onClick={() => select(id)}><Icon size={21} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span></button>
+  )}</nav>;
+  const rail = <><div className="scaffold-rail-brand"><Brand />{config.environment !== "production" && <span className="scaffold-environment"><FlaskConical size={13} />{config.environment === "competition" ? "比赛环境" : "开发环境"}</span>}</div>{railLinks()}<div className="scaffold-rail-account">{account}</div></>;
+  const header = <>
+    <div className="scaffold-header-leading">
+      {form === "tablet" && <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <Dialog.Trigger asChild><button type="button" className="scaffold-icon-button" aria-label="展开导航栏"><Menu size={21} /></button></Dialog.Trigger>
+        <Dialog.Portal><Dialog.Overlay className="scaffold-drawer-overlay" /><Dialog.Content className="scaffold-drawer" aria-describedby={undefined}>
+          <div className="scaffold-drawer-head"><Dialog.Title>小蛙助手导航</Dialog.Title><Dialog.Close asChild><button type="button" className="scaffold-icon-button" aria-label="关闭导航栏"><X size={20} /></button></Dialog.Close></div>
+          {railLinks(true)}<p className="scaffold-drawer-note">问校园，查学业，安排每一天。</p>
+        </Dialog.Content></Dialog.Portal>
+      </Dialog.Root>}
+      {form === "phone" ? <>{workspace === "campus" && <button type="button" className="scaffold-icon-button" aria-label="返回我的" onClick={() => select("profile")}><ChevronLeft size={20} /></button>}<span className="scaffold-product-name">小蛙助手</span></> : <span className="scaffold-section-name">{items.find((item) => item.id === workspace)?.label}</span>}
+    </div>
+    <div className="scaffold-header-actions">
+      <FamilyShortcut />
+      {form !== "phone" && <button className="scaffold-profile-shortcut" type="button" onClick={() => select("profile")} aria-label={`我的，${identityName}`}>
+        <span className="scaffold-avatar" aria-hidden="true">{session.principal.authenticated ? identityName.slice(0, 1) : <UserRound size={19} />}</span>
+        <span className="scaffold-profile-label">{identityName}</span>
+      </button>}
+    </div>
+  </>;
+  return <Tooltip.Provider delayDuration={500}><AppScaffold form={form} header={header} native={mobile} navigation={form === "phone" ? <TabBar items={items.filter((item) => item.id !== "campus")} current={workspace === "campus" ? "profile" : workspace} onSelect={select} /> : rail}>
+    {session.principal.auth_mode === "demo" && session.principal.authenticated && <div className="scaffold-demo-band" role="status"><span>演示数据</span><span>{session.principal.profile?.major} · {session.principal.profile?.grade}</span></div>}
+    <main className="workspace-canvas" data-workspace={workspace}>{children}</main>
+  </AppScaffold></Tooltip.Provider>;
 }
 
 interface AccountMenuProps {
@@ -321,12 +105,13 @@ function AccountMenu({
       <DropdownMenu.Trigger asChild>
         <button type="button" className={`account-trigger ${compact ? "account-trigger--compact" : ""}`}>
           <span className="account-trigger__avatar" aria-hidden="true">
-            {authenticated ? profile?.name?.slice(0, 1) : <CircleUserRound size={18} />}
+            {session.jw_identity?.name?.slice(0, 1) || (authenticated ? profile?.name?.slice(0, 1) : <CircleUserRound size={18} />)}
           </span>
           {!compact && (
             <span className="account-trigger__text">
-              <strong>{authenticated ? profile?.name : "未登录"}</strong>
-              <small>{authenticated ? profile?.id : "公共能力"}</small>
+              <strong>{session.jw_identity?.name || (authenticated ? profile?.name : "未登录")}</strong>
+              {session.jw_identity?.student_id && <em>{session.jw_identity.student_id}</em>}
+              <small>{authenticated && session.jw_session ? "已连接教务" : authenticated ? profile?.id : "公共能力"}</small>
             </span>
           )}
           <ChevronDown size={15} aria-hidden="true" />
@@ -336,8 +121,8 @@ function AccountMenu({
         <DropdownMenu.Content className="account-menu" sideOffset={8} align="end">
           {authenticated && profile && (
             <div className="account-menu__identity">
-              <strong>{profile.name}</strong>
-              <span>{profile.major} · {profile.grade}</span>
+              <strong>{session.jw_identity?.name || profile.name}</strong>
+              <span>{session.jw_identity?.major || profile.major} · {session.jw_identity?.grade || profile.grade}</span>
               {session.principal.auth_mode === "demo" && <em>演示数据</em>}
             </div>
           )}

@@ -105,3 +105,46 @@ scripts/*.local.json
 
 # 本地开发 venv（最小依赖，不入库）
 .venv-local/
+
+# Android/mobile generated assets and private local development state
+mobile/node_modules/
+mobile/www/
+mobile/artifacts/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/capacitor-cordova-android-plugins/
+mobile/android/app/src/main/assets/
+mobile/android/local.properties
+mobile/android/.idea/
+mobile/.runtime/
+mobile/*.jks
+mobile/*.keystore
+.superpowers/
+
+# 2026-10-27：移动端/备份产物不入库
+knowledge/chroma_db.bak_*/
+mobile/node_modules/
+mobile/www/
+mobile/artifacts/
+mobile/.runtime/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/local.properties
+*.apk
+*.aab
+
+# 问答记录导出（含真实用户数据，不入库）
+小蜗_问答记录导出_*.json
+小蜗_问答记录导出_*.md
+
+# 2026-10-27：大文件/图片不进 git（本地保留，需要时走网盘/LFS）
+frontend/src/mascot/assets/*.png
+frontend/src/mascot/assets/*.gif
+frontend/src/appearance/assets/*.gif
+docs/qa/*.png
+docs/screenshot_*.png
+docs/frontend-rebuild/
+docs/xiaowa-styles/
+submission/diagrams/*.png
+deploy/server/get-pip.py

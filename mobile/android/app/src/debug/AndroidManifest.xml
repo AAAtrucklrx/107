@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Instrumentation fixtures only. These components do not exist in release. -->
+        <activity android:name=".NativeProbeActivity" android:exported="false" android:theme="@style/AppTheme.NoActionBar" />
+        <service android:name=".NativeProbeService" android:process=":school" android:exported="false" />
+    </application>
+</manifest>

@@ -15,7 +15,7 @@ describe("正式登录页（2026-09-29）", () => {
     expect(screen.getByText(/统一认证入口已预留/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /统一认证登录/ })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /统一认证登录/ }));
-    expect(screen.getByRole("status")).toHaveTextContent(/XIAOWO_AUTH_MODE/);
+    expect(screen.getByRole("status")).toHaveTextContent(/此浏览器暂未开通直接统一认证/);
     // 备选：演示身份
     await userEvent.click(screen.getByRole("button", { name: /进入演示身份/ }));
     expect(onDemoLogin).toHaveBeenCalledTimes(1);

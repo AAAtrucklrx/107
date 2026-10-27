@@ -8,7 +8,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 
-def test_in_window_parses_rfc822() -> None:
+def test_in_window_parses_rfc822(monkeypatch) -> None:
+    from datetime import datetime, timezone
+    from scripts import collect_official_pages
+    # 固定测试时钟：此用例验证日期解析，不随真实日历自动变红。
+    monkeypatch.setattr(collect_official_pages.time, "time", lambda: datetime(2026, 9, 3, tzinfo=timezone.utc).timestamp())
     from scripts.collect_official_pages import _in_window
     assert _in_window("Wed, 02 Sep 2026 12:00:00 +0800", 30) is True
     assert _in_window("Wed, 01 Jan 2020 12:00:00 +0800", 30) is False

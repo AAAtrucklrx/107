@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-10-26",
+  "tool": "image_gen.imagegen (built-in)",
+  "seed": "not exposed by tool; not set",
+  "reference": "All states reference the generated idle master, derived from the user cafeteria reference",
+  "source_size": [
+    1254,
+    1254
+  ],
+  "webp_quality": 84,
+  "webp_method": 6,
+  "assets": [
+    {
+      "state": "idle",
+      "file": "idle.webp",
+      "png": "idle.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 55634,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "510e7c8b0ffb48a69296c8ed47e35c9d3b3b93344883d17ec9c814e8e1234fe5",
+      "source_filename": "exec-870b941a-cc46-49e3-b94b-1d6c40ea7ec2.png"
+    },
+    {
+      "state": "laugh",
+      "file": "laugh.webp",
+      "png": "laugh.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 57946,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "68d5db75cee2746abb49c08330a3a9ba17e0557c3186ab552834439a16fb3a6a",
+      "source_filename": "exec-c502f84c-e00d-40b0-92c4-3173397daa7c.png"
+    },
+    {
+      "state": "think",
+      "file": "think.webp",
+      "png": "think.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 53306,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "f238cad7533b5e2ba65fe37983b87aff69c354dd04e88eeeab748a33324e94a0",
+      "source_filename": "exec-afb67f5e-f700-4c24-8f4e-93f953567083.png"
+    },
+    {
+      "state": "sleep",
+      "file": "sleep.webp",
+      "png": "sleep.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 59682,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "493212fea5276a59375413a785db5bd7076f02828fcea83b241a598f12274659",
+      "source_filename": "exec-8b24c703-0471-4263-8187-61752934df47.png"
+    },
+    {
+      "state": "celebrate",
+      "file": "celebrate.webp",
+      "png": "celebrate.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 95228,
+      "corner_alpha": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "sha256": "2e4f9d31341e6cb45409ba7e17b7194e1a6fef1d8a8e45445de7018e1a4308fb",
+      "source_filename": "exec-849c1613-3e70-460b-a24c-a66678b16790.png"
+    },
+    {
+      "state": "surprised",
+      "file": "surprised.webp",
+      "png": "surprised.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 55304,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "d7c83e2eb32cde1fe69db7153a6b9e069f451f11131dc9f8345e63af145de4f5",
+      "source_filename": "exec-a11d1651-0d4e-492a-a2a9-e33072c3c239.png"
+    },
+    {
+      "state": "eat",
+      "file": "eat.webp",
+      "png": "eat.png",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA",
+      "bytes": 66028,
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sha256": "53ea4b7c2bd3a90ee4adc04ab09aa0610f12fb4db6be4b4e0d2ef76ffa6c38fd",
+      "source_filename": "exec-5009738e-f1bd-4d5c-aa47-1d0b62769842.png"
+    }
+  ],
+  "total_webp_bytes": 443128
+}

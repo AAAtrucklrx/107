@@ -1,5 +1,8 @@
 # 🐌 小蜗 — 科大校园智能助手
 
+> 2026-10-26：已按选定的「奶家口袋」重构手机界面，采用原版奶蛙 / 奶蛋 / 奶鼠，保留科大蓝设置。见 [奶家口袋交付记录与截图](docs/xiaowa-family-pocket.md)。
+
+> 2026-10-26：客户端更名为“小蛙助手”，提供奶蛙黄 / 科大蓝双风格，浅深色独立切换。技术命名与 API 保留兼容。见 [双风格交付与技术选型](docs/xiaowa-styles.md)。
 > 107 杯比赛项目 · 科大校园场景的 AI 智能体助手
 
 小蜗是一个面向中国科学技术大学师生的校园智能助手，基于 DeepSeek 官网 LLM（`api.deepseek.com/v1`，`deepseek-v4-flash`，2026-09-04 切换）构建，采用**统一 QA LangGraph** 智能体架构（意图分类 + 混合召回双通道 → LLM 自主决策循环 → 工具执行 → 统一回答），支持知识库问答与教务数据实时查询。
@@ -55,7 +58,9 @@ python -m uvicorn xiaowo_web.main:app --host 127.0.0.1 --port 8000
 
 访问 `http://localhost:8000`。用户端路径为 `/`、`/academic`、`/campus`；管理员入口为 `/admin`，知识审核为 `/admin/knowledge`，旧 `/review` 仅作兼容重定向。前后端分离开发时保留 `.env.example` 的 `http://localhost:5173`，另一个终端在 `frontend/` 运行 `npm run dev`。
 
-比赛演示使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo` 和唯一合成身份 `PB25111691`；demo 管理员只能发布到 demo 索引。无 HTTPS 域名的公开 production 只能使用 anonymous，个人区和管理区均关闭。真实 CAS 只保留 Provider/API，必须等可信 HTTPS 来源与 CAS service 白名单就绪后启用。
+比赛演示使用 `XIAOWO_ENV=competition`、`XIAOWO_AUTH_MODE=demo` 和唯一合成身份 `PB25111691`；demo 管理员只能发布到 demo 索引。无 HTTPS 域名的公开 production 只能使用 anonymous，个人区和管理区均关闭。传统 CAS 回调路径需要可信 HTTPS 来源与学校 service 白名单。学校自定义 SSO 的登录态导入与移动端会话是另一条显式启用的认证路径，不依赖把本应用加入 CAS 回调白名单。
+
+**Android（2026-10-24）**：`mobile/` 复用本 React 前端，采用 Capacitor 7.6.9。独立原生 WebView 完成人工学校登录，后端验证 Cookie 后通过 PKCE 单次兑换发放移动 Bearer；设备仅持久化 Keystore 加密的小蜗令牌。移动认证默认关闭，正式 API 必须 HTTPS；本地 debug 可通过 USB `adb reverse` 连接 `127.0.0.1:8000`。系统 WebView 临时落盘限制及清理策略、打包/签名/测试说明见 [mobile/README.md](mobile/README.md)，隐私草案见 [mobile/PRIVACY.md](mobile/PRIVACY.md)。
 
 SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [Web 部署与数据迁移](docs/Web部署与数据迁移.md)。当前开发机不安装或启动这些 sidecar。旧 Streamlit 回退入口仍可用 `python -m streamlit run app_test.py --server.port 8502` 启动。
 
@@ -120,7 +125,7 @@ SearXNG、Crawl4AI sidecar、worker、数据包迁移和 generation 回滚见 [W
 ### 已知限制
 
 - 评课数据为 icourse.club 抓取快照（重爬 SOP：`scripts/refresh_course_db.py`）；样本量过少的课程/教师评分仅供参考
-- 真实 CAS 登录部署需 service 白名单；本地开发用 `app_test.py` 离线路径
+- 传统 CAS 回调登录需 service 白名单；移动端使用学校允许的 jw service 完成人工认证后导入，不实现自有 CAS 回调。本地移动调试入口为 `mobile/scripts/dev_server.py`
 - 当前没有可信 HTTPS 域名，正式个人能力与 production 管理发布保持关闭；比赛只展示明确标识的合成 demo 数据
 - 联网能力只有在服务器部署并核验 sidecar、结构化证据模型探针均通过后才启用；sidecar 不持有 CAS Cookie、校内凭证或用户私密上下文
 - YOUNG_TOKEN 约 7 天有效期，失效后活动功能自动回退本地快照（来源如实标注）

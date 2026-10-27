@@ -1,0 +1,38 @@
+/* Static states are generated bitmaps; laughing can use the unchanged reference GIF. */
+.mascot-layer { position: relative; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; width: min(100%, 440px); min-height: 76px; margin: 0 auto; padding: 4px 16px; box-sizing: border-box; color: var(--ink); isolation: isolate; }
+.mascot-copy { min-width: 0; max-width: 240px; }
+.mascot-line { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.mascot-hint { display: block; margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.mascot-motion { flex: 0 0 auto; transition: transform 180ms var(--ease-out, ease-out); }
+.mascot-motion.is-dragging { transition: none; }
+.mascot-button { display: block; width: 76px; height: 76px; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 16px; background: transparent; cursor: pointer; -webkit-user-select: none; user-select: none; touch-action: pan-y; -webkit-touch-callout: none; }
+.mascot-button:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+.mascot-image { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; transform-origin: 50% 90%; }
+.mascot-button[data-state="idle"] .mascot-image { animation: mascot-breathe 2.8s ease-in-out infinite; }
+.mascot-button[data-state="laugh"][data-animated-image="false"] .mascot-image { animation: mascot-laugh 180ms steps(2, end) infinite; }
+.mascot-button[data-state="think"] .mascot-image { animation: mascot-think 1.8s ease-in-out infinite; }
+.mascot-button[data-state="celebrate"] .mascot-image { animation: mascot-cheer 180ms ease-out 5 alternate; }
+.mascot-button.is-petting .mascot-image { animation: mascot-pet 180ms ease-out; }
+@keyframes mascot-breathe { 50% { transform: scaleY(1.025); } }
+@keyframes mascot-laugh { 0%, 100% { transform: rotate(-3deg) translateY(1px); } 50% { transform: rotate(3deg) translateY(-2px); } }
+@keyframes mascot-think { 50% { transform: rotate(3deg); } }
+@keyframes mascot-cheer { to { transform: translateY(-5px) rotate(2deg); } }
+@keyframes mascot-pet { 45% { transform: scale(1.08, .88); } 75% { transform: scale(.98, 1.04); } }
+@media (max-width: 639px) {
+  .mascot-layer { min-height: 60px; padding: 0 16px; }
+  .mascot-button { width: 60px; height: 60px; }
+  .mascot-hint { margin-top: 1px; }
+  :root[data-keyboard-open="true"] .mascot-layer { min-height: 44px; justify-content: flex-end; }
+  :root[data-keyboard-open="true"] .mascot-button { width: 44px; height: 44px; }
+  :root[data-keyboard-open="true"] .mascot-copy { display: none; }
+}
+@media (min-width: 640px) and (max-width: 1024px) { .mascot-layer { justify-content: flex-end; width: 100%; padding: 4px 24px; } }
+@media (min-width: 1025px) {
+  .mascot-layer { position: fixed; z-index: 18; right: max(20px, env(safe-area-inset-right, 0px)); bottom: max(168px, calc(var(--composer-height, 140px) + 24px)); width: 132px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .mascot-copy { align-self: flex-end; width: 176px; max-width: min(176px, 30vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-low); pointer-events: none; }
+  .mascot-hint { font-size: 11px; }
+  .mascot-button { width: 116px; height: 116px; cursor: grab; touch-action: none; }
+  .mascot-motion.is-dragging .mascot-button { cursor: grabbing; }
+}
+.mascot-layer[data-reduced-motion="true"] .mascot-image, .mascot-layer[data-reduced-motion="true"] .mascot-motion { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .mascot-image, .mascot-motion { animation: none !important; transition: none !important; } }

@@ -1,10 +1,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, Bot, Database, Inbox, LoaderCircle, X } from "lucide-react";
+import { AlertTriangle, Bot, Database, X } from "lucide-react";
+import { Skeleton } from "../ui/Skeleton";
+import { Empty } from "../ui/Empty";
+import { Button } from "../ui/Button";
 import type { ReactNode } from "react";
 import type { DataSource } from "../types";
 
 export function WorkspaceLoading({ label }: { label: string }) {
-  return <div className="workspace-state" role="status"><LoaderCircle className="spin" size={21} /><span>{label}</span></div>;
+  return <div className="workspace-state"><Skeleton label={label} /><span>{label}</span></div>;
 }
 
 export function WorkspaceError({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -12,19 +15,13 @@ export function WorkspaceError({ message, onRetry }: { message: string; onRetry:
     <div className="workspace-state workspace-state--error" role="alert">
       <AlertTriangle size={20} />
       <span>{message}</span>
-      <button className="secondary-button" type="button" onClick={onRetry}>重试</button>
+      <Button variant="secondary" onClick={onRetry}>重试</Button>
     </div>
   );
 }
 
 export function WorkspaceEmpty({ title, detail }: { title: string; detail?: string }) {
-  return (
-    <div className="workspace-state workspace-state--empty">
-      <Inbox size={20} aria-hidden="true" />
-      <strong>{title}</strong>
-      {detail && <span>{detail}</span>}
-    </div>
-  );
+  return <Empty title={title} detail={detail} />;
 }
 
 export function ConfirmDialog({
@@ -88,7 +85,7 @@ export function AskXiaowoButton({ question, onAsk, compact = false }: {
 }) {
   return (
     <button className={`ask-xiaowo ${compact ? "ask-xiaowo--compact" : ""}`} type="button" onClick={() => onAsk(question)}>
-      <Bot size={14} />问问小蜗
+      <Bot size={14} />问问小蛙助手
     </button>
   );
 }

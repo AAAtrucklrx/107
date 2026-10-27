@@ -1,10 +1,16 @@
+import { HomeWelcome } from "../components/HomeWelcome";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { AlertTriangle, ArrowDown, Bot, Brain, CalendarRange, Check, ChevronDown, Clipboard, Database, Globe2, History, Library, Menu, MessageSquarePlus, Moon, Pencil, RotateCcw, Search, Send, Sparkles, Square, Sun, ThumbsDown, ThumbsUp, Trash2, X, LogIn } from "lucide-react";
+import { AlertTriangle, ArrowDown, Bot, Brain, CalendarRange, Check, ChevronDown, Clipboard, Database, Globe2, History, Library, Menu, Plus, ChevronRight, MapPin, MessageSquarePlus, Moon, Pencil, RotateCcw, Search, Send, Sparkles, Square, Sun, ThumbsDown, ThumbsUp, Trash2, X, LogIn } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StarterPromptTile } from "../components/LaunchTile";
+import { familyCharacters, useAppearance } from "../appearance/AppearanceProvider";
+import { Sheet } from "../ui/Sheet";
+import { Skeleton } from "../ui/Skeleton";
+import { useVisualViewport } from "../hooks/useVisualViewport";
+import { emitMascot } from "../mascot/events";
+import "../styles/chat.css";
 import { ConfirmDialog } from "../components/WorkspacePrimitives";
 import { starterPromptsFor } from "../data/starterPrompts";
 import type { StarterPromptIcon } from "../data/starterPrompts";
@@ -34,7 +40,7 @@ import type {
 } from "../types";
 
 // 占位流式文案（与后端 manager 的 placeholder 段一致）：首段 answer.delta 到达时被替换
-const STREAM_PLACEHOLDER = "小蜗正在为你整理答案，请稍候…";
+const STREAM_PLACEHOLDER = "小蛙助手正在为你整理答案，请稍候…";
 
 const loadRenderedAnswer = () => import("../components/RenderedAnswer");
 const RenderedAnswer = lazy(() => loadRenderedAnswer().then((module) => ({ default: module.RenderedAnswer })));
@@ -42,6 +48,7 @@ const loadClaimCheckList = () => import("../components/ClaimCheckList");
 const ClaimCheckList = lazy(() => loadClaimCheckList().then((module) => ({ default: module.ClaimCheckList })));
 
 interface ChatWorkspaceProps {
+  active?: boolean;
   config: PublicConfig;
   session: SessionPayload;
   theme?: Theme;
@@ -61,6 +68,12 @@ const stageLabels: Record<string, string> = {
   completed: "回答完成",
   cancelled: "已停止",
 };
+
+const pocketPrompts = [
+  { title: "今日课表", question: "请查询我今天的课表，并按时间列出课程和地点。", icon: CalendarRange },
+  { title: "找自习室", question: "帮我找一个适合自习的空教室。", icon: MapPin },
+  { title: "选课建议", question: "我想了解选课建议，可以从哪些方面考虑？", icon: Search },
+];
 
 const starterPromptIcons: Record<StarterPromptIcon, LucideIcon> = {
   calendar: CalendarRange,
@@ -82,9 +95,9 @@ function nowIso(): string {
 }
 
 function greetingParts(now = new Date()): { greet: string; date: string } {
-  const hour = now.getHours();
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(now));
   const greet = hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
-  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(now);
+  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Shanghai" }).format(now);
   return { greet, date };
 }
 
@@ -322,7 +335,9 @@ function StageStrip({ message }: { message: ChatMessage }) {
   const stages = message.stages?.length ? message.stages : message.stage ? [message.stage] : [];
   if (!stages.length) return null;
   return (
-    <div className="stage-strip" role="status">
+    <details className="stage-progress">
+      <summary><span role="status">{stageLabels[stages.at(-1) ?? ""] ?? "正在处理"}</span><ChevronDown size={14} aria-hidden="true" /></summary>
+      <div className="stage-strip">
       {stages.map((stage, index) => {
         const current = index === stages.length - 1;
         const label = stageLabels[stage] ?? "正在处理";
@@ -333,7 +348,8 @@ function StageStrip({ message }: { message: ChatMessage }) {
           </span>
         );
       })}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -368,6 +384,7 @@ function TypewrittenAnswer({ message, onAsk }: { message: ChatMessage; onAsk?: (
         content={full.slice(0, shown)}
         sources={message.sources ?? []}
       />
+      {active && <span className="streaming-cursor" aria-label="正在生成" />}
     </>
   );
 }
@@ -559,7 +576,7 @@ function FeedbackDialog({
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content className="dialog-content feedback-dialog">
           <div className="dialog-heading">
-            <Dialog.Title>帮助小蜗校准答案</Dialog.Title>
+            <Dialog.Title>帮助小蛙助手校准答案</Dialog.Title>
             <Dialog.Close className="icon-button" aria-label="关闭"><X size={17} /></Dialog.Close>
           </div>
           {status === "sent" ? (
@@ -586,7 +603,10 @@ function FeedbackDialog({
   );
 }
 
-export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQuestion, onSeedConsumed }: ChatWorkspaceProps) {
+export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQuestion, onSeedConsumed, active = true }: ChatWorkspaceProps) {
+  useVisualViewport();
+  const { style, character } = useAppearance();
+  const selectedCharacter = familyCharacters.find((member) => member.id === character) ?? familyCharacters[0];
   const authenticated = session.capabilities.server_history;
   // 今日弹窗（2026-09-05）：登录（个人课表能力）打开即弹；演示阶段每次打开都显示
   const [todayPopupOpen, setTodayPopupOpen] = useState<boolean>(Boolean(session.capabilities.personal_academic));
@@ -597,20 +617,29 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<RetrievalMode>("auto");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsReturnFocus = useRef<HTMLElement | null>(null);
+  const historyReturnFocus = useRef<HTMLElement | null>(null);
+  const openHistory = useCallback(() => {
+    historyReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setHistoryOpen(true);
+  }, []);
   
     // 顶条/移动顶栏的历史按钮通过全局事件打开抽屉（状态在本组件内）
     useEffect(() => {
-      const open = () => setHistoryOpen(true);
+      const open = openHistory;
       window.addEventListener("xiaowo:open-history", open);
       return () => window.removeEventListener("xiaowo:open-history", open);
-    }, []);
+    }, [openHistory]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starterPromptsSuppressed, setStarterPromptsSuppressed] = useState(Boolean(seededQuestion));
   const streamController = useRef<AbortController | null>(null);
+  const requestGeneration = useRef(0);
   const activeRun = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement | null>(null);
   const composerInput = useRef<HTMLTextAreaElement | null>(null);
+  const composerForm = useRef<HTMLFormElement | null>(null);
   const followOutput = useRef(true);
   const endAnchor = useRef<HTMLDivElement | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -633,9 +662,11 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   useEffect(() => {
     setActiveId(null);
     setMessages([]);
+    setBusy(false);
+    activeRun.current = null;
     setStarterPromptsSuppressed(Boolean(seededQuestion));
     void reloadHistory().catch((reason) => setError(reason instanceof Error ? reason.message : "无法读取历史。"));
-    return () => streamController.current?.abort();
+    return () => { requestGeneration.current++; streamController.current?.abort(); emitMascot("idle"); };
   }, [reloadHistory, session.principal.id]);
 
   useEffect(() => {
@@ -646,19 +677,22 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     }
   }, [onSeedConsumed, seededQuestion]);
 
-  // 移动端软键盘兜底：不支持 interactive-widget=resizes-content 的 WebView 上，
-  // 聚焦输入框后滚动使其进入键盘上方的可视区
+  // Grow with the draft, with internal scrolling after six lines.
   useEffect(() => {
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.tagName === "TEXTAREA") {
-        window.setTimeout(() => {
-          target.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }, 300);
-      }
-    };
-    document.addEventListener("focusin", onFocusIn);
-    return () => document.removeEventListener("focusin", onFocusIn);
+    const input = composerInput.current;
+    if (!input || !active) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(132, Math.max(44, input.scrollHeight))}px`;
+  }, [draft, active]);
+
+  useEffect(() => {
+    const form = composerForm.current;
+    if (!form || typeof ResizeObserver === "undefined") return;
+    const update = () => document.documentElement.style.setProperty("--composer-height", `${form.getBoundingClientRect().height + 20}px`);
+    const observer = new ResizeObserver(update);
+    observer.observe(form);
+    update();
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--composer-height"); };
   }, []);
 
   const selectStarterPrompt = useCallback((question: string) => {
@@ -670,13 +704,14 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   }, []);
 
   useEffect(() => {
+    if (!active) return;
     if (messages.length === 0) {
       if (messageScroll.current) messageScroll.current.scrollTop = 0;
       return;
     }
     if (!followOutput.current) return;
     endAnchor.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth", block: "end" });
-  }, [busy, messages]);
+  }, [active, busy, messages]);
 
   const handleMessageScroll = useCallback(() => {
     const element = messageScroll.current;
@@ -763,14 +798,17 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       const markdown = String(data.markdown ?? "");
       updateAssistant(assistantId, (message) => ({
         ...withStage(message, "answering"),
-        content: data.placeholder === true ? markdown : (markdown || message.content),
+        content: data.placeholder === true ? STREAM_PLACEHOLDER : (markdown || message.content),
       }));
       return;
     }
     if (event.type === "answer.completed") {
+      const terminalReason = String(data.terminal_reason ?? "completed");
+      const incomplete = ["EVIDENCE_INSUFFICIENT", "CRAWL_BLOCKED", "GENERATION_TIMEOUT_PARTIAL"].includes(terminalReason);
+      emitMascot(incomplete ? "error" : "success", incomplete ? { message: "诶？这次还没查到完整结果。" } : undefined);
       activeRun.current = null;
       setBusy(false);
-      // 2026-09-04：最终 claims 文本替换占位段（"小蜗正在为你整理答案…"）
+      // 2026-09-04：最终 claims 文本替换占位段（"小蛙助手正在为你整理答案…"）
       const finalClaims = (data.claims as Array<{ text?: string }> | undefined) ?? [];
       const finalText = finalClaims.find((claim) => typeof claim.text === "string" && claim.text.trim())?.text ?? "";
       setMessages((current) => {
@@ -792,12 +830,14 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       return;
     }
     if (event.type === "run.cancelled") {
+      emitMascot("idle");
       activeRun.current = null;
       setBusy(false);
       updateAssistant(assistantId, (message) => ({ ...withStage(message, "cancelled"), status: "cancelled", content: message.content || "已停止生成。" }));
       return;
     }
     if (event.type === "run.failed") {
+      emitMascot("error", { message: "刚才没接上，再试一次吧。" });
       activeRun.current = null;
       setBusy(false);
       updateAssistant(assistantId, (message) => ({ ...message, status: "failed", content: String(data.message ?? "回答失败，请重试。") }));
@@ -807,6 +847,11 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
   const submitQuestion = useCallback(async (question: string, selectedMode: RetrievalMode) => {
     const clean = question.trim();
     if (!clean || busy) return;
+    const generation = ++requestGeneration.current;
+    const current = () => generation === requestGeneration.current;
+    const controller = new AbortController();
+    streamController.current = controller;
+    emitMascot("think");
     setError(null);
     setBusy(true);
     setDraft("");
@@ -823,17 +868,17 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
     try {
       const created = await apiMutation<ChatRunCreated>("/chat/runs", session.csrf_token, {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           question: clean,
           mode: selectedMode,
           conversation_id: authenticated ? activeId : null,
         }),
       });
+      if (!current() || controller.signal.aborted) return;
       activeRun.current = created.run_id;
       if (authenticated && created.conversation_id) setActiveId(created.conversation_id);
       updateAssistant(assistantId, (message) => ({ ...message, runId: created.run_id, mode: created.requested_mode }));
-      const controller = new AbortController();
-      streamController.current = controller;
       let lastEventId = 0;
       let terminal = false;
       for (let attempt = 0; attempt < 3 && !terminal; attempt += 1) {
@@ -842,6 +887,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
             signal: controller.signal,
             afterEventId: lastEventId,
             onEvent: (event) => {
+              if (!current() || controller.signal.aborted) return;
               lastEventId = Math.max(lastEventId, event.id);
               terminal = ["answer.completed", "run.cancelled", "run.failed"].includes(event.type);
               handleEvent(event, assistantId, localId, selectedMode);
@@ -859,7 +905,8 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
         throw new Error("回答流意外中断，请按原模式重试。");
       }
     } catch (reason) {
-      if ((reason as DOMException)?.name === "AbortError") return;
+      if (!current()) return;
+      if ((reason as DOMException)?.name === "AbortError") { emitMascot("idle"); return; }
       activeRun.current = null;
       setBusy(false);
       const message = reason instanceof Error ? reason.message : "请求失败，请重试。";
@@ -867,6 +914,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
       // 2026-09-17 修 P3-10：匿名问个人数据时后端返回 401 AUTH_REQUIRED —— 这是**设计好的引导**，
       // 不是故障。原来一律渲染成"本次回答未完成"，看着像坏了，而且没告诉用户怎么登录。
       const loginRequired = reason instanceof ApiClientError && reason.code === "AUTH_REQUIRED";
+      emitMascot(loginRequired ? "idle" : "error", { message: loginRequired ? "连接学校账号后，我就能帮你查啦。" : "刚才没接上，再试一次吧。" });
       updateAssistant(assistantId, (item) => ({
         ...item,
         content: message,
@@ -919,10 +967,23 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
 
   const stop = useCallback(async () => {
     const runId = activeRun.current;
-    if (!runId) return;
+    const generation = requestGeneration.current;
+    if (!runId) {
+      requestGeneration.current++;
+      streamController.current?.abort();
+      setBusy(false);
+      emitMascot("idle");
+      setMessages((current) => current.map((message) => message.status === "streaming" ? { ...withStage(message, "cancelled"), status: "cancelled", content: "已停止生成。" } : message));
+      return;
+    }
     try {
       await apiMutation(`/chat/runs/${runId}/cancel`, session.csrf_token, { method: "POST", body: "{}" });
+    } catch (reason) {
+      if (generation === requestGeneration.current) setError(reason instanceof Error ? reason.message : "未能通知服务停止，已在本机停止接收。");
     } finally {
+      if (generation !== requestGeneration.current || activeRun.current !== runId) return;
+      requestGeneration.current++;
+      emitMascot("idle");
       streamController.current?.abort();
       activeRun.current = null;
       setBusy(false);
@@ -975,66 +1036,39 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
 
   return (
     <>
-    <TodayPopup open={todayPopupOpen} onClose={() => setTodayPopupOpen(false)} session={session} />
-    <section className={"chat-workspace" + (conversations.length === 0 ? " chat-workspace--solo" : "")}>
-      {conversations.length > 0 && (
-        <aside className="chat-history-pane"><HistoryPanel {...historyProps} /></aside>
-      )}
+    <TodayPopup open={active && todayPopupOpen} onClose={() => setTodayPopupOpen(false)} session={session} />
+    <section className="chat-workspace">
       <div className="conversation-pane">
-        <header className="conversation-header conversation-header--greeting">
-          <button className="icon-button conversation-header__history" type="button" onClick={() => setHistoryOpen(true)} aria-label="打开会话历史"><Menu size={18} /></button>
-          <div className="conversation-greeting">
-            <strong>{greetingParts().greet}，{session.principal.profile?.name || (session.principal.authenticated ? "同学" : "游客")}</strong>
-            <span>{greetingParts().date}{activeId ? " · 当前对话" : " · 问小蜗"}</span>
-          </div>
-          <div className="conversation-header__right">
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="icon-button" type="button" onClick={historyProps.onNew} aria-label="新建对话">
-                  <MessageSquarePlus size={17} />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal><Tooltip.Content className="tooltip">新建对话</Tooltip.Content></Tooltip.Portal>
-            </Tooltip.Root>
-            <div className="privacy-note"><History size={13} />{authenticated ? "服务端保留 90 天" : "仅保存在此浏览器"}</div>
-            {onThemeToggle && (
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <button className="icon-button" type="button" onClick={onThemeToggle} aria-label={theme === "light" ? "深色主题" : "浅色主题"}>
-                    {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
-                  </button>
-                </Tooltip.Trigger>
-                <Tooltip.Portal><Tooltip.Content className="tooltip">{theme === "light" ? "深色主题" : "浅色主题"}</Tooltip.Content></Tooltip.Portal>
-              </Tooltip.Root>
-            )}
-          </div>
-        </header>
+        {(messages.length > 0 || starterPromptsSuppressed) && <header className="conversation-header">
+          <button className="icon-button" type="button" onClick={openHistory} aria-label="打开会话历史"><Menu size={18} /></button>
+          <span className="conversation-title">{conversations.find((item) => item.conversation_id === activeId)?.title || "和小蛙聊聊"}</span>
+          <button className="icon-button" type="button" onClick={historyProps.onNew} aria-label="新建对话"><MessageSquarePlus size={18} /></button>
+        </header>}
         {error && <div className="conversation-error" role="alert"><AlertTriangle size={15} />{error}</div>}
         <div className="message-scroll" ref={messageScroll} onScroll={handleMessageScroll} aria-label="对话内容">
           {messages.length === 0 ? (
             <div className="chat-empty">
+              <HomeWelcome personal={!!session.capabilities.personal_academic} greeting={greetingParts().greet} name={session.jw_identity?.name || session.principal.profile?.name || (session.principal.authenticated ? "同学" : undefined)} date={greetingParts().date} />
               {!starterPromptsSuppressed && (
                 <section className="starter-prompts" aria-labelledby="starter-prompts-title">
                   <h2 id="starter-prompts-title" className="sr-only">常见问题</h2>
-                  <div className="starter-prompt-grid">
-                    {starterPrompts.map((prompt, index) => (
-                      <StarterPromptTile
-                        key={prompt.id}
-                        index={index + 1}
-                        title={prompt.title}
-                        description={prompt.description}
-                        icon={starterPromptIcons[prompt.icon]}
-                        onSelect={() => selectStarterPrompt(prompt.question)}
-                      />
-                    ))}
+                  <div className="pocket-shortcuts">
+                    {pocketPrompts.map((prompt) => <button key={prompt.title} type="button" onClick={() => selectStarterPrompt(prompt.question)}>
+                      <prompt.icon size={20} aria-hidden="true" /><span>{prompt.title}</span>
+                    </button>)}
                   </div>
                 </section>
               )}
-
+              {conversations[0] && <section className="pocket-recent" aria-labelledby="pocket-recent-title">
+                <div className="pocket-recent__heading"><h2 id="pocket-recent-title">最近聊过</h2><button type="button" onClick={openHistory}>全部<ChevronRight size={14} /></button></div>
+                <button className="pocket-recent__item" type="button" onClick={() => historyProps.onSelect(conversations[0].conversation_id)}>
+                  <span>{conversations[0].title}</span><ChevronRight size={16} aria-hidden="true" />
+                </button>
+              </section>}
             </div>
           ) : messages.map((message, index) => (
             <article key={message.id} className={`message message--${message.role}`}>
-              <div className="message__identity">{message.role === "assistant" ? <><Bot size={15} />小蜗</> : "你"}</div>
+              <div className="message__identity">{message.role === "assistant" ? <>{style === "frog" ? <img className="message__avatar" src={selectedCharacter.src} alt="" width="28" height="28" /> : <Bot size={15} />}小蛙助手</> : "你"}</div>
               <div className="message__body">
                 {message.role === "assistant" && <StageStrip message={message} />}
                 {message.role === "user" && (message.editing ? (
@@ -1059,7 +1093,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   <ThoughtCard thoughts={message.thoughts} />
                 )}
                 {message.role === "assistant" && (message.content || !!message.sources?.length) && (
-                  <Suspense fallback={<div className="message-render-loading" role="status" aria-label="正在呈现回答"><span /><span /></div>}>
+                  <Suspense fallback={<Skeleton label="正在呈现回答" lines={2} />}>
                     <TypewrittenAnswer message={message} onAsk={selectStarterPrompt} />
                   </Suspense>
                 )}
@@ -1074,7 +1108,7 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
                   <div className="message-login-required" role="note">
                     <LogIn size={15} />
                     <span>{message.content || "个人学业问题需要先登录。"}</span>
-                    <small>请点左下角头像 →「登录（统一认证 / 演示身份）」，登录后重试。</small>
+                    <small>前往「我的」连接学校账号，登录后重试。</small>
                   </div>
                 )}
                 {!!message.claims?.some((claim) => claim.status === "conflict") && (
@@ -1107,11 +1141,12 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
             <ArrowDown size={18} />
           </button>
         )}
-        <form className="composer" onSubmit={(event) => { event.preventDefault(); void submitQuestion(draft, mode); }}>
+        <form className="composer" ref={composerForm} onSubmit={(event) => { event.preventDefault(); void submitQuestion(draft, mode); }}>
+          <button className="composer-tools" type="button" aria-label="校园工具与搜索设置" title={mode === "local" ? "校园工具 · 联网关闭" : "校园工具 · 联网开启"} onClick={() => { toolsReturnFocus.current = document.activeElement as HTMLElement; setToolsOpen(true); }}><Plus size={21} /></button>
           <textarea
             ref={composerInput}
-            aria-label="向小蜗提问"
-            placeholder="问问小蜗：课表、成绩、选课、空教室、校园办事……"
+            aria-label="向小蛙助手提问"
+            placeholder="想问什么，尽管说"
             maxLength={8000}
             rows={1}
             value={draft}
@@ -1124,27 +1159,27 @@ export function ChatWorkspace({ config, session, theme, onThemeToggle, seededQue
               }
             }}
           />
-          <div className="composer__footer">
-            <RetrievalControl value={mode} disabled={busy} webEnabled={config.features.web_search} onChange={setMode} />
-            {busy ? (
+          {busy ? (
               <button className="send-button send-button--stop" type="button" onClick={() => void stop()} aria-label="停止回答"><Square size={15} fill="currentColor" /></button>
             ) : (
               <button className="send-button" type="submit" disabled={!draft.trim()} aria-label="发送"><Send size={17} /></button>
-            )}
-          </div>
+          )}
         </form>
       </div>
 
-      <Dialog.Root open={historyOpen} onOpenChange={setHistoryOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="history-drawer">
-            <Dialog.Title className="sr-only">会话历史</Dialog.Title>
-            <Dialog.Close className="icon-button history-drawer__close" aria-label="关闭"><X size={18} /></Dialog.Close>
-            <HistoryPanel {...historyProps} />
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Sheet title="校园工具" open={active && toolsOpen} onOpenChange={setToolsOpen} returnFocusRef={toolsReturnFocus}>
+        <div className="pocket-tools">
+          <div className="pocket-tools__search"><RetrievalControl value={mode} disabled={busy} webEnabled={config.features.web_search} onChange={setMode} /><small>{config.features.web_search ? "需要时补充公开网络资料" : "联网服务暂未启用"}</small></div>
+          <div className="pocket-tools__list">{starterPrompts.map((prompt) => {
+            const Icon = starterPromptIcons[prompt.icon];
+            return <button type="button" key={prompt.id} onClick={() => { setToolsOpen(false); selectStarterPrompt(prompt.question); }}><Icon size={18} /><span>{prompt.title}</span><ChevronRight size={16} /></button>;
+          })}</div>
+          {onThemeToggle && <button className="pocket-tools__theme" type="button" onClick={onThemeToggle}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}{theme === "light" ? "深色主题" : "浅色主题"}</button>}
+        </div>
+      </Sheet>
+      <Sheet title="会话历史" description={authenticated ? "保留最近的对话，随时继续。" : "对话仅保存在当前浏览器。"} open={active && historyOpen} onOpenChange={setHistoryOpen} returnFocusRef={historyReturnFocus}>
+        <HistoryPanel {...historyProps} />
+      </Sheet>
     </section>
     </>
   );

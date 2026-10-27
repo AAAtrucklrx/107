@@ -1,0 +1,4347 @@
+{
+  "phase": "after",
+  "visualStyle": "ustc",
+  "origin": "http://127.0.0.1:5175",
+  "fixtureDate": "2026-10-26T10:00:00+08:00",
+  "syntheticDataOnly": true,
+  "pages": [
+    {
+      "name": "home",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-home-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 22,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-chat-wide-table-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 11,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 31,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-reduced-viewport",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-chat-reduced-viewport-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 11,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 24,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-academic-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 10,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 35,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-schedule-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 44,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-program-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 9,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 31,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "after-profile-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 9,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 24,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "home",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-home-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 22,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-chat-wide-table-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 11,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 31,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-reduced-viewport",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-chat-reduced-viewport-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 11,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 24,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-academic-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 10,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 35,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-schedule-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 44,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-program-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 9,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 31,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 375,
+      "theme": "dark",
+      "screenshot": "after-profile-375-dark.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 9,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 24,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "home",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-home-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 19,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 20,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-chat-wide-table-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 64,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-academic-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 52,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-schedule-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 59,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-program-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 38,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "after-profile-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 26,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "home",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-home-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 19,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 20,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-chat-wide-table-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 64,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-academic-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 52,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-schedule-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 19,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 59,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-program-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 38,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 768,
+      "theme": "dark",
+      "screenshot": "after-profile-768-dark.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 13,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 26,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "home",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-home-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 30,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-chat-wide-table-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 14,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 76,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-academic-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 62,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-schedule-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 69,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-program-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 48,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "after-profile-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#f6f8fc",
+            "ratio": 14.88,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#182333",
+            "backgroundValue": "#ffffff",
+            "ratio": 15.82,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#526078",
+            "backgroundValue": "#ffffff",
+            "ratio": 6.36,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#5c6b80",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.43,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#ffffff",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#2359df",
+            "backgroundValue": "#eaf0ff",
+            "ratio": 5.16,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#ffffff",
+            "backgroundValue": "#2359df",
+            "ratio": 5.89,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#24724d",
+            "backgroundValue": "#e6f5eb",
+            "ratio": 5.19,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#885b09",
+            "backgroundValue": "#fff3d6",
+            "ratio": 5.37,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#b33143",
+            "backgroundValue": "#ffedf0",
+            "ratio": 5.42,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 36,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "home",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-home-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 30,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "chat-wide-table",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-chat-wide-table-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 14,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 76,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "academic",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-academic-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 62,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "schedule",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-schedule-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 69,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "program",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-program-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 48,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    },
+    {
+      "name": "profile",
+      "width": 1440,
+      "theme": "dark",
+      "screenshot": "after-profile-1440-dark.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12,
+      "contrast": {
+        "tokenPairs": [
+          {
+            "foreground": "ink",
+            "background": "canvas",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#111722",
+            "ratio": 16.13,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#192231",
+            "ratio": 14.35,
+            "ok": true
+          },
+          {
+            "foreground": "ink",
+            "background": "surface-raised",
+            "foregroundValue": "#eef3fc",
+            "backgroundValue": "#202c3d",
+            "ratio": 12.67,
+            "ok": true
+          },
+          {
+            "foreground": "muted",
+            "background": "surface",
+            "foregroundValue": "#b5c2d7",
+            "backgroundValue": "#192231",
+            "ratio": 8.87,
+            "ok": true
+          },
+          {
+            "foreground": "faint",
+            "background": "surface",
+            "foregroundValue": "#a3b3cb",
+            "backgroundValue": "#192231",
+            "ratio": 7.51,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "surface",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#192231",
+            "ratio": 8.39,
+            "ok": true
+          },
+          {
+            "foreground": "primary",
+            "background": "primary-soft",
+            "foregroundValue": "#9bbcff",
+            "backgroundValue": "#263c64",
+            "ratio": 5.77,
+            "ok": true
+          },
+          {
+            "foreground": "on-primary",
+            "background": "primary",
+            "foregroundValue": "#122344",
+            "backgroundValue": "#9bbcff",
+            "ratio": 8.17,
+            "ok": true
+          },
+          {
+            "foreground": "success",
+            "background": "success-soft",
+            "foregroundValue": "#94dbb1",
+            "backgroundValue": "#203d31",
+            "ratio": 7.35,
+            "ok": true
+          },
+          {
+            "foreground": "warning",
+            "background": "warning-soft",
+            "foregroundValue": "#f0cb80",
+            "backgroundValue": "#413521",
+            "ratio": 7.72,
+            "ok": true
+          },
+          {
+            "foreground": "danger",
+            "background": "danger-soft",
+            "foregroundValue": "#ffa8b5",
+            "backgroundValue": "#492c38",
+            "ratio": 6.77,
+            "ok": true
+          }
+        ],
+        "testedTextElements": 36,
+        "failures": [],
+        "skipped": [],
+        "limitations": "Computed CSS text colors over solid alpha-composited ancestor backgrounds. Gradients/images and opacity are reported as skipped; raster artwork, hover states, icon-only non-text contrast, text antialiasing, and occlusion are not certified."
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "history-keyboard",
+      "width": 375,
+      "theme": "light",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 375,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 307,
+      "scrollWidth": 392,
+      "overflowX": "auto"
+    },
+    {
+      "name": "reduced-viewport-composer",
+      "width": 375,
+      "theme": "light",
+      "ok": true,
+      "composerBox": {
+        "x": 21,
+        "y": 282,
+        "width": 333,
+        "height": 72
+      },
+      "note": "Browser viewport resize; this is not an Android IME test."
+    },
+    {
+      "name": "schedule-contained",
+      "width": 375,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 341,
+      "scrollWidth": 840,
+      "overflowX": "auto"
+    },
+    {
+      "name": "history-keyboard",
+      "width": 375,
+      "theme": "dark",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 375,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 307,
+      "scrollWidth": 392,
+      "overflowX": "auto"
+    },
+    {
+      "name": "reduced-viewport-composer",
+      "width": 375,
+      "theme": "dark",
+      "ok": true,
+      "composerBox": {
+        "x": 21,
+        "y": 282,
+        "width": 333,
+        "height": 72
+      },
+      "note": "Browser viewport resize; this is not an Android IME test."
+    },
+    {
+      "name": "schedule-contained",
+      "width": 375,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 341,
+      "scrollWidth": 840,
+      "overflowX": "auto"
+    },
+    {
+      "name": "history-keyboard",
+      "width": 768,
+      "theme": "light",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 768,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 578,
+      "scrollWidth": 578,
+      "overflowX": "auto"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 768,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 646,
+      "scrollWidth": 646,
+      "overflowX": "auto"
+    },
+    {
+      "name": "history-keyboard",
+      "width": 768,
+      "theme": "dark",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 768,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 578,
+      "scrollWidth": 578,
+      "overflowX": "auto"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 768,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 646,
+      "scrollWidth": 646,
+      "overflowX": "auto"
+    },
+    {
+      "name": "history-keyboard",
+      "width": 1440,
+      "theme": "light",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 1440,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 818,
+      "scrollWidth": 818,
+      "overflowX": "auto"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 1440,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 1062,
+      "scrollWidth": 1062,
+      "overflowX": "auto"
+    },
+    {
+      "name": "history-keyboard",
+      "width": 1440,
+      "theme": "dark",
+      "ok": true,
+      "focusTrapped": true,
+      "focusRestored": true
+    },
+    {
+      "name": "long-table-containment",
+      "width": 1440,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 818,
+      "scrollWidth": 818,
+      "overflowX": "auto"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 1440,
+      "theme": "dark",
+      "ok": true,
+      "containerWidth": 1062,
+      "scrollWidth": 1062,
+      "overflowX": "auto"
+    }
+  ],
+  "errors": [],
+  "blockedExternalRequests": [],
+  "unknownApiRequests": [],
+  "summary": {
+    "screenshots": 38,
+    "overflowPages": 0,
+    "smallTouchTargetCount": 0,
+    "contrastFailures": 0,
+    "failedChecks": 0,
+    "errors": 0,
+    "unknownApiRequests": 0
+  }
+}

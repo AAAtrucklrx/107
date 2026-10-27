@@ -298,7 +298,10 @@ def test_local_runner_can_defer_cache_write(tmp_path) -> None:
 
 # ---------- 6. 缓存命中 + 联网拒答 → 回退缓存答案（不能端出 88 字拒答） ----------
 
-def test_cache_hit_falls_back_to_cached_answer_when_web_refuses() -> None:
+def test_cache_hit_falls_back_to_cached_answer_when_web_refuses(monkeypatch) -> None:
+    # This case exercises the web-refusal fallback, not a live LLM's decision
+    # whether the local answer already suffices (covered separately).
+    monkeypatch.setattr("xiaowo_web.evidence.runner._llm_judge_answered", lambda *_a, **_k: False)
     cached_local = AnswerBundle(
         markdown="教秘：王海龙，电话 0551-63600913。",
         claims=[{"claim_id": "c1", "status": "confirmed"}],
@@ -310,8 +313,10 @@ def test_cache_hit_falls_back_to_cached_answer_when_web_refuses() -> None:
         claims=[{"claim_id": "c1", "status": "insufficient"}],
         terminal_reason="EVIDENCE_INSUFFICIENT",
     )
-    runner = EvidenceAwareRunner(_LocalStub(cached_local), _WebStub(refusal))  # type: ignore[arg-type]
+    pipeline = _WebStub(refusal)
+    runner = EvidenceAwareRunner(_LocalStub(cached_local), pipeline)  # type: ignore[arg-type]
     result = asyncio.run(runner.run(_request()))
+    assert pipeline.hints, "必须实际经过联网拒答，才能验证回退路径"
     assert result is cached_local, "缓存里有好答案时不能端出联网拒答"
     assert any("回退" in item or "可能不是最新" in item for item in result.limitations)
 

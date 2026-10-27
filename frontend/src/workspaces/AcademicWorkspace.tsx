@@ -20,6 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AskXiaowoButton, Limitations, SourceBadge, WorkspaceEmpty, WorkspaceError, WorkspaceLoading } from "../components/WorkspacePrimitives";
 import { apiGet } from "../lib/api";
+import "./academic.css";
 import type {
   AcademicCourses,
   AcademicCourse,
@@ -106,15 +107,14 @@ function GradeTable({ rows }: { rows: AcademicCourses["grades"] }) {
             <em>{list.length} 门</em>
           </div>
           <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>课程</th><th>学分</th><th>成绩</th><th>绩点</th><th aria-label="操作" /></tr></thead>
+            <table className="data-table academic-grade-table" aria-label={`${semester}成绩`}>
+              <thead><tr><th scope="col">课程</th><th scope="col">学分</th><th scope="col">成绩</th><th scope="col">绩点</th></tr></thead>
               <tbody>{list.map((row, index) => (
                 <tr key={`${row.course_name}-${row.semester}-${index}`}>
-                  <td><strong>{valueOrDash(row.course_name)}</strong></td>
-                  <td>{valueOrDash(row.credits)}</td>
-                  <td>{valueOrDash(row.score)}</td>
-                  <td>{valueOrDash(row.grade_point)}</td>
-                  <td />
+                  <td className="academic-grade-name"><strong>{valueOrDash(row.course_name)}</strong></td>
+                  <td data-label="学分">{valueOrDash(row.credits)}</td>
+                  <td data-label="成绩">{valueOrDash(row.score)}</td>
+                  <td data-label="绩点">{valueOrDash(row.grade_point)}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -133,8 +133,8 @@ function OverviewView({ data, onAsk }: { data: AcademicOverview; onAsk: (questio
   ];
   return (
     <div className="academic-section">
-      <div className="data-band" aria-label="学业摘要">
-        {metrics.map((metric) => <div className="data-band__item" key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></div>)}
+      <div className="academic-metrics" aria-label="学业摘要">
+        {metrics.map((metric, index) => <section className={`academic-metric${index === 0 ? " academic-metric--gpa" : ""}`} key={metric.label} aria-label={metric.label}><span>{metric.label}{index === 0 && <span className="academic-metric__tag">GPA</span>}</span><strong>{metric.value}</strong><small>{metric.detail}</small></section>)}
       </div>
       <section className="content-section">
         <div className="section-heading"><h2>全部成绩</h2><AskXiaowoButton question="分析我的近期成绩和学习趋势" onAsk={onAsk} /></div>
@@ -145,10 +145,31 @@ function OverviewView({ data, onAsk }: { data: AcademicOverview; onAsk: (questio
   );
 }
 
+function isNonnegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function ProgressBar({ label, value, max }: { label: string; value: number; max: number }) {
+  return <div className="academic-progress-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}><span style={{ width: `${Math.min(100, (value / max) * 100)}%` }} /></div>;
+}
+
 function ProgramView({ data, onAsk }: { data: AcademicProgram; onAsk: (question: string) => void }) {
   const total = data.program.totalCredits ?? data.program.total_credits;
   const modules = data.program.modules ?? [];
   const courses = data.program.courses ?? [];
+  const progress = data.progress;
+  const progressConfirmed = progress?.taken_courses_known === true
+    && isNonnegativeNumber(progress.percent) && progress.percent <= 100
+    && isNonnegativeNumber(progress.credits_taken)
+    && isNonnegativeNumber(progress.credits_required) && progress.credits_required > 0;
+  const moduleProgress = Array.isArray(progress?.modules_progress) ? progress.modules_progress : [];
+  const categories = new Set(modules.map((module) => module.category || "未分类"));
+  const groupedCourses = new Map<string, ProgramCourse[]>();
+  for (const course of courses) {
+    const category = course.category?.split("/")[0].trim() || "未分类";
+    categories.add(category);
+    groupedCourses.set(category, [...(groupedCourses.get(category) ?? []), course]);
+  }
   return (
     <div className="academic-section">
       {data.banner && <div className={`program-banner ${data.source.demo ? "program-banner--demo" : "program-banner--fallback"}`}><GraduationCap size={19} /><strong>{data.banner}</strong></div>}
@@ -156,50 +177,54 @@ function ProgramView({ data, onAsk }: { data: AcademicProgram; onAsk: (question:
         <div><h2>{data.program.name || "当前培养方案"}</h2><p>{[data.program.college, data.program.grade, total ? `总学分 ${total}` : ""].filter(Boolean).join("，")}</p></div>
         <SourceBadge source={data.source} />
       </div>
-      {modules.length ? (
-        <div className="module-ledger" role="table" aria-label="培养方案模块统计">
-          <div className="module-ledger__header" role="row">
-            <span role="columnheader">课程模块</span>
-            <span role="columnheader">要求学分</span>
-            <span role="columnheader">课程数量</span>
-          </div>
-          {modules.map((module, index) => (
-            <div className="module-ledger__row" role="row" key={`${module.category}-${index}`}>
-              <strong role="cell">{module.category || "未分类"}</strong>
-              <span role="cell"><b>{valueOrDash(module.required_credits)}</b> 学分</span>
-              <span role="cell"><b>{valueOrDash(module.course_count)}</b> 门课程</span>
-            </div>
-          ))}
-        </div>
-      ) : <WorkspaceEmpty title="暂无模块统计" detail="当前培养方案没有返回模块学分信息。" />}
+      <section className="program-progress-summary" aria-label="必修学分进度">
+        <div className="program-progress-summary__heading"><h3>必修学分进度</h3>{progressConfirmed && <strong>{String(progress.percent)}%</strong>}</div>
+        {progressConfirmed ? <>
+          <ProgressBar label="必修学分完成比例" value={progress.percent as number} max={100} />
+          <p>{String(progress.credits_taken)} / {String(progress.credits_required)} 学分</p>
+          <small>按当前成绩记录与培养方案匹配，以教务审核为准。</small>
+        </> : <p className="program-progress-unknown">完成情况暂不可确认<span>当前数据未提供可确认的已修进度。</span></p>}
+      </section>
       <section className="content-section">
-        <div className="section-heading"><h2>方案课程（按学期）</h2></div>
-        {(() => {
+        <div className="section-heading"><h2>课程模块</h2><span className="academic-section-note">模块内按建议学期排列</span></div>
+        {!categories.size && <WorkspaceEmpty title="暂无方案课程" detail="当前方案没有可展示的模块与课程记录。" />}
+        <div className="program-module-list">
+        {[...categories].map((category) => {
+          const module = modules.find((item) => (item.category || "未分类") === category);
+          const completion = moduleProgress.find((item: unknown): item is Record<string, unknown> => typeof item === "object" && item !== null && "category" in item && item.category === category);
+          const moduleConfirmed = progress?.taken_courses_known === true && completion
+            && isNonnegativeNumber(completion.taken) && Number.isInteger(completion.taken)
+            && isNonnegativeNumber(completion.total) && Number.isInteger(completion.total)
+            && completion.total > 0 && completion.taken <= completion.total;
           const groups = new Map<string, ProgramCourse[]>();
-          for (const course of courses) {
+          for (const course of groupedCourses.get(category) ?? []) {
             const key = course.term || "未标注";
             groups.set(key, [...(groups.get(key) ?? []), course]);
           }
           const ordered = sortGroups([...groups.entries()], termSortKey);
-          if (!ordered.length) return <WorkspaceEmpty title="暂无方案课程" detail="当前方案没有可展示的课程记录。" />;
-          return ordered.map(([term, list]) => (
+          return <section className="program-module" key={category} aria-label={`${category}模块`}>
+            <div className="program-module__heading"><h3>{category}</h3>{module && <span>要求 {valueOrDash(module.required_credits)} 学分 · {valueOrDash(module.course_count)} 门课程</span>}</div>
+            {moduleConfirmed && <div className="program-module__progress"><span>已匹配 {String(completion.taken)} / {String(completion.total)} 门必修课程</span><ProgressBar label={`${category}必修课程匹配进度`} value={completion.taken as number} max={completion.total as number} /></div>}
+            {!ordered.length && <p className="academic-section-note">当前模块暂无课程明细。</p>}
+            {ordered.map(([term, list]) => (
             <div className="term-group" key={term}>
               <div className="term-heading"><strong>{termLabel(term)}</strong><em>{list.length} 门</em></div>
               <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead><tr><th>课程</th><th>类别</th><th>性质</th><th>学分</th><th aria-label="操作" /></tr></thead>
+                <table className="data-table academic-program-table" aria-label={`${category}${termLabel(term)}课程`}>
+                  <thead><tr><th scope="col">课程</th><th scope="col">类别</th><th scope="col">性质</th><th scope="col">学分</th><th scope="col" aria-label="操作" /></tr></thead>
                   <tbody>{list.map((course, index) => (
                     <tr key={`${course.code}-${index}`}>
-                      <td><strong>{course.name || "未命名课程"}</strong><small className="cell-subtitle">{course.code || ""}</small></td>
-                      <td>{valueOrDash(course.category)}</td><td>{valueOrDash(course.required)}</td><td>{valueOrDash(course.credit)}</td>
-                      <td><AskXiaowoButton compact question={`点评培养方案中的课程“${course.name || course.code}”`} onAsk={onAsk} /></td>
+                      <td className="academic-program-name"><strong>{course.name || "未命名课程"}</strong><small className="cell-subtitle">{course.code || ""}</small></td>
+                      <td data-label="类别">{valueOrDash(course.category)}</td><td data-label="性质">{valueOrDash(course.required)}</td><td data-label="学分">{valueOrDash(course.credit)}</td>
+                      <td className="academic-program-action"><AskXiaowoButton compact question={`点评培养方案中的课程“${course.name || course.code}”`} onAsk={onAsk} /></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
             </div>
-          ));
-        })()}
+          ))}</section>;
+        })}
+        </div>
       </section>
       <Limitations items={data.limitations} />
     </div>
@@ -405,7 +430,8 @@ function ScheduleView({ data, onAsk }: { data: AcademicSchedule; onAsk: (questio
       {!events.length && (
         <div className="schedule-week-empty" role="status">第 {selectedWeek} 周暂无可确认课程</div>
       )}
-      <div className="schedule-calendar-scroll" aria-label={`第${selectedWeek}周课程表`}>
+      <p className="schedule-swipe-hint" id="schedule-swipe-hint">左右滑动查看整周，点击课程查看详情</p>
+      <div className="schedule-calendar-scroll" role="region" tabIndex={0} aria-describedby="schedule-swipe-hint" aria-label={`第${selectedWeek}周课程表`}>
         <div className="schedule-calendar">
           <FullCalendar
             key={localDateKey(weekStart)}

@@ -293,7 +293,7 @@ def test_logged_in_route_unaffected_by_anonymous_branch(colleges):
         ("我想转专业去物理学院", None),
     ],
 )
-def test_detect_claimed_college(query, expected):
+def test_detect_claimed_college(query, expected, colleges):
     from agents.qa.nodes import _detect_claimed_college
 
     assert _detect_claimed_college(query, "物理学院") == expected

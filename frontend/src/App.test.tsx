@@ -139,3 +139,65 @@ test("账号菜单进管理后台直达知识审核（P2-5 入口回归）", asy
   expect(window.location.pathname).toBe("/admin/knowledge");
   expect(screen.queryByText("工具审核工作区")).toBeNull();
 });
+
+
+test("anonymous academic navigation shows a login gate without mounting personal data", async () => {
+  window.history.replaceState({}, "", "/academic");
+  bootstrapMock.mockResolvedValue({ config, session: {
+    ...adminSession,
+    principal: { ...adminSession.principal, id: null, authenticated: false, auth_mode: "anonymous", profile: null, is_admin: false, review_namespace: null },
+    capabilities: { ...adminSession.capabilities, personal_academic: false, knowledge_review: false },
+  } });
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "连接你的学业生活" })).toBeInTheDocument();
+  expect(screen.queryByText("学业工作区")).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/academic");
+  await userEvent.click(screen.getByRole("button", { name: "登录后查看学业" }));
+  expect(await screen.findByRole("heading", { name: "连接你的校园" })).toBeInTheDocument();
+});
+
+test("profile route displays verified school identity and retains campus navigation", async () => {
+  window.history.replaceState({}, "", "/profile");
+  bootstrapMock.mockResolvedValue({ config, session: {
+    ...adminSession, jw_session: true, jw_identity: { name: "真实同学", student_id: "TEST009", college: "测试学院" },
+  } });
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "真实同学" })).toBeInTheDocument();
+  expect(screen.getAllByText("TEST009").length).toBeGreaterThan(0);
+  expect(screen.getByText("测试学院")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /浏览校园服务/ }));
+  expect(await screen.findByText("校园服务工作区")).toBeInTheDocument();
+});
+
+test("profile connection management disconnects school identity through the shared session", async () => {
+  window.history.replaceState({}, "", "/profile");
+  const connected = { ...adminSession, jw_session: true, jw_identity: { name: "连接同学", student_id: "TEST010", college: "测试学院" } };
+  const disconnected = { ...adminSession, jw_session: false, jw_identity: null,
+    principal: { ...adminSession.principal, id: null, authenticated: false, auth_mode: "anonymous", profile: null, is_admin: false, review_namespace: null },
+    capabilities: { ...adminSession.capabilities, personal_academic: false, knowledge_review: false },
+  };
+  bootstrapMock.mockResolvedValueOnce({ config, session: connected }).mockResolvedValue({ config, session: disconnected });
+  apiMutationMock.mockResolvedValue({});
+  render(<App />);
+  await screen.findByRole("heading", { name: "连接同学" });
+  await userEvent.click(screen.getByRole("button", { name: /管理教务连接/ }));
+  expect(await screen.findByRole("heading", { name: "管理教务连接" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "连接你的校园" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "断开教务连接" }));
+  await waitFor(() => expect(apiMutationMock).toHaveBeenCalledWith("/auth/sso_cookie", "csrf-demo", expect.objectContaining({ method: "DELETE" })));
+  await screen.findByRole("heading", { name: "连接你的校园" });
+  await userEvent.click(screen.getByRole("button", { name: "先匿名体验" }));
+  expect(await screen.findByRole("heading", { name: "未登录" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "连接同学" })).not.toBeInTheDocument();
+  expect(screen.queryByText("TEST010")).not.toBeInTheDocument();
+});
+
+test("an authenticated profile without a school connection can still open school login", async () => {
+  window.history.replaceState({}, "", "/profile");
+  bootstrapMock.mockResolvedValue({ config, session: { ...adminSession, jw_session: false } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "测试管理员" });
+  await userEvent.click(screen.getByRole("button", { name: /连接学校账号/ }));
+  expect(await screen.findByRole("heading", { name: "连接你的校园" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "用学校账号登录" })).toBeInTheDocument();
+});

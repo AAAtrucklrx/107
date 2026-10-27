@@ -1,0 +1,454 @@
+{
+  "phase": "before",
+  "origin": "http://127.0.0.1:5174",
+  "fixtureDate": "2026-10-26T10:00:00+08:00",
+  "syntheticDataOnly": true,
+  "pages": [
+    {
+      "name": "home",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "before-home-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "向小蜗提问",
+          "width": 325,
+          "height": 42.4,
+          "inlineProseLink": false,
+          "tag": "TEXTAREA"
+        },
+        {
+          "label": "问小蜗",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 12
+    },
+    {
+      "name": "academic",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "before-academic-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "问小蜗",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 10
+    },
+    {
+      "name": "schedule",
+      "width": 375,
+      "theme": "light",
+      "screenshot": "before-schedule-375-light.png",
+      "viewport": 375,
+      "documentWidth": 375,
+      "bodyWidth": 375,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "07:50数据结构与算法演示教师甲第1–2节合成教学楼 A10109:25",
+          "width": 32.3,
+          "height": 119,
+          "inlineProseLink": false,
+          "tag": "A"
+        },
+        {
+          "label": "09:45离散数学演示教师乙第1–2节合成教学楼 A20211:20",
+          "width": 32.3,
+          "height": 119,
+          "inlineProseLink": false,
+          "tag": "A"
+        },
+        {
+          "label": "07:50大学物理演示教师丁第1–2节合成教学楼 C40409:25",
+          "width": 32.3,
+          "height": 119,
+          "inlineProseLink": false,
+          "tag": "A"
+        },
+        {
+          "label": "09:45线性代数演示教师戊第1–2节合成教学楼 D50511:20",
+          "width": 32.3,
+          "height": 119,
+          "inlineProseLink": false,
+          "tag": "A"
+        },
+        {
+          "label": "问小蜗",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 112.3,
+          "height": 24,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 16
+    },
+    {
+      "name": "home",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "before-home-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "打开会话历史",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "新建对话",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "深色主题",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "向小蜗提问",
+          "width": 486,
+          "height": 42.4,
+          "inlineProseLink": false,
+          "tag": "TEXTAREA"
+        },
+        {
+          "label": "联网搜索 · 开",
+          "width": 112,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 15
+    },
+    {
+      "name": "academic",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "before-academic-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "问问小蜗",
+          "width": 92,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 10
+    },
+    {
+      "name": "schedule",
+      "width": 768,
+      "theme": "light",
+      "screenshot": "before-schedule-768-light.png",
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "前一周",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "本周",
+          "width": 56,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "后一周",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18
+    },
+    {
+      "name": "home",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "before-home-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "问小蜗",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "新建对话",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "深色主题",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "向小蜗提问",
+          "width": 978,
+          "height": 42.4,
+          "inlineProseLink": false,
+          "tag": "TEXTAREA"
+        },
+        {
+          "label": "联网搜索 · 开",
+          "width": 112,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 14
+    },
+    {
+      "name": "academic",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "before-academic-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "问小蜗",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "问问小蜗",
+          "width": 92,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 10
+    },
+    {
+      "name": "schedule",
+      "width": 1440,
+      "theme": "light",
+      "screenshot": "before-schedule-1440-light.png",
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "horizontalOverflow": false,
+      "smallTouchTargets": [
+        {
+          "label": "问小蜗",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "我的学业",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "校园服务",
+          "width": 203,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "前一周",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "本周",
+          "width": 56,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        },
+        {
+          "label": "后一周",
+          "width": 40,
+          "height": 40,
+          "inlineProseLink": false,
+          "tag": "BUTTON"
+        }
+      ],
+      "inlineProseLinks": [],
+      "touchTargetCount": 18
+    }
+  ],
+  "checks": [
+    {
+      "name": "schedule-contained",
+      "width": 375,
+      "theme": "light",
+      "ok": false,
+      "containerWidth": 345,
+      "scrollWidth": 345,
+      "overflowX": "hidden"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 768,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 494,
+      "scrollWidth": 494,
+      "overflowX": "hidden"
+    },
+    {
+      "name": "schedule-contained",
+      "width": 1440,
+      "theme": "light",
+      "ok": true,
+      "containerWidth": 1090,
+      "scrollWidth": 1090,
+      "overflowX": "hidden"
+    }
+  ],
+  "errors": [],
+  "blockedExternalRequests": [],
+  "unknownApiRequests": [],
+  "summary": {
+    "screenshots": 9,
+    "overflowPages": 0,
+    "smallTouchTargetCount": 40,
+    "failedChecks": 1,
+    "errors": 0,
+    "unknownApiRequests": 0
+  }
+}

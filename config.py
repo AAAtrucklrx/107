@@ -34,7 +34,10 @@ LLM_CONFIG = {
 # api_model: 平台白名单内的 embedding 模型标识，可由 .env 的 LLM_EMBEDDING_MODEL 覆盖
 EMBEDDING_CONFIG = {
     "model_name": "shibing624/text2vec-base-chinese",
-    "api_model": os.getenv("LLM_EMBEDDING_MODEL", "qwen3-embedding"),
+    # 2026-10-25：API embedding 与 LLM 解耦（百炼/硅基流动等 OpenAI 兼容端点）
+    "api_model": os.getenv("XIAOWO_EMBEDDING_API_MODEL", os.getenv("LLM_EMBEDDING_MODEL", "qwen3-embedding")),
+    "api_base": os.getenv("XIAOWO_EMBEDDING_API_BASE", "").strip() or LLM_CONFIG["base_url"],
+    "api_key": os.getenv("XIAOWO_EMBEDDING_API_KEY", "").strip() or LLM_CONFIG["api_key"],
     "device": "cpu",
 }
 

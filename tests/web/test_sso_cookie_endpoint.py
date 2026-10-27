@@ -12,7 +12,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from services.session_vault import SessionVault  # noqa: E402
-from tests.web.helpers import bootstrap, make_settings, mutation_headers  # noqa: E402
+from tests.web.helpers import ImmediateRunner, bootstrap, make_settings, mutation_headers  # noqa: E402
 from xiaowo_web.main import create_app  # noqa: E402
 
 JAR = [
@@ -22,14 +22,15 @@ JAR = [
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     from services import cas_client as cas_mod
 
     monkeypatch.setattr(cas_mod.CASClient, "probe_jw_session", lambda self: True, raising=True)
-    settings = make_settings(mode="demo", admin_ids="PB25111691")
-    settings.session_vault_key = "endpoint-test-key"
-    settings.session_vault_ttl_seconds = 3600
-    app = create_app(settings)
+    monkeypatch.setattr("services.jw_session.identity_for_client", lambda client: {})
+    settings = make_settings(tmp_path, mode="demo", admin_ids="PB25111691", extra={
+        "XIAOWO_SESSION_VAULT_KEY": "endpoint-test-key", "XIAOWO_SESSION_VAULT_TTL": "3600",
+    })
+    app = create_app(settings, runner=ImmediateRunner())
     with TestClient(app) as c:
         c.app = app
         yield c
@@ -63,13 +64,12 @@ def test_reject_without_tgc_or_unusable(client):
     assert r.status_code == 400 and r.json()["error"]["code"] == "MISSING_TGC"
 
 
-def test_unusable_session_rejected(monkeypatch):
+def test_unusable_session_rejected(monkeypatch, tmp_path):
     from services import cas_client as cas_mod
 
     monkeypatch.setattr(cas_mod.CASClient, "probe_jw_session", lambda self: False, raising=True)
-    settings = make_settings(mode="demo")
-    settings.session_vault_key = "endpoint-test-key"
-    app = create_app(settings)
+    settings = make_settings(tmp_path, mode="demo", extra={"XIAOWO_SESSION_VAULT_KEY": "endpoint-test-key"})
+    app = create_app(settings, runner=ImmediateRunner())
     with TestClient(app) as c:
         csrf, _ = bootstrap(c)
         c.post("/api/v1/auth/demo", headers=mutation_headers(csrf), json={})

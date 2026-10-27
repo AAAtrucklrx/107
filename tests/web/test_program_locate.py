@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 import agents.qa.nodes as nodes
 import tools.program_tools as program_tools
 from tools._program_resolve import COLLEGE_ALIASES, resolve_colleges
@@ -37,6 +39,7 @@ def _catalog(tmp_path):
         (2, "中国科大-协和医学英才班培养方案", "910生命科学与医学部", "2025级"),
         (3, "生物科学专业培养方案", "207生命科学学院", "2025级"),
         (4, "计算机科学与技术专业培养方案", "215计算机科学与技术学院", "2025级"),
+        (5, "物理学专业培养方案", "203物理学院", "2025级"),
     ])
     rows = []
     # 临床医学：3 门必修
@@ -63,6 +66,14 @@ def _catalog(tmp_path):
         return conn
 
     return _fake_cdb
+
+
+@pytest.fixture
+def routing_catalog(tmp_path, monkeypatch):
+    """Route against synthetic program names, never the untracked deployment DB."""
+    monkeypatch.setattr(program_tools, "_cdb", _catalog(tmp_path))
+    monkeypatch.setattr(nodes, "_KNOWN_COLLEGE_CACHE", [])
+    monkeypatch.setattr(nodes, "_KNOWN_MAJOR_CACHE", [])
 
 
 def test_college_alias_resolves_abbreviation(tmp_path) -> None:
@@ -147,7 +158,7 @@ def _route_state(query: str, *, student_id: str = "PB25111691") -> dict:
     }
 
 
-def test_target_college_detects_abbreviation() -> None:
+def test_target_college_detects_abbreviation(routing_catalog) -> None:
     assert nodes._detect_target_college("转去生医部要补哪些课", "计算机科学与技术") == "生命科学与医学部"
     assert nodes._detect_target_college("转去物理学院要补哪些课", "计算机科学与技术") == "物理学院"
 
@@ -192,7 +203,7 @@ def test_summary_surfaces_ambiguity_and_not_found() -> None:
 
 # ---------- 目标专业 vs 目标学院优先级 ----------
 
-def test_route_prefers_named_major_over_college() -> None:
+def test_route_prefers_named_major_over_college(routing_catalog) -> None:
     """用户已经说了"临床医学"，就不要再回学院候选确认。"""
     out = nodes._direct_tool_route(_route_state("转去生医部临床医学要补哪些课"))
     assert out["tool_calls"][0]["args"]["major"] == "临床医学"

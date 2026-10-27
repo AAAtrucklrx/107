@@ -1,0 +1,13 @@
+/* Native safe areas are supplied by Android; no simulated status bar or device frame. */
+html[data-mobile="true"] body { overscroll-behavior: none; }
+.mobile-login-page { height: 100dvh; overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
+.mobile-login-page .login-page__card { margin: auto; padding: 12px 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.mobile-login-page .login-page__primary { margin-top: 28px; min-height: 48px; border-radius: 24px; font-size: 15px; }
+.mobile-login-page .login-page__ghost { min-height: 44px; font-size: 14px; }
+.mobile-login-page .login-page__title { margin-top: 14px; font-size: 23px; }
+.mobile-login-page .login-page__lead { font-size: 14px; }
+.mobile-login-page .login-page__note { font-size: 12px; margin-top: 24px; }
+.mobile-login-progress { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.login-family-art { display: flex; justify-content: center; align-items: flex-end; gap: 12px; margin: 44px auto 24px; max-width: 300px; }
+.login-family-art img { object-fit: contain; width: 28%; height: 104px; }
+.login-family-art img:first-child { height: 168px; }

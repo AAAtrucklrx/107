@@ -119,6 +119,7 @@ def test_activity_route_keeps_keyword() -> None:
 def test_query_activities_window_no_match_returns_empty(monkeypatch) -> None:
     monkeypatch.setattr(activity_tools, "semester_now", lambda: NOW)
     monkeypatch.setattr(activity_tools, "_fetch_enrolment_cached", lambda: ([SAT], None))
+    monkeypatch.setattr(activity_tools, "_enrich_places", lambda acts: acts)
     out = query_activities.invoke({"time_window": "周日"})
     assert out["count"] == 0
     assert out["activities"] == [], "用户问周日时，卡片不能出现周六的活动"
@@ -129,6 +130,7 @@ def test_query_activities_window_no_match_returns_empty(monkeypatch) -> None:
 def test_query_activities_window_match_keeps_label(monkeypatch) -> None:
     monkeypatch.setattr(activity_tools, "semester_now", lambda: NOW)
     monkeypatch.setattr(activity_tools, "_fetch_enrolment_cached", lambda: ([SAT, SUN], "缓存回退"))
+    monkeypatch.setattr(activity_tools, "_enrich_places", lambda acts: acts)
     out = query_activities.invoke({"time_window": "周六"})
     assert out["count"] == 1
     assert out["activities"][0]["name"] == "哲学社新生活力课程"

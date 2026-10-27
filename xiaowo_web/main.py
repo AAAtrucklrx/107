@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
 
 from xiaowo_web import __version__
 from xiaowo_web.academic import AcademicService
 from xiaowo_web.api.routers import academic, admin, auth, campus, chat, conversations, feedback, review, system
 from xiaowo_web.auth.cas import CasProvider, ExistingCasProvider
 from xiaowo_web.auth.service import AuthService
+from xiaowo_web.auth.mobile import MOBILE_ORIGINS, MobileAuth, bearer_token
+from xiaowo_web.api.routers import mobile_auth
 from xiaowo_web.chat import ChatManager, LegacyQaRunner, QaRunner
 from xiaowo_web.campus import CampusService, CampusToolStore
 from xiaowo_web.campus.demo import ensure_demo_campus_tool_seed
@@ -54,6 +58,7 @@ def create_app(
     resolved_review_store.attach_semantic_cache(semantic_cache)
     resolved_campus_tool_store = campus_tool_store or CampusToolStore(resolved_settings)
     auth_service = AuthService(resolved_settings, store)
+    mobile_service = MobileAuth(resolved_settings) if resolved_settings.mobile_auth_enabled else None
     resolved_health_provider = sidecar_health_provider
     evidence_pipeline = None
     resolved_runner = runner
@@ -141,6 +146,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         store.initialize()
+        if mobile_service is not None:
+            mobile_service.initialize()
         resolved_review_store.initialize()
         resolved_campus_tool_store.initialize()
         if resolved_settings.auth_mode is AuthMode.DEMO:
@@ -151,9 +158,18 @@ def create_app(
         ):
             ensure_demo_review_seed(resolved_review_store)
         store.recover_interrupted_runs()
+        async def prune_mobile_credentials():
+            while True:
+                await asyncio.sleep(60)
+                await asyncio.to_thread(mobile_service.prune)
+        mobile_cleanup = asyncio.create_task(prune_mobile_credentials()) if mobile_service is not None else None
         try:
             yield
         finally:
+            if mobile_cleanup is not None:
+                mobile_cleanup.cancel()
+                with suppress(asyncio.CancelledError):
+                    await mobile_cleanup
             await chat_manager.close()
 
     app = FastAPI(
@@ -168,6 +184,7 @@ def create_app(
     app.state.store = store
     app.state.review_store = resolved_review_store
     app.state.auth_service = auth_service
+    app.state.mobile_auth = mobile_service
     app.state.chat_manager = chat_manager
     app.state.cas_provider = cas_provider or ExistingCasProvider()
     app.state.sidecar_health_provider = resolved_health_provider
@@ -196,6 +213,58 @@ def create_app(
             },
         )
 
+    # 方案 B：按请求解包浏览器 cookie 里的教务会话，供工具层 _cas() 使用（用完即弃）。
+    @app.middleware("http")
+    async def inject_jw_session(request, call_next):
+        token = None
+        guard_token = None
+        try:
+            if request.url.path.startswith("/api/") and request.headers.get("authorization") is not None:
+                # Any Authorization header selects the bearer branch, even if invalid.
+                # Cookie-based credentials must not repair a malformed/expired token.
+                from services.jw_session import client_from_verified_payload, set_client, set_access_guard
+                try:
+                    raw = bearer_token(request)
+                except ApiError:
+                    raw = None
+                resolved = mobile_service.resolve_with_payload(raw) if mobile_service and raw else None
+                request.state.mobile_principal = resolved[0] if resolved else None
+                request.state.mobile_token = raw
+
+                def require_live_mobile_session():
+                    if not mobile_service or not raw or mobile_service.resolve(raw) is None:
+                        raise ApiError(401, "AUTH_REQUIRED", "登录凭据已失效，请重新登录。")
+
+                guard_token = set_access_guard(require_live_mobile_session)
+                client = client_from_verified_payload(resolved[1]) if resolved else None
+                request.state.jw_identity = resolved[0].profile if client is not None else {}
+                request.state.jw_session = client is not None
+                token = set_client(client)
+            elif request.url.path.startswith("/api/") and request.cookies.get("xiaowo_jw"):
+                from services.jw_session import client_from_request, set_client
+
+                client = client_from_request(request)
+                if client is not None:
+                    token = set_client(client)
+                    try:
+                        import asyncio as _asyncio
+                        from services.jw_session import identity_for_client as _identity, bind_verified_identity
+
+                        request.state.jw_identity = await _asyncio.to_thread(_identity, client)
+                        bind_verified_identity(client, request.state.jw_identity)
+                    except Exception:  # noqa: BLE001
+                        request.state.jw_identity = {}
+            return await call_next(request)
+        finally:
+            if token is not None:
+                from services.jw_session import reset_client
+
+                reset_client(token)
+            if guard_token is not None:
+                from services.jw_session import reset_access_guard
+
+                reset_access_guard(guard_token)
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
@@ -207,9 +276,18 @@ def create_app(
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    if mobile_service is not None:
+        app.add_middleware(
+            CORSMiddleware, allow_origins=list(MOBILE_ORIGINS), allow_credentials=False,
+            allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
+            allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Accept"],
+            max_age=600,
+        )
+
     prefix = "/api/v1"
     app.include_router(system.router, prefix=prefix)
     app.include_router(auth.router, prefix=prefix)
+    app.include_router(mobile_auth.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(academic.router, prefix=prefix)
